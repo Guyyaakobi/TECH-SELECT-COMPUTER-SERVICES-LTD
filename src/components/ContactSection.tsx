@@ -328,7 +328,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ onOpenPrivacy })
         <div className="mt-12 rounded-3xl overflow-hidden shadow-2xl h-64 sm:h-80 w-full opacity-90 hover:opacity-100 transition-opacity border border-white/10">
           <iframe
             className="w-full h-full border-0 grayscale hover:grayscale-0 transition-all duration-500"
-            src="https://www.google.com/maps?q=%D7%99%D7%92%D7%90%D7%9C%20%D7%90%D7%9C%D7%95%D7%9F%2088%20%D7%AA%D7%9C%20%D7%90%D7%91%D7%99%D7%91&hl=he&z=16&output=embed"
+            src="https://maps.google.com/maps?q=%D7%99%D7%92%D7%90%D7%9C%20%D7%90%D7%9C%D7%95%D7%9F%2088%20%D7%AA%D7%9C%20%D7%90%D7%91%D7%99%D7%91&t=&z=15&ie=UTF8&iwloc=&output=embed"
             loading="lazy"
             referrerPolicy="no-referrer-when-downgrade"
             title="Office Location Map - Yigal Alon 88 Tel Aviv"
