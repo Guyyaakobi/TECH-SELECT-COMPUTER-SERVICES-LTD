@@ -122,7 +122,7 @@ export const DefensePage: React.FC<DefensePageProps> = ({ onBackToHome }) => {
               {/* MOD Logo Badge */}
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-xl bg-slate-900/95 border border-cyan-500/30 text-white text-xs font-mono shadow-md">
                 <div className="bg-white/95 p-1 rounded-md shrink-0">
-                  <img src="/mod-logo.svg" alt="משרד הביטחון" className="h-5 w-auto object-contain" />
+                  <img src="/mod-logo.svg" alt="משרד הביטחון" width="20" height="20" loading="lazy" decoding="async" className="h-5 w-auto object-contain" />
                 </div>
                 <span className="text-[11px] font-bold text-cyan-300">
                   {isHe ? 'ספק מורשה משרד הביטחון' : 'MOD Authorized Supplier'}

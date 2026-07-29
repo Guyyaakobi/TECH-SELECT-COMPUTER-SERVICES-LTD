@@ -135,7 +135,7 @@ export const DefenseSection: React.FC = () => {
               <div className="pt-2 flex items-center justify-center">
                 <div className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-cyan-500/30 text-white text-xs font-mono shadow-md">
                   <div className="bg-white/95 p-1 rounded-md shrink-0">
-                    <img src="/mod-logo.svg" alt="משרד הביטחון - Ministry of Defence" className="h-6 w-auto object-contain" />
+                    <img src="/mod-logo.svg" alt="משרד הביטחון - Ministry of Defence" width="24" height="24" loading="lazy" decoding="async" className="h-6 w-auto object-contain" />
                   </div>
                   <div className="text-right">
                     <span className="text-[11px] font-bold text-cyan-300 block leading-tight">ספק מורשה משרד הביטחון</span>
