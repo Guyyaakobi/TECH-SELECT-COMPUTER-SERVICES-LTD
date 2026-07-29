@@ -167,17 +167,6 @@ export const Navbar: React.FC<NavbarProps> = ({
               </button>
             )}
 
-            {/* WhatsApp */}
-            <a
-              href={COMPANY_INFO.whatsappUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-2 text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-full transition-all border border-emerald-500/30"
-              aria-label="WhatsApp"
-            >
-              <WhatsAppIcon className="w-4 h-4 fill-current" />
-            </a>
-
             {/* WhatsApp Mobile Quick Button */}
             <a
               href={COMPANY_INFO.whatsappUrl}
