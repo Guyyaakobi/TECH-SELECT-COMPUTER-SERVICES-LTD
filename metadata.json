@@ -1,0 +1,6 @@
+{
+  "name": "TECH-SELECT",
+  "description": "אתר יוקרתי ומנהל מחלקת מחשוב במתכונת שירות - IT, ענן ואבטחת מידע לעסקים",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

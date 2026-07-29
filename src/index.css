@@ -1,0 +1,112 @@
+@import "tailwindcss";
+
+@layer base {
+  html {
+    font-family: 'Assistant', 'Heebo', system-ui, -apple-system, sans-serif;
+    scroll-behavior: smooth;
+    color-scheme: dark;
+  }
+  
+  h1, h2, h3, h4, .font-heading {
+    font-family: 'Rubik', 'Assistant', sans-serif;
+  }
+
+  code, pre {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+
+  .font-mono {
+    font-family: 'Plus Jakarta Sans', 'Assistant', sans-serif;
+  }
+
+  body {
+    background-color: #07090e;
+    color: #f1f5f9;
+    overflow-x: hidden;
+  }
+}
+
+/* Executive Bidi Utilities */
+.dir-ltr {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.dir-rtl {
+  direction: rtl;
+  unicode-bidi: isolate;
+}
+
+/* Floating Glass Header */
+.header-glass-pill {
+  background: rgba(13, 17, 26, 0.88);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 16px 40px -10px rgba(0, 0, 0, 0.7), 0 0 20px rgba(59, 130, 246, 0.12);
+}
+
+/* Executive Dark Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #07090e;
+}
+::-webkit-scrollbar-thumb {
+  background: #181d2a;
+  border-radius: 9999px;
+  border: 2px solid #07090e;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3b82f6;
+}
+
+/* Subtle Floating Animations */
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-6px); }
+}
+
+@keyframes geminiGlow {
+  0%, 100% { opacity: 0.25; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(1.03); }
+}
+
+.animate-float-slow {
+  animation: floatSlow 6s ease-in-out infinite;
+}
+
+.animate-gemini-glow {
+  animation: geminiGlow 12s ease-in-out infinite;
+}
+
+/* Corporate Glass Panel Style */
+.gemini-glass {
+  background: rgba(13, 17, 26, 0.85);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.gemini-card {
+  background: rgba(13, 17, 26, 0.75);
+  backdrop-filter: blur(16px);
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  border-radius: 1.25rem;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.gemini-card:hover {
+  background: rgba(18, 24, 38, 0.95);
+  border-color: rgba(56, 189, 248, 0.75);
+  box-shadow: 0 20px 45px -10px rgba(56, 189, 248, 0.3), 0 0 25px rgba(56, 189, 248, 0.2);
+  transform: translateY(-3px);
+}
+
+.gemini-text-gradient {
+  background: linear-gradient(135deg, #ffffff 0%, #93c5fd 50%, #60a5fa 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
