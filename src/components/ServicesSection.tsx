@@ -185,11 +185,11 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({ onSelectForQuo
 
                     <div className="flex flex-wrap items-center justify-end gap-1.5">
                       {svc.popular && (
-                        <span className="bg-gradient-to-r from-blue-500 to-cyan-400 text-slate-950 text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full shadow-sm shrink-0">
+                        <span className="bg-gradient-to-r from-blue-500 to-cyan-400 text-slate-950 text-xs font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-full shadow-sm shrink-0">
                           CORE SPECIALIZATION
                         </span>
                       )}
-                      <span className="text-[10px] text-cyan-300 bg-white/5 border border-white/10 px-2.5 py-1 rounded-full font-semibold">
+                      <span className="text-xs text-cyan-300 bg-white/5 border border-white/10 px-2.5 py-1 rounded-full font-semibold">
                         {subtitle}
                       </span>
                     </div>
@@ -209,7 +209,7 @@ export const ServicesSection: React.FC<ServicesSectionProps> = ({ onSelectForQuo
                   {svc.techStack && (
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       {svc.techStack.map((tech, idx) => (
-                        <span key={idx} className="text-[10px] bg-white/5 text-slate-300 px-2.5 py-1 rounded-full font-sans font-semibold border border-white/5">
+                        <span key={idx} className="text-xs bg-white/5 text-slate-300 px-2.5 py-1 rounded-full font-sans font-semibold border border-white/5">
                           {tech}
                         </span>
                       ))}

@@ -194,7 +194,7 @@ export const SectorsSection: React.FC = () => {
                   </div>
                   <div>
                     <h3 className="font-bold text-sm">{secTitle}</h3>
-                    <p className="text-[11px] text-slate-400 line-clamp-1">{secSub}</p>
+                    <p className="text-xs text-slate-400 line-clamp-1">{secSub}</p>
                   </div>
                 </button>
               );

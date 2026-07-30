@@ -117,7 +117,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ onOpenPrivacy })
                     <Send className="w-4 h-4" />
                   </div>
                   <div>
-                    <span className="text-[11px] text-slate-400 block font-mono">{isHe ? 'פנייה ישירה ב-WhatsApp' : 'WhatsApp Contact'}</span>
+                    <span className="text-xs text-slate-400 block font-mono">{isHe ? 'פנייה ישירה ב-WhatsApp' : 'WhatsApp Contact'}</span>
                     <a href={COMPANY_INFO.whatsappUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-emerald-400 hover:text-emerald-300 transition-colors font-mono" dir="ltr">
                       050-3900903 ({isHe ? 'לחץ להתכתבות' : 'Click to chat'})
                     </a>
@@ -129,7 +129,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ onOpenPrivacy })
                     <Mail className="w-4 h-4" />
                   </div>
                   <div>
-                    <span className="text-[11px] text-slate-400 block font-mono">{isHe ? 'דוא"ל פניות' : 'Email'}</span>
+                    <span className="text-xs text-slate-400 block font-mono">{isHe ? 'דוא"ל פניות' : 'Email'}</span>
                     <a href={`mailto:${COMPANY_INFO.email}`} className="text-sm font-bold text-white hover:text-blue-400 transition-colors font-mono" dir="ltr">
                       {COMPANY_INFO.email}
                     </a>
@@ -141,7 +141,7 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ onOpenPrivacy })
                     <MapPin className="w-4 h-4" />
                   </div>
                   <div>
-                    <span className="text-[11px] text-slate-400 block font-mono">{isHe ? 'כתובת המשרדים' : 'Address'}</span>
+                    <span className="text-xs text-slate-400 block font-mono">{isHe ? 'כתובת המשרדים' : 'Address'}</span>
                     <span className="text-sm font-bold text-white">{COMPANY_INFO.address}</span>
                   </div>
                 </div>
