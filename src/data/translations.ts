@@ -7,7 +7,7 @@ export const translations = {
       home: 'ראשי',
       services: 'שירותי IT וענן',
       defense: 'חברות ביטחוניות',
-      delivery: 'מודל Delivery',
+      delivery: 'מודל מצויינות',
       managed: 'מנהל IT מנוהל',
       sectors: 'מגזרי תעשייה',
       knowledge: 'מרכז ידע',

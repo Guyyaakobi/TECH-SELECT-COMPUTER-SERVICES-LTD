@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Globe, Server, ShieldCheck, Users, ArrowLeft, ArrowRight, CheckCircle2, Building2, MapPin, Sparkles, ShieldAlert } from 'lucide-react';
+import { Globe, Server, ShieldCheck, Users, ArrowLeft, ArrowRight, CheckCircle2, Building2, MapPin, Sparkles, ShieldAlert, Award, UserCheck, MessageSquareQuote } from 'lucide-react';
 import { SpotlightCard } from './SpotlightCard';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -121,8 +121,8 @@ export const DeliveryHubsSection: React.FC = () => {
   const deliveryHubs = [
     {
       city: isHe ? 'תל אביב - מטה מרכזי' : 'Tel Aviv - HQ',
-      role: isHe ? 'מוקד NOC/SOC ראשי' : 'Primary NOC/SOC Center',
-      specs: isHe ? 'מוקד תמיכה 24/7, הנהלת IT וייעוץ' : '24/7 Support Desk, IT Exec & vCIO',
+      role: isHe ? 'מוקד NOC/SOC ראשי וניהול' : 'Primary NOC/SOC Center & Execs',
+      specs: isHe ? 'מוקד תמיכה 24/7, ניהול IT וייעוץ CISO' : '24/7 Support Desk, IT Exec & vCIO',
       status: isHe ? 'פעיל' : 'Active',
     },
     {
@@ -138,7 +138,7 @@ export const DeliveryHubsSection: React.FC = () => {
       status: isHe ? 'פעיל' : 'Active',
     },
     {
-      city: isHe ? 'דרום - מרכז ביטחוני' : 'South - Defense Division',
+      city: isHe ? 'דרום - חטיבת ביטחון' : 'South - Defense Division',
       role: isHe ? 'מענה למתקנים מסווגים' : 'Defense Facilities Unit',
       specs: isHe ? 'צוותי טכנאים מסווגים בפריסה ארצית' : 'Nationwide cleared engineers',
       status: isHe ? 'פעיל' : 'Active',
@@ -155,29 +155,58 @@ export const DeliveryHubsSection: React.FC = () => {
         <div className="text-center max-w-3xl mx-auto space-y-4 mb-14">
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-cyan-300 text-xs font-mono font-bold">
             <Globe className="w-4 h-4 text-cyan-400" />
-            <span>GLOBAL & DEFENSE DELIVERY ARCHITECTURE</span>
+            <span>PERSONAL EXECUTIVE COMMITMENT & DELIVERY EXCELLENCE</span>
           </div>
           
           <h2 className="text-3xl sm:text-5xl font-extrabold text-white font-heading tracking-tight">
             {isHe ? (
               <>
-                מודל השירות – <span className="gemini-text-gradient">מצוינות, גמישות ואבטחה</span>
+                מודל מצוינות – <span className="gemini-text-gradient">מחויבות אישית ואחריות מלאה</span>
               </>
             ) : (
               <>
-                Delivery Architecture – <span className="gemini-text-gradient">Excellence, SLA & Security</span>
+                Excellence Model – <span className="gemini-text-gradient">Personal Ownership & Delivery</span>
               </>
             )}
           </h2>
           
           <p className="text-slate-300 text-base leading-relaxed">
             {isHe
-              ? 'מתודולוגיית השירות של TECH-SELECT משלבת בין נוכחות מקומית חזקה, מוקד SOC מתקדם וצוותים בעלי סיווג ביטחוני המעניקים לארגון שלכם שקט נפשי מלא.'
-              : 'TECH-SELECT delivery methodology combines strong local presence, advanced SOC monitoring, and cleared engineering personnel for complete peace of mind.'}
+              ? 'מתודולוגיית השירות של TECH-SELECT נשענת על עיקרון פשוט: אצלנו הלקוח לא הולך לאיבוד במרכזיה אנונימית. אנו משלבים נוכחות מקומית, מוקד תמיכה אנושי זמין וצוותים מנוסים שמעניקים לארגון שלכם שקט תעשייתי אמיתי.'
+              : 'Our delivery methodology is built on direct accountability: no anonymous helpdesks, just experienced engineers and direct executive oversight for total peace of mind.'}
           </p>
         </div>
 
-        {/* Global Delivery Hubs Cards */}
+        {/* Personal Note from Founder & Owner */}
+        <div className="bg-gradient-to-r from-blue-950/70 via-slate-900 to-indigo-950/70 p-6 sm:p-8 rounded-3xl border border-cyan-500/30 mb-14 shadow-xl relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-cyan-500/10 rounded-full blur-2xl pointer-events-none"></div>
+          <div className="flex flex-col md:flex-row items-start gap-6 relative z-10">
+            <div className="p-3.5 bg-cyan-500/10 border border-cyan-400/30 text-cyan-300 rounded-2xl shrink-0">
+              <MessageSquareQuote className="w-8 h-8" />
+            </div>
+            <div className="space-y-3 flex-1">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono font-bold text-cyan-400 uppercase tracking-wider bg-cyan-950/80 px-2.5 py-0.5 rounded border border-cyan-500/30">
+                  {isHe ? 'מילה מהבעלים והמנכ"ל' : 'Message from Founder & Owner'}
+                </span>
+              </div>
+              <p className="text-sm sm:text-base text-slate-200 leading-relaxed font-sans italic">
+                {isHe
+                  ? '״כבעלים ומנכ"ל TECH-SELECT, הקמתי את החברה מתוך תפיסה שהנהלת IT וסייבר נמדדת ברגעי אמת – ולא בסיסמאות שיווקיות. אצלנו לא תפגשו אנשי מכירות שנעלמים ברגע שמממשים חוזה, אלא מענה הנדסי רציני, שקיפות בתקציב וקו פתוח אליי ולאנשי המקצוע הבכירים ביותר בצוות. כשאתם עובדים איתנו, אתם מקבלים גב טכנולוגי מלא ואחריות אישית שלי לשקט הנפשי שלכם.״'
+                  : '"As the Founder and Owner of TECH-SELECT, I built this company on a core principle: IT management is measured in real moments of truth—not marketing fluff. You won\'t deal with vanishing salespeople; you get dedicated engineers, transparent budgets, and a direct line to executive management. When you partner with us, your operational stability is my personal commitment."'}
+              </p>
+              <div className="pt-2 border-t border-white/10 flex items-center justify-between text-xs font-mono">
+                <span className="text-white font-bold">{isHe ? 'גיא יעקובי | מנכ"ל ובעלים, TECH-SELECT' : 'Guy Yaakobi | Founder & Owner, TECH-SELECT'}</span>
+                <span className="text-cyan-400 flex items-center gap-1">
+                  <UserCheck className="w-3.5 h-3.5" />
+                  {isHe ? 'מחויבות אישית לכל לקוח' : 'Personal Executive SLA'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Delivery Hubs Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
           {deliveryHubs.map((hub, idx) => (
             <SpotlightCard
@@ -307,3 +336,4 @@ export const DeliveryHubsSection: React.FC = () => {
     </section>
   );
 };
+

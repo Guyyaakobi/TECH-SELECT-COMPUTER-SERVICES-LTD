@@ -49,7 +49,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         { id: 'services', name: 'שירותי IT' },
         { id: 'defense', name: 'ביטחון וסייבר' },
         { id: 'disaster-game', name: 'מוכנות IT' },
-        { id: 'delivery', name: 'מודל Delivery' },
+        { id: 'delivery', name: 'מודל מצויינות' },
         { id: 'managed', name: 'IT מנוהל' },
         { id: 'sectors', name: 'מגזרים' },
         { id: 'knowledge', name: 'מרכז ידע' },
@@ -60,7 +60,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         { id: 'services', name: 'IT & Cloud' },
         { id: 'defense', name: 'Defense' },
         { id: 'disaster-game', name: 'IT Readiness' },
-        { id: 'delivery', name: 'Delivery' },
+        { id: 'delivery', name: 'Excellence' },
         { id: 'managed', name: 'Managed IT' },
         { id: 'sectors', name: 'Industries' },
         { id: 'knowledge', name: 'Knowledge' },
@@ -96,14 +96,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           </a>
 
           {/* Navigation Links */}
-          <nav className="hidden lg:flex items-center gap-0.5 xl:gap-1 shrink min-w-0">
+          <nav className="hidden lg:flex items-center gap-1 xl:gap-2 shrink min-w-0">
             {navLinks.map((link) => {
               const isActive = currentPage === link.id;
               return (
                 <button
                   key={link.id}
                   onClick={(e) => handleNavClick(link.id, e)}
-                  className={`px-2 xl:px-2.5 py-1.5 rounded-full text-[11px] xl:text-[12px] font-medium transition-all whitespace-nowrap cursor-pointer ${
+                  className={`px-2.5 xl:px-3 py-1.5 rounded-full text-[12px] xl:text-[13.5px] font-semibold transition-all whitespace-nowrap cursor-pointer ${
                     isActive
                       ? 'bg-gradient-to-r from-blue-600/90 via-indigo-600/90 to-cyan-600/90 text-white font-bold shadow-md shadow-blue-500/20 border border-cyan-400/30'
                       : 'text-slate-200 hover:text-white hover:bg-white/10'

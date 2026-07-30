@@ -904,141 +904,183 @@ export const DisasterGamePage: React.FC<{
           </div>
         )}
 
-        {/* RANSOMWARE SCREEN MODAL */}
+        {/* RANSOMWARE SCREEN MODAL (Realistic LockBit / WannaCry Cyber Attack UI) */}
         {isRansomModalOpen && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-3 sm:p-6 bg-black/90 backdrop-blur-md animate-fadeIn">
-            <div className="w-full max-w-3xl bg-[#0c0202] border-2 border-red-600/90 rounded-2xl shadow-[0_0_80px_rgba(220,38,38,0.5)] overflow-hidden flex flex-col max-h-[92vh]">
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-2 sm:p-4 bg-black/95 backdrop-blur-lg animate-fadeIn">
+            <div className="w-full max-w-4xl bg-[#090202] border-2 border-red-600 rounded-2xl shadow-[0_0_100px_rgba(239,68,68,0.6)] overflow-hidden flex flex-col max-h-[94vh]">
               
-              {/* Red Hacker Titlebar */}
-              <div className="bg-gradient-to-r from-red-950 via-red-900 to-black px-4 py-3 border-b border-red-600/60 flex items-center justify-between shrink-0">
-                <div className="flex items-center gap-2.5 text-red-200">
-                  <div className="p-1.5 bg-red-600 text-black rounded-lg font-black animate-pulse">
-                    <Lock className="w-5 h-5" />
+              {/* Header bar - Dark Red Threat Header */}
+              <div className="bg-gradient-to-r from-red-950 via-red-900 to-black px-4 py-3 border-b border-red-600/70 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-red-600 text-black rounded-lg font-black animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.8)]">
+                    <Lock className="w-6 h-6" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono font-extrabold uppercase bg-red-500/30 text-red-300 px-2 py-0.5 rounded border border-red-500/50">
-                        CRITICAL_MALWARE_LOCK
+                      <span className="text-[10px] font-mono font-extrabold uppercase bg-red-600 text-black px-2 py-0.5 rounded font-bold tracking-wider">
+                        CRITICAL SECURITY INCIDENT
                       </span>
-                      <span className="text-[11px] font-mono text-red-400/80">BLACK_CRYPTO_v4.2</span>
+                      <span className="text-[11px] font-mono text-red-400 font-bold">LOCKBIT_v3.0_ENTERPRISE_PAYLOAD</span>
                     </div>
                     <h3 className="text-sm sm:text-base font-mono font-extrabold text-white tracking-wide">
-                      {isHe ? '⚠️ כל הקבצים במערכת הוצפנו! (Ransomware Lock Screen)' : '⚠️ ALL YOUR FILES HAVE BEEN ENCRYPTED!'}
+                      {isHe ? 'YOUR NETWORK HAS BEEN COMPROMISED & ENCRYPTED' : 'YOUR NETWORK HAS BEEN COMPROMISED & ENCRYPTED'}
                     </h3>
                   </div>
                 </div>
 
                 <button
                   onClick={() => setIsRansomModalOpen(false)}
-                  className="p-1.5 rounded-lg bg-red-950/80 hover:bg-red-800 text-red-300 border border-red-500/40 transition-all cursor-pointer"
+                  className="p-1.5 rounded-lg bg-red-950/90 hover:bg-red-800 text-red-200 border border-red-500/50 transition-all cursor-pointer"
                   title={isHe ? 'סגור' : 'Close'}
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              {/* Main Ransomware Body */}
-              <div className="p-4 sm:p-6 space-y-5 overflow-y-auto font-mono text-xs sm:text-sm text-slate-200">
+              {/* Main Dual-Column Authentic Ransomware Screen */}
+              <div className="p-4 sm:p-6 overflow-y-auto space-y-5 font-mono text-xs text-slate-200">
                 
-                {/* Top Warning Banner & Countdown */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-red-950/40 p-4 rounded-xl border border-red-600/50 shadow-inner">
-                  <div className="md:col-span-2 space-y-1">
-                    <span className="text-red-400 font-bold text-xs flex items-center gap-1.5 uppercase">
-                      <AlertTriangle className="w-4 h-4 text-red-500 animate-bounce shrink-0" />
-                      <span>{isHe ? 'הודעת כופר רשמית – תרחיש אמת' : 'Official Ransom Note – Live Simulation'}</span>
-                    </span>
-                    <p className="text-red-200 text-xs sm:text-sm font-semibold leading-relaxed">
-                      {isHe
-                        ? 'מערכת ה-ERP המרכזית, שרת הקבצים והגיבויים המקומיים ננעלו באמצעות RSA-4096. ללא מפתח הפיענוח, הקבצים יימחקו לצמיתות.'
-                        : 'Central ERP, File Server & Local Backups locked using RSA-4096. Without the private key, files will be deleted permanently.'}
-                    </p>
+                {/* System Technical Header Box */}
+                <div className="bg-black/90 p-3 rounded-xl border border-red-900/80 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] font-mono">
+                  <div>
+                    <span className="text-slate-500 block">{isHe ? 'מארח שנפרץ:' : 'Compromised Host:'}</span>
+                    <span className="text-red-400 font-bold">DC-PRIMARY-SRV</span>
                   </div>
-
-                  {/* Digital Timer */}
-                  <div className="bg-black/90 p-3 rounded-xl border border-red-600/70 flex flex-col items-center justify-center text-center shadow-lg">
-                    <span className="text-[10px] text-red-400 uppercase tracking-widest font-bold">
-                      {isHe ? 'זמן נותר לתשלום' : 'TIME REMAINING'}
-                    </span>
-                    <div className="text-2xl sm:text-3xl font-black text-red-500 tracking-wider font-mono drop-shadow-[0_0_12px_rgba(239,68,68,0.9)] my-1">
-                      {String(ransomTime.hours).padStart(2, '0')}:{String(ransomTime.minutes).padStart(2, '0')}:{String(ransomTime.seconds).padStart(2, '0')}
-                    </div>
+                  <div>
+                    <span className="text-slate-500 block">{isHe ? 'כתובת IP:' : 'Target IP:'}</span>
+                    <span className="text-red-400 font-bold">192.168.1.50</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">{isHe ? 'אלגוריתם הצפנה:' : 'Encryption:'}</span>
+                    <span className="text-amber-400 font-bold">RSA-4096 + AES-256</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">{isHe ? 'מזהה תקיפה:' : 'Victim ID:'}</span>
+                    <span className="text-cyan-400 font-bold">IL-TECH-882910</span>
                   </div>
                 </div>
 
-                {/* Encrypted Files List Preview */}
-                <div className="bg-black/90 p-4 rounded-xl border border-slate-800 space-y-2">
-                  <div className="flex items-center justify-between text-xs text-red-400 font-bold border-b border-slate-800 pb-2">
-                    <div className="flex items-center gap-1.5">
-                      <FileText className="w-4 h-4 text-red-500" />
-                      <span>{isHe ? 'דוגמת קבצים מוצפנים במערכת (.LOCKED):' : 'Sample Encrypted Files (.LOCKED):'}</span>
+                {/* Two-Column Authentic Ransomware Layout */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                  
+                  {/* Left Column: Red Alert Box & Dual Ticking Timers */}
+                  <div className="lg:col-span-5 bg-red-950/30 border border-red-600/70 p-4 rounded-xl space-y-4 shadow-inner flex flex-col justify-between">
+                    
+                    <div className="text-center space-y-2">
+                      <div className="inline-flex p-3 bg-red-600/20 border border-red-500 rounded-full text-red-500 animate-pulse">
+                        <ShieldAlert className="w-8 h-8" />
+                      </div>
+                      <h4 className="text-sm font-extrabold text-red-400 uppercase tracking-wider">
+                        {isHe ? 'דרישת כופר פעילה' : 'ACTIVE RANSOM DEMAND'}
+                      </h4>
+                      <p className="text-[11px] text-red-200 leading-relaxed font-sans">
+                        {isHe
+                          ? 'כל מסדי הנתונים, הגיבויים המקומיים וקובצי ה-ERP הוצפנו. אי תשלום בתוך הזמן הקצוב יוביל להכפלת הסכום ולפרסום המידע הסודי ברשת האפלה (DarkWeb).'
+                          : 'All databases, local backups, and ERP files encrypted. Failure to pay within time limit doubles price and releases stolen confidential files to DarkWeb.'}
+                      </p>
                     </div>
-                    <span className="text-[10px] text-slate-500">184,920 Files Total</span>
-                  </div>
-                  <div className="space-y-1.5 font-mono text-[11px]">
-                    <div className="text-red-400/90 flex items-center justify-between bg-red-950/40 px-2.5 py-1.5 rounded border border-red-900/30">
-                      <span>\\192.168.1.50\ERP_DATA\DATABASE_2026.MDF.LOCKED</span>
-                      <span className="text-[10px] bg-red-900/80 text-red-200 px-1.5 py-0.5 rounded font-bold">ENCRYPTED</span>
-                    </div>
-                    <div className="text-red-400/90 flex items-center justify-between bg-red-950/30 px-2.5 py-1.5 rounded border border-red-900/30">
-                      <span>\\SRV-FILE\FINANCE\PAYROLL_Q3_2026.XLSX.LOCKED</span>
-                      <span className="text-[10px] bg-red-900/80 text-red-200 px-1.5 py-0.5 rounded font-bold">ENCRYPTED</span>
-                    </div>
-                    <div className="text-red-400/90 flex items-center justify-between bg-red-950/30 px-2.5 py-1.5 rounded border border-red-900/30">
-                      <span>\\SRV-FILE\CUSTOMERS\CLIENT_CONTRACTS.PDF.LOCKED</span>
-                      <span className="text-[10px] bg-red-900/80 text-red-200 px-1.5 py-0.5 rounded font-bold">ENCRYPTED</span>
-                    </div>
-                    <div className="text-red-400/90 flex items-center justify-between bg-red-950/30 px-2.5 py-1.5 rounded border border-red-900/30">
-                      <span>C:\Users\Administrator\Documents\BACKUP_LOCAL_NAS.ZIP.LOCKED</span>
-                      <span className="text-[10px] bg-red-900/80 text-red-200 px-1.5 py-0.5 rounded font-bold">ENCRYPTED</span>
-                    </div>
-                  </div>
-                </div>
 
-                {/* Demand & Bitcoin Info Box */}
-                <div className="bg-slate-950 p-4 rounded-xl border border-red-900/60 space-y-3">
-                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-800 pb-2">
-                    <div>
-                      <span className="text-[11px] text-slate-400 block">{isHe ? 'דרישת הכופר:' : 'Ransom Demand:'}</span>
-                      <span className="text-lg font-bold text-amber-400">$50,000 USD <span className="text-xs text-slate-400 font-normal">(~1.082 BTC)</span></span>
+                    {/* Dual Countdown Timers */}
+                    <div className="space-y-2 pt-2 border-t border-red-900/60">
+                      
+                      <div className="bg-black/90 p-2.5 rounded-lg border border-red-600/60 text-center">
+                        <span className="text-[10px] text-red-400 uppercase tracking-widest font-bold block">
+                          {isHe ? 'זמן נותר לפני הכפלת הכופר' : 'TIME BEFORE PRICE DOUBLES'}
+                        </span>
+                        <div className="text-2xl font-black text-red-500 tracking-wider font-mono drop-shadow-[0_0_10px_rgba(239,68,68,0.9)] my-1">
+                          {String(ransomTime.hours).padStart(2, '0')}:{String(ransomTime.minutes).padStart(2, '0')}:{String(ransomTime.seconds).padStart(2, '0')}
+                        </div>
+                      </div>
+
+                      <div className="bg-black/90 p-2.5 rounded-lg border border-red-900 text-center">
+                        <span className="text-[10px] text-slate-400 uppercase tracking-widest font-bold block">
+                          {isHe ? 'זמן נותר למחיקת מפתח הפענוח' : 'TIME BEFORE DECRYPTION KEY DESTRUCTION'}
+                        </span>
+                        <div className="text-lg font-bold text-amber-500 font-mono my-0.5">
+                          71:59:{String(ransomTime.seconds).padStart(2, '0')}
+                        </div>
+                      </div>
+
                     </div>
-                    <div className="text-right">
-                      <span className="text-[11px] text-slate-400 block">{isHe ? 'סטטוס תשלום:' : 'Payment Status:'}</span>
-                      <span className="text-xs font-bold text-red-400 bg-red-950/80 px-2 py-0.5 rounded border border-red-500/40">
-                        UNPAID / WAITING FOR TRANSACTION
-                      </span>
+
+                    {/* Bitcoin Amount Box */}
+                    <div className="bg-black p-3 rounded-xl border border-red-600/80 text-center">
+                      <span className="text-[10px] text-slate-400 uppercase block">{isHe ? 'סכום כופר נדרש:' : 'REQUIRED RANSOM AMOUNT:'}</span>
+                      <div className="text-xl font-extrabold text-amber-400 my-0.5">$50,000 USD</div>
+                      <span className="text-[10px] text-slate-400 block font-mono">1.082491 BTC</span>
                     </div>
+
                   </div>
 
-                  <div className="space-y-1.5">
-                    <span className="text-xs text-slate-400 block font-bold">{isHe ? 'כתובת ארנק ביטקוין להעברה:' : 'Bitcoin Wallet Address:'}</span>
-                    <div className="flex items-center gap-2 bg-black p-2.5 rounded-lg border border-slate-800 text-cyan-400 text-xs font-mono break-all">
-                      <span className="flex-1 select-all font-bold">bc1q9x382f0a1l8zp9q3m4k2v8x9a7b6c5d4e3f21</span>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard?.writeText('bc1q9x382f0a1l8zp9q3m4k2v8x9a7b6c5d4e3f21');
-                          setCopiedWallet(true);
-                          setTimeout(() => setCopiedWallet(false), 2000);
-                        }}
-                        className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-sans flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
-                      >
-                        {copiedWallet ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                        <span>{copiedWallet ? (isHe ? 'הועתק!' : 'Copied!') : (isHe ? 'העתק' : 'Copy')}</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
+                  {/* Right Column: Encrypted File Audit & Bitcoin Payment Instructions */}
+                  <div className="lg:col-span-7 space-y-4">
+                    
+                    {/* Encrypted Files Audit */}
+                    <div className="bg-black/90 p-3.5 rounded-xl border border-slate-800 space-y-2">
+                      <div className="flex items-center justify-between text-xs text-red-400 font-bold border-b border-slate-800 pb-2">
+                        <div className="flex items-center gap-1.5">
+                          <FileText className="w-4 h-4 text-red-500" />
+                          <span>{isHe ? 'קובצים מוצפנים בזמן אמת (Sample .LOCKED):' : 'Encrypted File Tree (.LOCKED):'}</span>
+                        </div>
+                        <span className="text-[10px] bg-red-950 text-red-400 px-2 py-0.5 rounded border border-red-800">
+                          184,920 Files Locked
+                        </span>
+                      </div>
 
-                {/* Educational Note from TECH-SELECT */}
-                <div className="bg-gradient-to-r from-blue-950/60 via-slate-950 to-blue-950/60 p-4 rounded-xl border border-cyan-500/40 space-y-2">
-                  <div className="flex items-center gap-2 text-cyan-400 font-bold text-xs">
-                    <ShieldCheck className="w-4 h-4 text-cyan-400 shrink-0" />
-                    <span>{isHe ? '💡 איך מונעים מראות כזה בעסק שלכם במציאות?' : '💡 How to prevent this in real life?'}</span>
+                      <div className="space-y-1 font-mono text-[11px] max-h-36 overflow-y-auto pr-1">
+                        <div className="text-red-400/90 flex items-center justify-between bg-red-950/40 px-2 py-1 rounded border border-red-900/30">
+                          <span className="truncate">\\192.168.1.50\ERP_DATA\MSSQL_MAIN.MDF.LOCKED</span>
+                          <span className="text-[9px] bg-red-900 text-red-100 px-1 py-0.5 rounded shrink-0 font-bold">LOCKED</span>
+                        </div>
+                        <div className="text-red-400/90 flex items-center justify-between bg-red-950/30 px-2 py-1 rounded border border-red-900/30">
+                          <span className="truncate">\\SRV-FILE\FINANCE\PAYROLL_Q3_2026.XLSX.LOCKED</span>
+                          <span className="text-[9px] bg-red-900 text-red-100 px-1 py-0.5 rounded shrink-0 font-bold">LOCKED</span>
+                        </div>
+                        <div className="text-red-400/90 flex items-center justify-between bg-red-950/30 px-2 py-1 rounded border border-red-900/30">
+                          <span className="truncate">\\SRV-FILE\CUSTOMERS\LEGAL_CONTRACTS.PDF.LOCKED</span>
+                          <span className="text-[9px] bg-red-900 text-red-100 px-1 py-0.5 rounded shrink-0 font-bold">LOCKED</span>
+                        </div>
+                        <div className="text-red-400/90 flex items-center justify-between bg-red-950/30 px-2 py-1 rounded border border-red-900/30">
+                          <span className="truncate">C:\Users\Administrator\Documents\LOCAL_NAS_BACKUP.ZIP.LOCKED</span>
+                          <span className="text-[9px] bg-red-900 text-red-100 px-1 py-0.5 rounded shrink-0 font-bold">LOCKED</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Payment Wallet Copy Box */}
+                    <div className="bg-slate-950 p-3.5 rounded-xl border border-red-900/80 space-y-2">
+                      <span className="text-[11px] text-slate-300 font-bold block">{isHe ? 'כתובת ארנק ביטקוין לתשלום:' : 'Bitcoin Deposit Wallet:'}</span>
+                      <div className="flex items-center gap-2 bg-black p-2 rounded-lg border border-slate-800 text-cyan-400 text-xs font-mono">
+                        <span className="flex-1 select-all font-bold truncate">bc1q9x382f0a1l8zp9q3m4k2v8x9a7b6c5d4e3f21</span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard?.writeText('bc1q9x382f0a1l8zp9q3m4k2v8x9a7b6c5d4e3f21');
+                            setCopiedWallet(true);
+                            setTimeout(() => setCopiedWallet(false), 2000);
+                          }}
+                          className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-white text-[11px] font-sans flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
+                        >
+                          {copiedWallet ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          <span>{copiedWallet ? (isHe ? 'הועתק!' : 'Copied!') : (isHe ? 'העתק' : 'Copy')}</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Real CISO Security Advisory from TECH-SELECT */}
+                    <div className="bg-gradient-to-r from-blue-950/80 via-slate-950 to-blue-950/80 p-3.5 rounded-xl border border-cyan-500/50 space-y-1.5 font-sans">
+                      <div className="flex items-center gap-2 text-cyan-300 font-bold text-xs">
+                        <ShieldCheck className="w-4 h-4 text-cyan-400 shrink-0" />
+                        <span>{isHe ? 'הנחיית CISO ממומחי TECH-SELECT:' : 'CISO Security Briefing from TECH-SELECT:'}</span>
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        {isHe
+                          ? 'כך נראית מתקפת LockBit אמתית בתוך שרת ארגוני. ארגונים העובדים עם TECH-SELECT מוגנים בגיבוי ענן מוצדף (Immutable WORM) ובבידוד רשת אוטומטי (Automated Isolation). בלחיצת כפתור אחת, המערכת חוזרת לחיים בתוך 35 דקות בלבד!'
+                          : 'This is what an authentic LockBit cyber incident looks like inside an enterprise server. TECH-SELECT clients recover in 35 minutes using Immutable Cloud Snapshots and Automated Microsegmentation!'}
+                      </p>
+                    </div>
+
                   </div>
-                  <p className="text-xs text-slate-300 font-sans leading-relaxed">
-                    {isHe
-                      ? 'חברות מוגנות על ידי TECH-SELECT משתמשות בארכיטקטורת ענן הכוללת גיבויים נעולים (WORM - Immutable Storage) ומנגנוני בידוד רשת אוטומטיים (Microsegmentation). כשאסון כזה קורה – הענן עולה מחדש בלחיצת כפתור תוך 35 דקות בלבד וללא תשלום סנט אחד להאקרים!'
-                      : 'Enterprises protected by TECH-SELECT rely on immutable WORM cloud backups and automated microsegmentation. When disaster strikes, cloud snapshots spin up in 35 minutes flat with zero ransom paid!'}
-                  </p>
+
                 </div>
 
               </div>
@@ -1046,11 +1088,11 @@ export const DisasterGamePage: React.FC<{
               {/* Modal Footer */}
               <div className="bg-slate-950 p-4 border-t border-slate-800 flex items-center justify-between shrink-0">
                 <span className="text-[11px] text-slate-500 font-mono hidden sm:inline">
-                  TECH-SELECT SOC Incident Visualizer
+                  TECH-SELECT Incident Simulation Engine
                 </span>
                 <button
                   onClick={() => setIsRansomModalOpen(false)}
-                  className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-red-600/30"
+                  className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:opacity-95 text-white font-bold text-xs transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-red-600/30"
                 >
                   <X className="w-4 h-4" />
                   <span>{isHe ? 'סגור מסך כופרה וחזור לסימולטור ➔' : 'Close Screen & Return to Simulator ➔'}</span>

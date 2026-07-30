@@ -69,7 +69,7 @@ function MainApp() {
     { id: 'services', title: 'שירותי IT וענן', titleEn: 'IT & Cloud Services' },
     { id: 'defense', title: 'חברות ביטחוניות', titleEn: 'Defense Sector' },
     { id: 'disaster-game', title: 'מוכנות IT', titleEn: 'IT Readiness' },
-    { id: 'delivery', title: 'מודל Delivery', titleEn: 'Delivery Model' },
+    { id: 'delivery', title: 'מודל מצויינות', titleEn: 'Excellence Model' },
     { id: 'managed', title: 'מנהל IT מנוהל', titleEn: 'Managed IT' },
     { id: 'sectors', title: 'מגזרי תעשייה', titleEn: 'Industries' },
     { id: 'knowledge', title: 'מרכז ידע', titleEn: 'Knowledge Base' },

@@ -70,7 +70,7 @@ export const Footer: React.FC<FooterProps> = ({
               <li><a href="#defense" className="hover:text-cyan-300 transition-colors flex items-center gap-1"><ShieldAlert className="w-3 h-3 text-cyan-400" /> {isHe ? 'חברות ביטחוניות' : 'Defense Sector'}</a></li>
               <li><a href="#disaster-game" className="hover:text-red-400 transition-colors text-red-400 font-mono font-bold flex items-center gap-1"><span>🎮</span> <span>{isHe ? 'סימולטור SOC (Choose Disaster)' : 'Choose Your Own Disaster'}</span></a></li>
               <li><a href="#services" className="hover:text-cyan-300 transition-colors">{isHe ? 'שירותי IT, ענן & פיתוח' : 'IT & Cloud Services'}</a></li>
-              <li><a href="#delivery" className="hover:text-cyan-300 transition-colors">{isHe ? 'מודל Delivery' : 'Delivery Model'}</a></li>
+              <li><a href="#delivery" className="hover:text-cyan-300 transition-colors">{isHe ? 'מודל מצויינות' : 'Excellence Model'}</a></li>
               <li><a href="#managed" className="hover:text-cyan-300 transition-colors">{isHe ? 'מנהל IT מנוהל' : 'Managed IT'}</a></li>
               <li><a href="#sectors" className="hover:text-cyan-300 transition-colors">{isHe ? 'פתרונות למגזרים' : 'Industries'}</a></li>
               <li><a href="#knowledge" className="hover:text-cyan-300 transition-colors">{isHe ? 'מרכז הידע' : 'Knowledge Base'}</a></li>
