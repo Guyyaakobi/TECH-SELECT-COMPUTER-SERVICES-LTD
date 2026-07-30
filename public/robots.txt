@@ -1,4 +1,5 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://tech-select.co.il/sitemap.xml
+Sitemap: https://www.tech-select.co.il/sitemap.xml
+
