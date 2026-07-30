@@ -87,8 +87,8 @@ At TECH-SELECT, we advise organizations not to wait for the final deadline and b
 1. **Strict Zero Free AI Policy:**
 Do not use personal accounts or free public tools for work. Free tools utilize prompt data for public model training, exposing source code, legal contracts, and financial spreadsheets to third-party servers.
 
-2. **Enterprise SLA & Data Retention Guarantees Only:**
-Mandate Enterprise licenses (such as Microsoft Copilot Enterprise, Azure OpenAI, or ChatGPT Enterprise) that guarantee data encryption, zero model training retention, and complete NDA coverage.
+2. **Work Exclusively with Enterprise-Grade AI Systems:**
+Use organization-approved AI platforms with binding contractual data protection commitments—such as Microsoft 365 Copilot, Azure OpenAI, or ChatGPT Enterprise/Business—in alignment with service terms and corporate policy. These systems must ensure, depending on service configuration, that corporate data is not utilized for model training, is encrypted in transit and at rest, and is handled under strict security, privacy, and confidentiality obligations. Where Zero Data Retention is required, explicitly verify that the chosen service tier and configuration fulfill this guarantee.
 
 3. **Corporate AI Officer Appointment:**
 Appoint a dedicated AI Officer to oversee token budgets, License allocations, Role-Based Access Control (RBAC), and query anomaly monitoring.
