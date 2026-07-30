@@ -239,7 +239,7 @@ export const AccessibilityModal: React.FC<AccessibilityModalProps> = ({
         )}
 
         <div className="pt-2 text-[11px] text-slate-400 text-center font-mono">
-          {isHe ? `רכז נגישות: ${COMPANY_INFO.email} | ${COMPANY_INFO.phoneLandline}` : `Accessibility Coordinator: ${COMPANY_INFO.email}`}
+          {isHe ? `רכז נגישות: ${COMPANY_INFO.email}` : `Accessibility Coordinator: ${COMPANY_INFO.email}`}
         </div>
 
       </div>

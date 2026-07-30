@@ -118,8 +118,8 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ onOpenPrivacy })
                   </div>
                   <div>
                     <span className="text-xs text-slate-400 block font-mono">{isHe ? 'פנייה ישירה ב-WhatsApp' : 'WhatsApp Contact'}</span>
-                    <a href={COMPANY_INFO.whatsappUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-emerald-400 hover:text-emerald-300 transition-colors font-mono" dir="ltr">
-                      050-3900903 ({isHe ? 'לחץ להתכתבות' : 'Click to chat'})
+                    <a href={COMPANY_INFO.whatsappUrl} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-emerald-400 hover:text-emerald-300 transition-colors font-mono">
+                      {isHe ? 'לחץ להתכתבות ב-WhatsApp' : 'Click to chat on WhatsApp'}
                     </a>
                   </div>
                 </div>

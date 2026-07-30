@@ -129,10 +129,12 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ service, onClose, on
 
           <div className="flex items-center gap-3">
             <a
-              href={`tel:${COMPANY_INFO.phoneLandline}`}
-              className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-slate-200 border border-slate-800 rounded-xl text-xs font-mono font-bold transition-colors shadow-sm"
+              href={COMPANY_INFO.whatsappUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-mono font-bold transition-colors shadow-sm"
             >
-              {COMPANY_INFO.phoneLandline}
+              {isHe ? 'פנייה ב-WhatsApp' : 'WhatsApp Chat'}
             </a>
 
             <button

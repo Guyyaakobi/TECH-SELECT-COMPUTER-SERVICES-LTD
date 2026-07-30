@@ -239,10 +239,15 @@ export const DefensePage: React.FC<DefensePageProps> = ({ onBackToHome }) => {
                 </p>
 
                 <div className="space-y-3 pt-2 text-xs text-slate-300 font-medium font-mono">
-                  <div className="flex items-center gap-3">
-                    <Phone className="w-4 h-4 text-blue-400" />
-                    <span>{isHe ? 'קו ישיר' : 'Direct Line'}: {COMPANY_INFO.phoneLandline}</span>
-                  </div>
+                  <a
+                    href={COMPANY_INFO.whatsappUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-3 text-emerald-400 hover:text-emerald-300 transition-colors"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>{isHe ? 'פנייה ישירה ב-WhatsApp' : 'Direct WhatsApp Chat'}</span>
+                  </a>
                   <div className="flex items-center gap-3">
                     <Mail className="w-4 h-4 text-cyan-400" />
                     <span>{isHe ? 'דוא"ל' : 'Email'}: {COMPANY_INFO.email}</span>

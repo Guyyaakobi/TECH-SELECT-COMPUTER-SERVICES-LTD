@@ -60,7 +60,7 @@ export const LegalModals: React.FC<LegalModalProps> = ({ type, onClose }) => {
                 • תיוג תמונות ואלמנטים ויזואליים עבור קוראי מסך.
               </p>
               <p>
-                <strong className="text-white font-bold">רכז נגישות:</strong> ככל שנתקלתם בקושי בנגישות האתר, נשמח שתפנו אלינו בדוא"ל {COMPANY_INFO.email} או בטלפון {COMPANY_INFO.phoneLandline} ונטפל בפנייתכם בהקדם.
+                <strong className="text-white font-bold">רכז נגישות:</strong> ככל שנתקלתם בקושי בנגישות האתר, נשמח שתפנו אלינו בדוא"ל {COMPANY_INFO.email} ונטפל בפנייתכם בהקדם.
               </p>
             </>
           )}

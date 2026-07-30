@@ -308,7 +308,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 <span>{isHe ? 'פנייה ישירה ב-WhatsApp:' : 'WhatsApp Direct Support:'}</span>
                 <div className="flex items-center gap-1.5 text-emerald-400">
                   <WhatsAppIcon className="w-4 h-4 fill-current" />
-                  <span>050-3900903</span>
+                  <span>{isHe ? 'לחץ להתכתבות' : 'Click to chat'}</span>
                 </div>
               </a>
 

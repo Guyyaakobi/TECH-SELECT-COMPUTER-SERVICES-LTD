@@ -79,7 +79,7 @@ export const CommandTerminalModal: React.FC<CommandTerminalModalProps> = ({
 
       case 'contact':
         newLogs.push(
-          { type: 'output', text: `טלפון משרדי: ${COMPANY_INFO.phoneLandline}` },
+          { type: 'output', text: `פנייה ב-WhatsApp: ${COMPANY_INFO.whatsappUrl}` },
           { type: 'output', text: `דוא"ל: ${COMPANY_INFO.email}` },
           { type: 'output', text: `כתובת: ${COMPANY_INFO.address}` }
         );

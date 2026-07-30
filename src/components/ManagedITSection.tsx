@@ -91,10 +91,12 @@ export const ManagedITSection: React.FC = () => {
               </a>
 
               <a
-                href="tel:077-7700252"
-                className="inline-flex items-center gap-2 bg-white/5 hover:bg-white/10 text-slate-200 border border-white/10 font-mono font-bold px-6 py-3.5 rounded-full text-sm transition-all"
+                href={COMPANY_INFO.whatsappUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-medium px-6 py-3.5 rounded-full text-sm transition-all"
               >
-                <span>077-7700252</span>
+                <span>{isHe ? 'פנייה ישירה ב-WhatsApp' : 'WhatsApp Support'}</span>
               </a>
             </div>
           </div>
