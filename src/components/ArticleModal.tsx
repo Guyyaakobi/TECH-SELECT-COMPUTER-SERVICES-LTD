@@ -8,6 +8,75 @@ interface ArticleModalProps {
   onClose: () => void;
 }
 
+// Helper to render inline markdown formatting like **bold text**
+const renderFormattedInline = (text: string) => {
+  if (!text) return null;
+  const parts = text.split(/(\*\*.*?\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length >= 4) {
+      return (
+        <strong key={i} className="font-bold text-white">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    return part;
+  });
+};
+
+// Helper to render article body paragraphs, bullet points and numbered lists
+const renderFormattedContent = (content: string) => {
+  if (!content) return null;
+  const paragraphs = content.split(/\n\n+/);
+
+  return paragraphs.map((para, idx) => {
+    const lines = para.split('\n');
+    return (
+      <div key={idx} className="space-y-2 mb-4">
+        {lines.map((line, lIdx) => {
+          const trimmed = line.trim();
+          if (!trimmed) return null;
+
+          // Check bullet point (- or • or *)
+          if (trimmed.startsWith('- ') || trimmed.startsWith('• ') || trimmed.startsWith('* ')) {
+            const bulletText = trimmed.replace(/^[-•*]\s*/, '');
+            return (
+              <div key={lIdx} className="flex items-start gap-2.5 my-1 sm:pr-2">
+                <span className="text-cyan-400 mt-1 font-bold text-base shrink-0">•</span>
+                <p className="flex-1 leading-relaxed text-slate-200">
+                  {renderFormattedInline(bulletText)}
+                </p>
+              </div>
+            );
+          }
+
+          // Check numbered list (e.g., "1. ", "2. ")
+          const numMatch = trimmed.match(/^(\d+\.)\s*(.*)$/);
+          if (numMatch) {
+            return (
+              <div key={lIdx} className="flex items-start gap-2.5 my-1.5 sm:pr-1">
+                <span className="text-cyan-400 font-mono font-bold text-sm shrink-0 mt-0.5">
+                  {numMatch[1]}
+                </span>
+                <p className="flex-1 leading-relaxed text-slate-200">
+                  {renderFormattedInline(numMatch[2])}
+                </p>
+              </div>
+            );
+          }
+
+          // Standard paragraph line
+          return (
+            <p key={lIdx} className="leading-relaxed text-slate-200">
+              {renderFormattedInline(line)}
+            </p>
+          );
+        })}
+      </div>
+    );
+  });
+};
+
 export const ArticleModal: React.FC<ArticleModalProps> = ({ article, onClose }) => {
   const { isHe } = useLanguage();
   if (!article) return null;
@@ -56,12 +125,12 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({ article, onClose }) 
         </div>
 
         {/* Scrollable Article Body */}
-        <div className="p-6 overflow-y-auto space-y-4 text-slate-300 text-sm leading-relaxed font-normal whitespace-pre-line">
-          <div className="p-4 bg-slate-950/70 rounded-xl border border-slate-800 text-cyan-200 font-semibold">
-            {article.summary}
+        <div className="p-6 overflow-y-auto space-y-4 text-slate-300 text-sm font-normal">
+          <div className="p-4 bg-slate-950/70 rounded-xl border border-slate-800 text-cyan-200 font-semibold leading-relaxed">
+            {renderFormattedInline(article.summary)}
           </div>
-          <div className="text-base text-slate-200 leading-loose">
-            {article.content}
+          <div className="text-sm sm:text-base text-slate-200">
+            {renderFormattedContent(article.content)}
           </div>
         </div>
 
