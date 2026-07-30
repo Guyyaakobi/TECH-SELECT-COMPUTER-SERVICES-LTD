@@ -15,10 +15,76 @@ interface NavbarProps {
   onLanguageChange?: (lang: 'he' | 'en') => void;
 }
 
+// WhatsApp SVG Icon
 const WhatsAppIcon: React.FC<{ className?: string }> = ({ className = "w-4 h-4" }) => (
   <svg className={className} viewBox="0 0 24 24" fill="currentColor">
     <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414-.074-.124-.272-.198-.57-.347z"/>
     <path d="M12 0C5.373 0 0 5.373 0 12c0 2.118.552 4.107 1.517 5.838L0 24l6.326-1.481A11.942 11.942 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.848 0-3.582-.489-5.088-1.341l-.365-.208-3.754.879.897-3.66-.228-.372A9.945 9.945 0 012 12c0-5.514 4.486-10 10-10s10 4.486 10 10-4.486 10-10 10z"/>
+  </svg>
+);
+
+// Israel Flag SVG Icon
+const IsraelFlagIcon: React.FC<{ className?: string }> = ({ className = "w-4 h-3" }) => (
+  <svg className={`${className} rounded-[2px] shadow-sm shrink-0`} viewBox="0 0 640 480" fill="none">
+    <rect width="640" height="480" fill="#ffffff" />
+    <rect width="640" height="52" y="44" fill="#0038b8" />
+    <rect width="640" height="52" y="384" fill="#0038b8" />
+    <g transform="translate(320 240) scale(1.15)">
+      <polygon points="0,-50 43.3,25 -43.3,25" fill="none" stroke="#0038b8" strokeWidth="10" />
+      <polygon points="0,50 43.3,-25 -43.3,-25" fill="none" stroke="#0038b8" strokeWidth="10" />
+    </g>
+  </svg>
+);
+
+// USA Flag SVG Icon
+const UsFlagIcon: React.FC<{ className?: string }> = ({ className = "w-4 h-3" }) => (
+  <svg className={`${className} rounded-[2px] shadow-sm shrink-0`} viewBox="0 0 640 480" fill="none">
+    <rect width="640" height="480" fill="#bd3d44"/>
+    <path stroke="#ffffff" strokeWidth="37" d="M0 55.5h640M0 129h640M0 203h640M0 277h640M0 351h640M0 424.5h640"/>
+    <rect width="285" height="258.5" fill="#192f5d"/>
+    <g fill="#ffffff">
+      <circle cx="28" cy="25" r="7"/>
+      <circle cx="85" cy="25" r="7"/>
+      <circle cx="142" cy="25" r="7"/>
+      <circle cx="199" cy="25" r="7"/>
+      <circle cx="256" cy="25" r="7"/>
+      <circle cx="56.5" cy="50" r="7"/>
+      <circle cx="113.5" cy="50" r="7"/>
+      <circle cx="170.5" cy="50" r="7"/>
+      <circle cx="227.5" cy="50" r="7"/>
+      <circle cx="28" cy="75" r="7"/>
+      <circle cx="85" cy="75" r="7"/>
+      <circle cx="142" cy="75" r="7"/>
+      <circle cx="199" cy="75" r="7"/>
+      <circle cx="256" cy="75" r="7"/>
+      <circle cx="56.5" cy="100" r="7"/>
+      <circle cx="113.5" cy="100" r="7"/>
+      <circle cx="170.5" cy="100" r="7"/>
+      <circle cx="227.5" cy="100" r="7"/>
+      <circle cx="28" cy="125" r="7"/>
+      <circle cx="85" cy="125" r="7"/>
+      <circle cx="142" cy="125" r="7"/>
+      <circle cx="199" cy="125" r="7"/>
+      <circle cx="256" cy="125" r="7"/>
+      <circle cx="56.5" cy="150" r="7"/>
+      <circle cx="113.5" cy="150" r="7"/>
+      <circle cx="170.5" cy="150" r="7"/>
+      <circle cx="227.5" cy="150" r="7"/>
+      <circle cx="28" cy="175" r="7"/>
+      <circle cx="85" cy="175" r="7"/>
+      <circle cx="142" cy="175" r="7"/>
+      <circle cx="199" cy="175" r="7"/>
+      <circle cx="256" cy="175" r="7"/>
+      <circle cx="56.5" cy="200" r="7"/>
+      <circle cx="113.5" cy="200" r="7"/>
+      <circle cx="170.5" cy="200" r="7"/>
+      <circle cx="227.5" cy="200" r="7"/>
+      <circle cx="28" cy="225" r="7"/>
+      <circle cx="85" cy="225" r="7"/>
+      <circle cx="142" cy="225" r="7"/>
+      <circle cx="199" cy="225" r="7"/>
+      <circle cx="256" cy="225" r="7"/>
+    </g>
   </svg>
 );
 
@@ -130,16 +196,25 @@ export const Navbar: React.FC<NavbarProps> = ({
               <span>{isHe ? 'פנייה ב-WhatsApp' : 'WhatsApp Us'}</span>
             </a>
 
-            {/* Language Switcher Button with Globe Icon */}
+            {/* Language Switcher Button with Flags */}
             {onLanguageChange && (
               <button
                 onClick={() => onLanguageChange(isHe ? 'en' : 'he')}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/15 text-slate-200 text-[11px] xl:text-xs font-bold transition-all cursor-pointer hover:border-cyan-400/50 hover:text-cyan-300 shrink-0"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/15 border border-white/20 text-slate-100 text-[11px] xl:text-xs font-bold transition-all cursor-pointer hover:border-cyan-400/60 hover:text-cyan-200 shrink-0 shadow-sm active:scale-95"
                 title={isHe ? 'Switch site to English' : 'החלף שפה לעברית'}
                 aria-label="בחר שפה / Language"
               >
-                <Globe className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                <span className="font-mono uppercase">{isHe ? 'EN' : 'HE'}</span>
+                {isHe ? (
+                  <>
+                    <UsFlagIcon className="w-4 h-3" />
+                    <span className="font-sans">English</span>
+                  </>
+                ) : (
+                  <>
+                    <IsraelFlagIcon className="w-4 h-3" />
+                    <span className="font-sans">עברית</span>
+                  </>
+                )}
               </button>
             )}
 
@@ -159,11 +234,21 @@ export const Navbar: React.FC<NavbarProps> = ({
             {onLanguageChange && (
               <button
                 onClick={() => onLanguageChange(isHe ? 'en' : 'he')}
-                className="p-1.5 text-xs font-bold font-mono text-cyan-300 bg-white/10 hover:bg-white/15 rounded-full border border-white/15 flex items-center gap-1"
+                className="px-2.5 py-1.5 text-xs font-bold font-sans text-slate-100 bg-white/10 hover:bg-white/15 rounded-full border border-white/20 flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
                 aria-label="Switch Language"
+                title={isHe ? 'Switch to English' : 'החלף לעברית'}
               >
-                <Globe className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-                <span className="text-[10px] uppercase">{isHe ? 'EN' : 'HE'}</span>
+                {isHe ? (
+                  <>
+                    <UsFlagIcon className="w-4 h-3" />
+                    <span className="text-[11px] font-sans">EN</span>
+                  </>
+                ) : (
+                  <>
+                    <IsraelFlagIcon className="w-4 h-3" />
+                    <span className="text-[11px] font-sans">עברית</span>
+                  </>
+                )}
               </button>
             )}
 

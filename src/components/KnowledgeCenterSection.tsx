@@ -44,16 +44,26 @@ Recent critical CVEs in FortiOS (SSL-VPN / Remote Code Execution) allow unauthen
           ...art,
           title: 'Why Passwords Are Not Enough: Enterprise Multi-Factor Authentication (2FA/MFA)',
           categoryLabel: 'Cybersecurity',
-          summary: 'Over 80% of security breaches stem from compromised credentials. Why MFA is the fundamental baseline and how to prevent MFA Fatigue attacks.',
+          summary: 'Over 80% of security breaches stem from compromised credentials. Why MFA is the fundamental baseline and how to prepare for Microsoft deprecating SMS/Phone MFA.',
           readTime: '4 min read',
           date: 'July 12, 2026',
           author: 'TECH-SELECT Security Team',
-          content: `In today's threat landscape, passwords—regardless of length—no longer guarantee security. Phishing, credential stuffing, and password reuse make corporate credentials vulnerable targets.
+          content: `In today's threat landscape, passwords—regardless of length—no longer guarantee security. Phishing, targeted social engineering, and password reuse make corporate credentials vulnerable targets.
 
 Multi-Factor Authentication (MFA) creates a crucial barrier: even if a password is lost, access is denied without the secondary factor (authenticator app or hardware key).
 
 **Why SMS OTP is Deprecated:**
 SMS messages are vulnerable to SIM swapping and signal interception. The modern enterprise standard relies on authenticator apps (Microsoft Authenticator / Duo) or FIDO2 YubiKeys.
+
+**📢 Critical Update: Microsoft Phasing Out SMS and Phone Call MFA**
+Microsoft announced a gradual deprecation of Multi-Factor Authentication (MFA) via SMS and phone calls in Microsoft Entra ID, moving towards phishing-resistant authentication methods.
+
+• Starting September 1, 2026: Users relying on SMS or calls will be prompted to register for Microsoft Authenticator.
+• Starting February 1, 2027: Native support for SMS and phone call MFA will be completely retired.
+
+Organizations currently utilizing SMS or phone call MFA must prepare in advance and transition to Microsoft Authenticator, Passkeys (FIDO2), or advanced authentication.
+
+At TECH-SELECT, we advise organizations not to wait for the final deadline and begin auditing their MFA infrastructure immediately.
 
 **TECH-SELECT Deployment Best Practices:**
 1. **Conditional Access Policies:** Enforcing MFA based on user location, device compliance, and risk score in M365/Azure.
@@ -64,24 +74,60 @@ SMS messages are vulnerable to SIM swapping and signal interception. The modern 
       case 'ai-cyber-defense-2026':
         return {
           ...art,
-          title: 'Cybersecurity in the AI Era: Defending Against AI Attacks & Preventing Shadow AI Leaks',
+          title: 'CISO Guide to Corporate AI Management: Security Rules, Permissions & Data Leak Prevention',
           categoryLabel: 'AI Security',
-          summary: 'How attackers leverage AI for Spear Phishing and Deepfakes, and how organizations protect confidential data from public AI tools like ChatGPT and Claude.',
+          summary: 'How to manage AI safely in the organization? Guidelines for privacy-first enterprise systems, zero free AI policy, Corporate AI Officer roles, and token/permission controls.',
           readTime: '5 min read',
           date: 'June 20, 2026',
           author: 'TECH-SELECT AI Research & Cyber Unit',
-          content: `The artificial intelligence revolution offers unprecedented productivity, but simultaneously empowers threat actors with advanced, automated attack capabilities.
+          content: `The artificial intelligence revolution offers unprecedented productivity, but without strict management, it presents one of the greatest cybersecurity and privacy risks in modern enterprise environments.
 
-Attackers deploy AI models to craft flawless Spear Phishing campaigns, generate audio/video Deepfakes mimicking executives (CEO Fraud), and engineer polymorphic malware that dodges legacy antivirus signatures.
+**5 Golden Rules for Corporate AI Management (TECH-SELECT CISO Framework):**
 
-**The Shadow AI Threat:**
-Employees inadvertently upload source code, legal contracts, financial spreadsheets, and customer records into public LLMs (ChatGPT, Claude, Copilot), risking trade secret exposure on external servers.
+1. **Strict Zero Free AI Policy:**
+Do not use personal accounts or free public tools for work. Free tools utilize prompt data for public model training, exposing source code, legal contracts, and financial spreadsheets to third-party servers.
 
-**TECH-SELECT AI Security Framework:**
-- **Data Loss Prevention (DLP):** Automated rules preventing confidential file and snippet uploads to unapproved public AI tools.
-- **AI-Powered Email Defense:** Behavioral anomaly detection identifying Spear Phishing and impersonation attempts.
-- **Secure Code Repository Hardening:** Shielding IP and source code repositories from unauthorized AI scraping.
-- **Enterprise AI Governance:** Establishing clear corporate AI usage policies and employee training.`
+2. **Enterprise SLA & Data Retention Guarantees Only:**
+Mandate Enterprise licenses (such as Microsoft Copilot Enterprise, Azure OpenAI, or ChatGPT Enterprise) that guarantee data encryption, zero model training retention, and complete NDA coverage.
+
+3. **Corporate AI Officer Appointment:**
+Appoint a dedicated AI Officer to oversee token budgets, License allocations, Role-Based Access Control (RBAC), and query anomaly monitoring.
+
+4. **Least Privilege for AI Indexing:**
+Enterprise AI engines linked to SharePoint or M365 index all files accessible to an employee. If permissions are flawed, AI will surface restricted financial or HR data! Permission hardening is mandatory prior to AI rollout.
+
+5. **DLP & AI Telemetry:**
+Enforce automated Data Loss Prevention (DLP) rules blocking unauthorized file uploads, sensitive keyword leaks, and trade secret exposure.`
+        };
+
+      case 'backup-restore-architecture':
+        return {
+          ...art,
+          title: 'Returning to Backups: Immutable WORM Storage & True Disaster Recovery Architecture',
+          categoryLabel: 'Cloud & Backup',
+          summary: 'Why even advanced perimeter security cannot replace an un-hackable backup. The importance of immutable WORM storage, periodic recovery testing, and RTO benchmarks.',
+          readTime: '4 min read',
+          date: 'July 12, 2026',
+          author: 'TECH-SELECT Backup & Business Continuity Division',
+          content: `In modern cybersecurity, sophisticated attacks or catastrophic hardware failures can strike any organization. Cybersecurity and IT professionals understand one fundamental truth: **Ultimately, every business continuity strategy relies on backup quality and recovery capability.**
+
+**Why Traditional Backups (External Drive / Local NAS) Are No Longer Enough:**
+Modern attackers and ransomware target backup servers first! If your backups are connected to the network with standard admin credentials, attackers will encrypt the backups before encrypting your primary ERP databases and SAN storage.
+
+**The Three Pillars of Winning Backup & Disaster Recovery at TECH-SELECT:**
+
+1. **Immutable WORM Cloud Storage:**
+Backups are written in WORM (Write Once, Read Many) format in secure cloud storage. Even if an attacker gains Domain Admin rights inside your network, there is zero technical way to view, delete, or encrypt immutable cloud backups during the retention lock period.
+
+2. **The 3-2-1-1-0 Backup Rule:**
+- 3 copies of your data.
+- 2 different media types.
+- 1 offsite cloud copy.
+- 1 air-gapped / immutable isolated copy.
+- 0 errors during automated recovery verification!
+
+3. **True Recovery Simulation & RTO / RPO Testing:**
+A backup is not a backup until a successful restore is executed from it. At TECH-SELECT, we conduct periodic Disaster Recovery (DR) simulations guaranteeing a Recovery Time Objective (RTO) of under 35 minutes, ensuring your business resumes full operation in real emergencies without paying ransom.`
         };
 
       case 'airgapped-defense-networks':
@@ -110,10 +156,17 @@ How to maintain strict air-gapped isolation while safely facilitating essential 
           ...art,
           title: 'Importance of Corporate Network Architecture: Preventing Bottlenecks & Outages',
           categoryLabel: 'Networking & Infrastructure',
-          summary: 'Why proper switch, router, and AP architecture is key to business stability, and how to avoid costly network design mistakes.',
+          summary: 'Why proper switch, router, and access point architecture is key to business stability, and how to avoid costly network design mistakes.',
           readTime: '4 min read',
           date: 'May 15, 2026',
-          author: 'TECH-SELECT Networking Team'
+          author: 'TECH-SELECT Networking Team',
+          content: `Corporate network infrastructure is the nervous system of modern enterprise. Network drops, slow file transfers, or Voice-over-IP call disconnects stem from improper hardware sizing or lack of VLAN segmentation.
+
+In a professional network engineering project, TECH-SELECT executes:
+1. **Load Sizing & Traffic Assessment:** Evaluating user density, bandwidth demand, and latency-critical apps.
+2. **Enterprise OEM Hardware Selection:** Managed switches, redundant routers, and latest Wi-Fi standard access points.
+3. **Network Segmentation (VLANs):** Separating data workstations, VoIP telephony, security cameras, and guest networks for maximum security.
+4. **Full Engineering Documentation:** Cable labeling, topology schematics, and port mapping for operational order.`
         };
 
       case 'align-project-value':
@@ -124,7 +177,14 @@ How to maintain strict air-gapped isolation while safely facilitating essential 
           summary: 'Legacy setups built piecemeal cause recurring failures. How an alignment project restores operational order and uptime.',
           readTime: '3 min read',
           date: 'April 2, 2026',
-          author: 'TECH-SELECT Engineering Management'
+          author: 'TECH-SELECT Engineering Management',
+          content: `As companies grow, their IT environment frequently evolves haphazardly: unpatched servers, messy cable racks, excessive user permissions, and un-aligned workstations.
+
+A TECH-SELECT "Alignment Project" brings the organization to a single, professional engineering benchmark:
+- **Comprehensive Infrastructure Audit:** Identifying single points of failure, obsolete hardware, and security flaws.
+- **Server Rack Remediation:** Tidying network cabling, port tagging, UPS battery checks, and active hardware alignment.
+- **Security & Privilege Hardening:** Cleaning legacy accounts and sealing access vulnerabilities.
+- **Site Documentation:** Constructing a complete site dossier that provides total operational clarity.`
         };
 
       case 'hardware-lifecycle':
@@ -132,10 +192,16 @@ How to maintain strict air-gapped isolation while safely facilitating essential 
           ...art,
           title: 'OEM Business Hardware: Why Consumer Grade Gear Costs You More',
           categoryLabel: 'Hardware & Equipment',
-          summary: 'The difference between consumer and enterprise-grade hardware, and why full manufacturer warranty saves major capital.',
+          summary: 'The key differences between consumer gear and original business-grade equipment, and why full manufacturer warranty saves major capital.',
           readTime: '3 min read',
           date: 'March 10, 2026',
-          author: 'TECH-SELECT Procurement Team'
+          author: 'TECH-SELECT Procurement Team',
+          content: `Purchasing consumer grade PCs or discounted retail products for an enterprise environment quickly turns out to be a costly mistake. Enterprise Grade hardware is built for continuous workloads, featuring higher component tolerance and on-site manufacturer warranties.
+
+At TECH-SELECT, we supply original OEM hardware from Dell, HPE, Lenovo, Cisco, Fortinet, and Apple:
+- 100% Genuine hardware with direct manufacturer warranty.
+- Pre-configuration and corporate image deployment on all new units.
+- Dedicated Lifecycle Management from deployment to decommission.`
         };
 
       default:
@@ -156,6 +222,7 @@ How to maintain strict air-gapped isolation while safely facilitating essential 
         { id: 'all', label: 'הכל' },
         { id: 'cyber', label: 'סייבר ואבטחה' },
         { id: 'ai-security', label: 'בינה מלאכותית (AI)' },
+        { id: 'cloud-backup', label: 'גיבוי וענן' },
         { id: 'network', label: 'תקשורת ותשתיות' },
         { id: 'it-management', label: 'תשתיות וניהול' },
         { id: 'hardware', label: 'חומרה וציוד' },
@@ -164,6 +231,7 @@ How to maintain strict air-gapped isolation while safely facilitating essential 
         { id: 'all', label: 'All' },
         { id: 'cyber', label: 'Cybersecurity' },
         { id: 'ai-security', label: 'AI Security' },
+        { id: 'cloud-backup', label: 'Cloud & Backup' },
         { id: 'network', label: 'Networking' },
         { id: 'it-management', label: 'Management' },
         { id: 'hardware', label: 'Hardware' },
