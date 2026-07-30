@@ -1,6 +1,7 @@
 import React from 'react';
 import { Check, ShieldCheck, Server, Cloud, Cpu, Lock, ArrowLeft, ArrowRight, TrendingDown, Award } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
+import { COMPANY_INFO } from '../data/content';
 
 export const ManagedITSection: React.FC = () => {
   const { isHe } = useLanguage();
