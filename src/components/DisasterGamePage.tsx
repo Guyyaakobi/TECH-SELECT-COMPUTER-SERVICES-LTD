@@ -270,14 +270,14 @@ export const DisasterGamePage: React.FC<{
     },
     {
       id: 3,
-      textHe: '"תפעילו שחזור מוצדף מהענן (Immutable Cloud Backup) מהגיבוי של 02:00 בלילה."',
+      textHe: '"תפעילו שחזור מוצפן מהענן (Immutable Cloud Backup) מהגיבוי של 02:00 בלילה."',
       textEn: '"Spin up an Immutable Cloud Snapshot restore from the 02:00 AM backup."',
       damageMultiplier: 0,
       downtimeHours: 0.6, // 35 min
       stressFinal: 10,
       dataLossPercent: 0,
       status: 'optimal',
-      resultTitleHe: 'שחזור מוצדף מהענן בתוך 35 דקות',
+      resultTitleHe: 'שחזור מוצפן מהענן בתוך 35 דקות',
       resultTitleEn: 'Immutable Cloud Restore in 35 Minutes',
       resultBodyHe: 'הענן הנעול לא הושפע מההצפנה (Write-Once-Read-Many). המערכת מעלה שרת וירטואלי חלופי בענן בתוך 35 דקות. העסק עובד מלא, והצוות מנקה את השרת המקומי ברקע.',
       resultBodyEn: 'Immutable Cloud Storage remained untouched. Virtual cloud server spun up in 35 minutes flat. Operations run normally while cleaning local servers in background.'
@@ -1074,7 +1074,7 @@ export const DisasterGamePage: React.FC<{
                       </div>
                       <p className="text-xs text-slate-300 leading-relaxed">
                         {isHe
-                          ? 'כך נראית מתקפת LockBit אמתית בתוך שרת ארגוני. ארגונים העובדים עם TECH-SELECT מוגנים בגיבוי ענן מוצדף (Immutable WORM) ובבידוד רשת אוטומטי (Automated Isolation). בלחיצת כפתור אחת, המערכת חוזרת לחיים בתוך 35 דקות בלבד!'
+                          ? 'כך נראית מתקפת LockBit אמיתית בתוך שרת ארגוני. ארגונים העובדים עם TECH-SELECT מוגנים בגיבוי ענן מוצפן (Immutable WORM) ובבידוד רשת אוטומטי (Automated Isolation). בלחיצת כפתור אחת, המערכת חוזרת לחיים בתוך 35 דקות בלבד!'
                           : 'This is what an authentic LockBit cyber incident looks like inside an enterprise server. TECH-SELECT clients recover in 35 minutes using Immutable Cloud Snapshots and Automated Microsegmentation!'}
                       </p>
                     </div>

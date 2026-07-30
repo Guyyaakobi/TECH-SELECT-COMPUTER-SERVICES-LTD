@@ -279,7 +279,7 @@ At TECH-SELECT, we supply original OEM hardware from Dell, HPE, Lenovo, Cisco, F
               </h3>
               <p className="text-slate-300 text-xs sm:text-sm max-w-2xl leading-relaxed">
                 {isHe
-                  ? 'יום ראשון, 06:45 בבוקר. הקבצים מוצפנים והכופר דורש 50,000$. האם העסק שלך ישרוד או יתרסק? כנס לסימולטור ה-SOC והתנסה בהתמודדות מול מתקפת סייבר אמתית.'
+                  ? 'יום ראשון, 06:45 בבוקר. הקבצים מוצפנים והכופר דורש 50,000$. האם העסק שלך ישרוד או יתרסק? כנס לסימולטור ה-SOC והתנסה בהתמודדות מול מתקפת סייבר אמיתית.'
                   : 'Sunday, 06:45 AM. Files are encrypted with a $50,000 ransom. Will your business survive? Enter our SOC simulator and make critical split-second choices.'}
               </p>
             </div>
