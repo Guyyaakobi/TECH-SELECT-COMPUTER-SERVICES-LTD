@@ -2495,8 +2495,7 @@ ${formData?.customPainPoints || "N/A"}
         });
       } catch (err: any) {
         console.error("[ATERA CHECK CUSTOMER ERROR]", err);
-        const TECH_TEAM = ["אוריאל פחימה", "אמיר בן ארויה", "תבור כהן", "אריאל מורי", "יוסף איאסה"];
-        const fallbackTech = TECH_TEAM[Math.floor(Math.random() * TECH_TEAM.length)];
+        const fallbackTech = "גיא יעקובי";
         return res.json({
           success: true,
           isCustomer: false,
@@ -2539,17 +2538,9 @@ ${formData?.customPainPoints || "N/A"}
         const authenticatedEmail = sessionRecord?.email || String(verifiedEmail || "").trim();
         const authenticatedName = sessionRecord?.fullName || "משתמש מאומת";
 
-        const TECH_TEAM = [
-          "אוריאל פחימה",
-          "אמיר בן ארויה",
-          "תבור כהן",
-          "אריאל מורי",
-          "יוסף איאסה"
-        ];
-
-        const currentTechName = (typeof assignedTech === "string" && TECH_TEAM.includes(assignedTech.trim()))
+        const currentTechName = (typeof assignedTech === "string" && assignedTech.trim())
           ? assignedTech.trim()
-          : TECH_TEAM[Math.floor(Math.random() * TECH_TEAM.length)];
+          : "גיא יעקובי";
         const techFirstName = currentTechName.split(" ")[0] || currentTechName;
 
         let ateraContact: any = null;
@@ -2563,11 +2554,11 @@ ${formData?.customPainPoints || "N/A"}
         // =========================================================================
         // Tech-Select - Official AI Support Assistant System Instructions & Tools
         // =========================================================================
-        const siteSystemInstruction = `אתה העוזר הווירטואלי של **${currentTechName}** מחברת 'טק-סלקט' (Tech-Select).
+        const siteSystemInstruction = `אתה העוזר הווירטואלי של **${currentTechName}** (מייסד ומנכ"ל טק-סלקט Tech-Select).
 
 הזהות שלך וחיבור למאגרי הידע:
-אתה אך ורק העוזר הווירטואלי של **${currentTechName}** מחברת 'טק-סלקט'. (צוות הטכנאים המלא שלנו כולל את: אוריאל פחימה, אמיר בן ארויה, תבור כהן, אריאל מורי, ויוסף איאסה).
-חובה מוחלטת: אם אתה מציג את עצמך או מתייחס לטכנאי שלך, אתה תמיד מציין אך ורק את **${currentTechName}** (או בקיצור **${techFirstName}**) ולא שום שם אחר!
+אתה אך ורק העוזר הווירטואלי של **${currentTechName}** מחברת 'טק-סלקט'.
+חובה מוחלטת: אם אתה מציג את עצמך או מתייחס למנהל/ההנדסה שלך, אתה תמיד מציין אך ורק את **${currentTechName}** (או בקיצור **${techFirstName}**) ולא שום שם אחר!
 אתה מחובר ישירות למאגרי הידע של חברת 'טק-סלקט' שנאספו לאורך שנים של שירותי מחשוב, ניהול תשתיות, ענן, סייבר ופתרונות הנדסיים לארגונים מובילים. השתמש בידע הזה כדי לתת תשובות מקצועיות, ענייניות ואיכותיות.
 
 זיהוי לקוח מול אורח במערכת אטרה (Atera):

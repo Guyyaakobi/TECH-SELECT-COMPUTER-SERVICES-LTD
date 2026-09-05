@@ -183,16 +183,10 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
     };
   }, [isOpen]);
 
-  // Assigned Technician & Incognito State (Deterministic once on mount)
-  const [assignedTech, setAssignedTech] = useState<{ he: string; en: string }>(() => {
-    const team = [
-      { he: 'אוריאל פחימה', en: 'Uriel Fahima' },
-      { he: 'אמיר בן ארויה', en: 'Amir Ben Arouya' },
-      { he: 'תבור כהן', en: 'Tavor Cohen' },
-      { he: 'אריאל מורי', en: 'Ariel Mori' },
-      { he: 'יוסף איאסה', en: 'Yosef Ayasa' },
-    ];
-    return team[Math.floor(Math.random() * team.length)];
+  // Assigned Technician & Incognito State (Deterministic once on mount - Guy Yaakobi)
+  const [assignedTech, setAssignedTech] = useState<{ he: string; en: string }>({
+    he: 'גיא יעקובי',
+    en: 'Guy Yaakobi',
   });
   const [isIncognito, setIsIncognito] = useState(false);
 
@@ -309,20 +303,11 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
       });
       const data = await res.json();
       if (data && data.success) {
-        let finalTech = data.technician || currentTech;
-        // If guest (not in Atera), select technician randomly from the team:
-        // [אוריאל פחימה, אמיר בן ארויה, תבור כהן, אריאל מורי, יוסף איאסה]
+        let finalTech = data.technician || (isHe ? 'גיא יעקובי' : 'Guy Yaakobi');
         if (!data.isCustomer) {
-          const team = [
-            { he: 'אוריאל פחימה', en: 'Uriel Fahima' },
-            { he: 'אמיר בן ארויה', en: 'Amir Ben Arouya' },
-            { he: 'תבור כהן', en: 'Tavor Cohen' },
-            { he: 'אריאל מורי', en: 'Ariel Mori' },
-            { he: 'יוסף איאסה', en: 'Yosef Ayasa' },
-          ];
-          const randomPicked = team[Math.floor(Math.random() * team.length)];
-          setAssignedTech(randomPicked);
-          finalTech = isHe ? randomPicked.he : randomPicked.en;
+          const guy = { he: 'גיא יעקובי', en: 'Guy Yaakobi' };
+          setAssignedTech(guy);
+          finalTech = isHe ? guy.he : guy.en;
         }
 
         const info = {
