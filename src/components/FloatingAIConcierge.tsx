@@ -53,10 +53,14 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
   // Assistant Open State
   const [isOpen, setIsOpen] = useState(false);
 
-  // 3-Second Innovative Loading Animation on Chat Bubble Open
-  const [isOpeningLoading, setIsOpeningLoading] = useState(false);
-  const [loadingProgress, setLoadingProgress] = useState(0);
-  const [loadingPhase, setLoadingPhase] = useState(1);
+  // Auto-open chat window after 3 seconds from opening the website
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsOpen(true);
+    }, 3000);
+
+    return () => clearTimeout(timer);
+  }, []);
 
   // Chat State
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -394,27 +398,9 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
     }
   }, [isVerified, verifiedUser]);
 
-  // 3-Second Innovative Loading Trigger for Chat Bubble
+  // Open Concierge Trigger for Chat Bubble
   const handleOpenConcierge = () => {
     setIsOpen(true);
-    setIsOpeningLoading(true);
-    setLoadingProgress(20);
-    setLoadingPhase(1);
-
-    const t1 = setTimeout(() => {
-      setLoadingProgress(65);
-      setLoadingPhase(2);
-    }, 1000);
-
-    const t2 = setTimeout(() => {
-      setLoadingProgress(92);
-      setLoadingPhase(3);
-    }, 2000);
-
-    const t3 = setTimeout(() => {
-      setLoadingProgress(100);
-      setIsOpeningLoading(false);
-    }, 3000);
   };
 
   // CEO Simulator Trigger & Verification Gate
@@ -1023,52 +1009,7 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
             </div>
           </div>
 
-          {/* 3-Second Innovative Holographic Loading & Sync Screen */}
-          {isOpeningLoading ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-300">
-              <div className="relative mb-6">
-                {/* Outer pulsing holographic ring */}
-                <div className="w-24 h-24 rounded-full border-2 border-dashed border-sky-500/40 animate-spin [animation-duration:8s] flex items-center justify-center" />
-                <div className="absolute inset-2 rounded-full border-2 border-cyan-400/60 animate-spin [animation-duration:3s] [animation-direction:reverse]" />
-                
-                {/* Center glowing AI core */}
-                <div className="absolute inset-0 m-auto w-16 h-16 rounded-3xl bg-gradient-to-tr from-cyan-500 via-sky-500 to-indigo-600 p-[2px] shadow-xl shadow-sky-500/30 flex items-center justify-center">
-                  <div className={`w-full h-full rounded-3xl flex items-center justify-center ${isDark ? 'bg-slate-950' : 'bg-white'}`}>
-                    <Sparkles className="w-8 h-8 text-sky-400 animate-pulse" />
-                  </div>
-                </div>
-
-                {/* Radar ping beam */}
-                <span className="absolute inset-0 rounded-full bg-sky-400/20 animate-ping opacity-60 pointer-events-none" />
-              </div>
-
-              {/* Progress & Status Indicators */}
-              <div className="max-w-xs w-full space-y-3">
-                <div className="flex items-center justify-between text-xs font-mono font-semibold px-1">
-                  <span className="text-sky-400 flex items-center gap-1.5">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>LET THE AI WORK</span>
-                  </span>
-                  <span className="text-slate-400">{loadingProgress}%</span>
-                </div>
-
-                {/* Progress bar */}
-                <div className="w-full h-1.5 rounded-full bg-slate-800/60 overflow-hidden border border-white/5">
-                  <div
-                    className="h-full bg-gradient-to-r from-cyan-400 via-sky-500 to-indigo-500 transition-all duration-300 rounded-full"
-                    style={{ width: `${loadingProgress}%` }}
-                  />
-                </div>
-
-                {/* Dynamic technological phases */}
-                <p className="text-xs font-medium text-slate-300 min-h-[36px] flex items-center justify-center leading-relaxed">
-                  {loadingPhase === 1 && (isHe ? '⚡ מתחבר לליבת ה-AI וענן TECH-SELECT...' : 'Connecting to TECH-SELECT AI Core...')}
-                  {loadingPhase === 2 && (isHe ? '🛡️ מאמת שכבת אבטחה וסנכרון תשתית Atera...' : 'Verifying Security & Atera Infrastructure...')}
-                  {loadingPhase === 3 && (isHe ? `👨‍💻 סנכרון מהנדס ייעודי (${assignedTech.he}) ומאגר ידע פעיל...` : `Syncing dedicated engineer (${assignedTech.en})...`)}
-                </p>
-              </div>
-            </div>
-          ) : !isVerified ? (
+          {!isVerified ? (
             <div className="flex-1 flex flex-col justify-center items-center p-6 text-center overflow-y-auto">
               {authStep === 'email' && (
                 <form onSubmit={handleSendOtp} className="w-full max-w-sm flex flex-col items-center animate-in fade-in zoom-in-95 duration-200">

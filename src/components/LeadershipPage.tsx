@@ -187,9 +187,8 @@ export const LeadershipPage: React.FC<LeadershipPageProps> = ({
     { id: 'support', labelHe: 'תפעול, שטח ו-Helpdesk', labelEn: 'Field Operations & Helpdesk', icon: Headphones },
   ];
 
-  const filteredMembers = activeCategory === 'all' 
-    ? TEAM_MEMBERS 
-    : TEAM_MEMBERS.filter(m => m.category === activeCategory);
+  // Only show Guy Yaakobi (CEO & Founder) as requested
+  const filteredMembers = TEAM_MEMBERS.filter(m => m.id === 'guy-yaakobi');
 
   const getImageSrc = (member: TeamMember) => {
     return memberImageSources[member.id] || member.image || '';
@@ -246,11 +245,11 @@ export const LeadershipPage: React.FC<LeadershipPageProps> = ({
         }`}>
           {isHe ? (
             <>
-              האנשים שמאחורי <span className="gemini-text-gradient">היציבות והמצוינות הטכנולוגית</span>
+              הנהלת החברה ומצוינות טכנולוגית ב-<span className="gemini-text-gradient">TECH-SELECT</span>
             </>
           ) : (
             <>
-              The Leaders Behind Your <span className="gemini-text-gradient">Technological Stability</span>
+              Executive Leadership & Technology at <span className="gemini-text-gradient">TECH-SELECT</span>
             </>
           )}
         </h1>
@@ -259,14 +258,14 @@ export const LeadershipPage: React.FC<LeadershipPageProps> = ({
           isDark ? 'text-slate-300' : 'text-slate-600'
         }`}>
           {isHe
-            ? 'ב-TECH-SELECT אחריות הנדסית אינה סיסמה. כל חבר הנהלה ומוביל טכנולוגי מפקד על צוותים ייעודיים של מהנדסי מערכות, מומחי ענן, חוקרי סייבר, מפתחי Full-Stack וטכנאי שטח מנוסים בעלי סיווג ביטחוני מחמיר – המעניקים מעטפת הגנה ורציפות עסקית מלאה 24/7.'
-            : 'At TECH-SELECT, engineering accountability is our foundation. Each executive and technology director commands dedicated squads of systems engineers, cloud architects, cybersecurity researchers, full-stack developers, and certified field technicians holding active security clearances—delivering 24/7 mission-critical resilience.'}
+            ? 'ב-TECH-SELECT אחריות הנדסית אינה סיסמה. הנהלת החברה מעניקה ליווי טכנולוגי אישי וצמוד לכל לקוח, תכנון ארכיטקטורה מתקדמת, מעטפת ענן וסייבר מקיפה ורציפות עסקית מלאה 24/7.'
+            : 'At TECH-SELECT, engineering accountability is our foundation. Executive leadership provides personalized architectural advisory, robust cloud infrastructure, cybersecurity protection, and 24/7 business continuity.'}
         </p>
 
         {/* Value Highlights Chips with Linear CTA Soft Scale */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-8 animate-linear-cta">
           {[
-            { titleHe: 'צוותי מומחים תחת כל חטיבה', titleEn: 'Specialized Squads', subHe: 'מהנדסים וטכנאים ייעודיים', subEn: 'Dedicated tier-1 teams' },
+            { titleHe: 'ליווי אישי של המייסד', titleEn: 'Direct Executive Lead', subHe: 'מעורבות הנדסית צמודה', subEn: 'Hands-on architectural lead' },
             { titleHe: 'ספק משהב״ט מורשה', titleEn: 'MoD Authorized', subHe: 'סיווג ביטחוני בתוקף', subEn: 'Active Security Clearances' },
             { titleHe: 'אחריות Turnkey מלאה', titleEn: 'Turnkey Ownership', subHe: 'כתובת אחת לכל אתגר', subEn: 'Single accountable partner' },
             { titleHe: 'תמיכה ו-SLA מובטח', titleEn: 'Guaranteed SLA', subHe: 'מענה מהיר 24/7/365', subEn: '24/7 Enterprise response' },
@@ -289,35 +288,11 @@ export const LeadershipPage: React.FC<LeadershipPageProps> = ({
             </div>
           ))}
         </div>
-
-        {/* Category Filters */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-8 no-scrollbar">
-          {categories.map((cat) => {
-            const Icon = cat.icon;
-            const isActive = activeCategory === cat.id;
-            return (
-              <button
-                key={cat.id}
-                onClick={() => setActiveCategory(cat.id as any)}
-                className={`px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-2 cursor-pointer ${
-                  isActive
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
-                    : isDark
-                      ? 'bg-white/5 hover:bg-white/10 text-slate-300 border border-white/10'
-                      : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 shadow-xs'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{isHe ? cat.labelHe : cat.labelEn}</span>
-              </button>
-            );
-          })}
-        </div>
       </section>
 
-      {/* Leadership Grid Section */}
-      <section className="max-w-6xl mx-auto px-4 sm:px-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8">
+      {/* Leadership Grid Section - Centered for Guy Yaakobi */}
+      <section className="max-w-4xl mx-auto px-4 sm:px-6">
+        <div className="grid grid-cols-1 gap-6 sm:gap-8">
           {filteredMembers.map((member) => {
             const currentImgSrc = getImageSrc(member);
             const hasCustomImage = !!currentImgSrc && !imageErrors[member.id];

@@ -147,7 +147,7 @@ export const DeliveryHubsSection: React.FC<DeliveryHubsSectionProps> = ({
           {/* Eyebrow Pill Tag with Live Pulse */}
           <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold tracking-wide border shadow-sm backdrop-blur-md transition-all bg-blue-500/10 border-blue-500/30 text-blue-600 dark:text-blue-400 animate-linear-eyebrow">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>{isHe ? 'TECH-SELECT • אודות, חזון והאנשים' : 'TECH-SELECT • About, Vision & Team'}</span>
+            <span>{isHe ? 'TECH-SELECT • אודות, חזון והנהגה' : 'TECH-SELECT • About, Vision & Leadership'}</span>
           </div>
 
           {/* Headline Matching Home Page Design */}
@@ -227,7 +227,7 @@ export const DeliveryHubsSection: React.FC<DeliveryHubsSectionProps> = ({
                   : 'text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-white'
               }`}
             >
-              {isHe ? '2. האנשים וההנהגה' : '2. Team & Leadership'}
+              {isHe ? '2. הנהלת החברה ומייסד' : '2. Leadership & Founder'}
             </button>
             <button
               id="tab-expertise"
@@ -299,7 +299,7 @@ export const DeliveryHubsSection: React.FC<DeliveryHubsSectionProps> = ({
                 <div className="absolute bottom-3 start-3 end-3 sm:bottom-4 sm:start-4 sm:end-4 flex flex-wrap items-center justify-between gap-2">
                   <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold backdrop-blur-md bg-black/60 text-white border border-white/20">
                     <Building2 className="w-3.5 h-3.5 text-blue-400" />
-                    <span>{isHe ? 'מטה ההנדסה ומרכז התמיכה • רוטשילד, תל אביב' : 'Engineering & Support HQ • Tel Aviv'}</span>
+                    <span>{isHe ? 'מטה ההנדסה ומרכז התמיכה • יגאל אלון 88, תל אביב' : 'Engineering & Support HQ • Yigal Alon 88, Tel Aviv'}</span>
                   </div>
                   <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium backdrop-blur-md bg-emerald-950/70 text-emerald-300 border border-emerald-500/30">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -388,21 +388,6 @@ export const DeliveryHubsSection: React.FC<DeliveryHubsSectionProps> = ({
         {(activeTab === 'all' || activeTab === 'team') && (
           <section className="mb-14">
             
-            {/* Section Header */}
-            <div className="flex items-center gap-2 mb-6 border-b pb-3 border-slate-200 dark:border-white/10">
-              <div className="p-2 rounded-xl bg-blue-500/10 text-blue-500">
-                <Users className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
-                  {isHe ? 'האנשים שמאחורי הטכנולוגיה' : 'The People & Leadership'}
-                </h2>
-                <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {isHe ? 'מנהיגות מקצועית בגובה העיניים וצוות הנדסה מנוסה' : 'Hands-on leadership and experienced engineering talent'}
-                </p>
-              </div>
-            </div>
-
             {/* CEO SPOTLIGHT CARD - Clean, Horizontal, Airy */}
             <div className={`p-6 sm:p-7 rounded-2xl border mb-6 transition-all ${
               isDark 
@@ -482,76 +467,6 @@ export const DeliveryHubsSection: React.FC<DeliveryHubsSectionProps> = ({
                 </div>
 
               </div>
-            </div>
-
-            {/* 4 TEAM LEADS: Breathable Clean Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              {teamLeads.map((member) => {
-                return (
-                  <div
-                    key={member.id}
-                    className={`p-4 rounded-xl border flex flex-col justify-between transition-all ${
-                      isDark ? 'bg-[#090d18] border-white/10 hover:border-white/20' : 'bg-white border-slate-200 hover:border-slate-300 shadow-sm'
-                    }`}
-                  >
-                    <div>
-                      {/* Photo & Role */}
-                      <div className="flex items-center gap-3 mb-3">
-                        <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-800 shrink-0 border border-white/10">
-                          {!imageErrors[member.id] && getImageSrc(member) ? (
-                            <img
-                              src={getImageSrc(member)}
-                              alt={isHe ? member.nameHe : member.nameEn}
-                              onError={() => handleImageError(member)}
-                              className="w-full h-full object-cover object-top"
-                              loading="lazy"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center font-bold text-sm text-slate-300">
-                              {member.initials}
-                            </div>
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <h4 className="font-bold text-sm truncate text-slate-900 dark:text-white">
-                            {isHe ? member.nameHe : member.nameEn}
-                          </h4>
-                          <p className="text-[11px] text-blue-500 dark:text-blue-400 truncate">
-                            {isHe ? member.roleHe.split('|')[0].trim() : member.roleEn.split('|')[0].trim()}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* 1-Sentence Focus */}
-                      <p className={`text-xs line-clamp-2 leading-relaxed mb-3 ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
-                        {isHe ? member.teamDepartmentHe : member.teamDepartmentEn}
-                      </p>
-                    </div>
-
-                    {/* Bottom Action / LinkedIn */}
-                    <div className="pt-2 border-t border-slate-100 dark:border-white/5 flex items-center justify-between">
-                      <button
-                        onClick={() => setSelectedMember(member)}
-                        className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
-                      >
-                        {isHe ? 'קרא עוד על הניסיון' : 'View background'}
-                      </button>
-
-                      {member.linkedinUrl && (
-                        <a
-                          href={member.linkedinUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="p-1 rounded-md text-slate-400 hover:text-blue-500 transition-colors"
-                          title="LinkedIn"
-                        >
-                          <Linkedin className="w-3.5 h-3.5" />
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
             </div>
 
           </section>
