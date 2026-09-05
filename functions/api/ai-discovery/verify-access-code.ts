@@ -75,7 +75,7 @@ export async function handleVerifyAccessCode(
       );
     }
 
-    const trimmedCode = sanitizeString(code, 20).toUpperCase();
+    const trimmedCode = sanitizeString(code || body?.accessCode, 20).toUpperCase();
     const cleanEmail = sanitizeString(email || lead?.email, 120).toLowerCase();
     const cleanPhone = sanitizeString(phone || lead?.phone, 30);
     const identifier = cleanEmail || cleanPhone;

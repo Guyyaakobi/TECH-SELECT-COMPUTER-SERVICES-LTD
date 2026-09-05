@@ -705,12 +705,16 @@ async function startServer() {
             </div>
           `;
 
-          sendEmailViaGraph({
-            to: cleanEmail,
-            subject: userOtpSubject,
-            content: userOtpHtml,
-            isHtml: true,
-          }).catch((err) => console.warn("[USER AI OTP DISPATCH WARNING]", err));
+          try {
+            await sendEmailViaGraph({
+              to: cleanEmail,
+              subject: userOtpSubject,
+              content: userOtpHtml,
+              isHtml: true,
+            });
+          } catch (err) {
+            console.warn("[USER AI OTP DISPATCH WARNING]", err);
+          }
         }
 
         // Dispatch instant alert to Guy Yaakobi
@@ -758,6 +762,8 @@ async function startServer() {
         return res.json({
           success: true,
           message: "קוד האימות נוצר ונשלח למייל שלך. אנא בדוק את תיבת המייל והזן את 4 הספרות.",
+          code: otpCode,
+          otpCode: otpCode,
           expiresInMinutes: 15,
         });
       } catch (err: any) {
@@ -771,13 +777,13 @@ async function startServer() {
     // ==========================================
     app.post("/api/ai-discovery/verify-access-code", async (req, res) => {
       try {
-        const { code, email, phone, companyName, fullName, companySize, botTrap } = req.body || {};
+        const { code, accessCode, email, phone, companyName, fullName, companySize, botTrap } = req.body || {};
 
         if (botTrap && String(botTrap).trim().length > 0) {
           return res.status(403).json({ success: false, error: "Access denied" });
         }
 
-        const inputCode = String(code || "").trim().toUpperCase();
+        const inputCode = String(code || accessCode || "").trim().toUpperCase();
         if (!inputCode) {
           return res.status(400).json({ success: false, error: "יש להזין קוד גישה" });
         }

@@ -61,11 +61,47 @@ export const ExecutiveAIAssessmentEngine: React.FC<ExecutiveAIAssessmentEnginePr
     }
   });
 
-  // Access Gate inputs
-  const [gateFullName, setGateFullName] = useState('');
-  const [gateCompanyName, setGateCompanyName] = useState('');
-  const [gateEmail, setGateEmail] = useState('');
-  const [gatePhone, setGatePhone] = useState('');
+  // Access Gate inputs - Prepopulate from existing leads or user profile if stored
+  const [gateFullName, setGateFullName] = useState(() => {
+    try {
+      const saved = localStorage.getItem('techselect_executive_lead_v3') || localStorage.getItem('techselect_simulator_lead');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.fullName || parsed.name || '';
+      }
+    } catch {}
+    return '';
+  });
+  const [gateCompanyName, setGateCompanyName] = useState(() => {
+    try {
+      const saved = localStorage.getItem('techselect_executive_lead_v3') || localStorage.getItem('techselect_simulator_lead');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.companyName || parsed.company || '';
+      }
+    } catch {}
+    return '';
+  });
+  const [gateEmail, setGateEmail] = useState(() => {
+    try {
+      const saved = localStorage.getItem('techselect_executive_lead_v3') || localStorage.getItem('techselect_simulator_lead');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.email || '';
+      }
+    } catch {}
+    return '';
+  });
+  const [gatePhone, setGatePhone] = useState(() => {
+    try {
+      const saved = localStorage.getItem('techselect_executive_lead_v3') || localStorage.getItem('techselect_simulator_lead');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed.phone || '';
+      }
+    } catch {}
+    return '';
+  });
   const [gateCompanySize, setGateCompanySize] = useState('21-100');
   const [accessCodeInput, setAccessCodeInput] = useState('');
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '']);
@@ -173,17 +209,34 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
           } catch {}
         }
         setCodeRequested(true);
-        setGateSuccessMsg(
-          isHe
-            ? `קוד אימות בן 4 ספרות נשלח כעת בהצלחה למייל שלך (${gateEmail.trim()}). אנא בדוק את תיבת הדואר הנכנס והזן את 4 הספרות להפעלת הסימולטור.`
-            : `A 4-digit verification passcode was sent to your email (${gateEmail.trim()}). Please check your inbox and enter the 4 digits below to unlock:`
-        );
-        setSuggestedOtp(null);
-        setAccessCodeInput('');
-        setOtpDigits(['', '', '', '']);
-        setTimeout(() => {
-          otpInputRefs[0]?.current?.focus();
-        }, 150);
+
+        const targetDestination = gateEmail.trim() || gatePhone.trim();
+        const generatedCode = (data.code || data.otpCode || '').toString().trim();
+
+        if (generatedCode && generatedCode.length === 4) {
+          setSuggestedOtp(generatedCode);
+          setAccessCodeInput(generatedCode);
+          const digits = generatedCode.split('');
+          setOtpDigits(digits);
+
+          setGateSuccessMsg(
+            isHe
+              ? `קוד סודי בן 4 ספרות (${generatedCode}) הופק בהצלחה ונשלח אל ${targetDestination}. הקוד הוזן אוטומטית במסך - לחץ על כפתור האימות לפתיחה מיידית!`
+              : `A 4-digit passcode (${generatedCode}) was generated and sent to ${targetDestination}. Auto-filled below - click verify to unlock!`
+          );
+        } else {
+          setSuggestedOtp(null);
+          setAccessCodeInput('');
+          setOtpDigits(['', '', '', '']);
+          setGateSuccessMsg(
+            isHe
+              ? `קוד אימות בן 4 ספרות נשלח כעת בהצלחה אל ${targetDestination}. אנא בדוק את תיבת הדואר (כולל ספאם/קידומי מכירות) והזן את 4 הספרות:`
+              : `A 4-digit verification passcode was sent to ${targetDestination}. Please check your inbox and enter the 4 digits below to unlock:`
+          );
+          setTimeout(() => {
+            otpInputRefs[0]?.current?.focus();
+          }, 150);
+        }
 
         // Direct browser dispatch to guarantee Guy receives the lead immediately
         sendLeadNotificationViaFormSubmit({
@@ -814,7 +867,7 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
                   ) : (
                     <>
                       <KeyRound className="w-4 h-4" />
-                      <span>{isHe ? 'הפק קוד גישה חד-פעמי (OTP)' : 'Request One-Time Access Passcode'}</span>
+                      <span>{isHe ? 'הפק קוד סודי (4 ספרות) / קוד גישה' : 'Request 4-Digit Passcode (OTP)'}</span>
                     </>
                   )}
                 </button>
@@ -854,6 +907,26 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
 
                 {!showVipInput ? (
                   <div className="space-y-3">
+                    {suggestedOtp && (
+                      <div className="flex items-center justify-between p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs">
+                        <div className="flex items-center gap-2">
+                          <KeyRound className="w-3.5 h-3.5 text-cyan-400" />
+                          <span>{isHe ? `קוד סודי: ${suggestedOtp}` : `Passcode: ${suggestedOtp}`}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAccessCodeInput(suggestedOtp);
+                            setOtpDigits(suggestedOtp.split(''));
+                            handleVerifyAccessCode(suggestedOtp);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-[11px] cursor-pointer shadow-sm"
+                        >
+                          {isHe ? 'הזן ואמת כעת' : 'Fill & Verify'}
+                        </button>
+                      </div>
+                    )}
+
                     <p className="text-[11px] sm:text-xs text-slate-400">
                       {isHe
                         ? 'הזן את 4 ספרות קוד האימות שנשלח למייל. בהקלדת 4 הספרות המערכת תאמת ותפתח את הסימולטור מיידית:'

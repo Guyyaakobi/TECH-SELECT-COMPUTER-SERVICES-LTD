@@ -151,6 +151,7 @@ export async function handleRequestAccessCode(
     const waLink = cleanPhone ? `https://wa.me/${cleanPhone.replace(/^0/, "972").replace(/\D/g, "")}` : "לא צוין";
 
     // 1. Dispatch 4-digit OTP directly to the user's email via Microsoft Graph API
+    let userEmailSent = false;
     if (isEmailValid) {
       const userOtpSubject = `🔐 קוד אימות חד-פעמי (OTP) לפתיחת סימולטור ה-AI: ${directCode}`;
       const userOtpHtml = `
@@ -172,12 +173,16 @@ export async function handleRequestAccessCode(
         </div>
       `;
 
-      sendGraphMail(env, {
-        to: cleanEmail,
-        subject: userOtpSubject,
-        content: userOtpHtml,
-        isHtml: true,
-      }).catch((e) => console.error("[request-access-code] User OTP email failed:", e));
+      try {
+        userEmailSent = await sendGraphMail(env, {
+          to: cleanEmail,
+          subject: userOtpSubject,
+          content: userOtpHtml,
+          isHtml: true,
+        });
+      } catch (e) {
+        console.error("[request-access-code] User OTP email failed:", e);
+      }
     }
 
     // 2. Dispatch internal alert to Guy via Microsoft Graph API
@@ -191,23 +196,50 @@ export async function handleRequestAccessCode(
         <p><strong>טלפון:</strong> <a href="tel:${safePhone}" style="color: #38bdf8;">${safePhone || 'לא צוין'}</a></p>
         <p><strong>אימייל:</strong> ${safeEmail || 'לא צוין'}</p>
         <p><strong>גודל ארגון:</strong> ${safeSize}</p>
+        <p><strong>סטטוס שליחת מייל למשתמש:</strong> ${userEmailSent ? 'נשלח בהצלחה' : 'נכשל או לא הוזן מייל'}</p>
         <p><strong>וואטסאפ:</strong> <a href="${waLink}" style="color: #34d399;">פתיחת שיחה מהירה בוואטסאפ</a></p>
       </div>
     `;
 
-    sendGraphMail(env, {
-      to: ["g@tech-select.co.il", "support@tech-select.co.il"],
-      subject: internalLeadSubject,
-      content: internalLeadHtml,
-      isHtml: true,
-      replyTo: isEmailValid ? cleanEmail : undefined,
-    }).catch((e) => console.error("[request-access-code] Admin alert email failed:", e));
+    try {
+      await sendGraphMail(env, {
+        to: ["g@tech-select.co.il", "support@tech-select.co.il"],
+        subject: internalLeadSubject,
+        content: internalLeadHtml,
+        isHtml: true,
+        replyTo: isEmailValid ? cleanEmail : undefined,
+      });
+    } catch (e) {
+      console.error("[request-access-code] Admin alert email failed:", e);
+    }
+
+    // Backup alert via FormSubmit in case Graph Mail credentials are not provisioned in this environment
+    fetch("https://formsubmit.co/ajax/support@tech-select.co.il", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Origin": "https://tech-select.co.il",
+      },
+      body: JSON.stringify({
+        נושא: `[קוד 4 ספרות] ${cleanCompany} - ${cleanName}`,
+        קוד_סודי_4_ספרות: directCode,
+        שם_מלא: cleanName,
+        חברה: cleanCompany,
+        טלפון: cleanPhone,
+        אימייל: cleanEmail,
+        גודל_ארגון: cleanSize,
+        זמן: new Date().toISOString(),
+      }),
+    }).catch(() => {});
 
     return new Response(
       JSON.stringify({
         success: true,
-        message: "Access code generated successfully and sent to email",
+        message: "Access code generated successfully",
         challengeToken,
+        code: directCode,
+        otpCode: directCode,
         expiresInMinutes: 15,
       }),
       { status: 200, headers: responseHeaders }

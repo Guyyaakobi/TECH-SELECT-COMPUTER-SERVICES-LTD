@@ -529,12 +529,16 @@ async function startServer() {
               </div>
             </div>
           `;
-          sendEmailViaGraph({
-            to: cleanEmail,
-            subject: userOtpSubject,
-            content: userOtpHtml,
-            isHtml: true
-          }).catch((err) => console.warn("[USER AI OTP DISPATCH WARNING]", err));
+          try {
+            await sendEmailViaGraph({
+              to: cleanEmail,
+              subject: userOtpSubject,
+              content: userOtpHtml,
+              isHtml: true
+            });
+          } catch (err) {
+            console.warn("[USER AI OTP DISPATCH WARNING]", err);
+          }
         }
         const alertHtml = `
           <div dir="rtl" style="font-family: Arial, sans-serif; background-color: #0b0f19; color: #f1f5f9; padding: 24px; max-width: 650px; margin: 0 auto; border-radius: 12px; border: 1px solid #1e293b;">
@@ -582,6 +586,8 @@ async function startServer() {
         return res.json({
           success: true,
           message: "\u05E7\u05D5\u05D3 \u05D4\u05D0\u05D9\u05DE\u05D5\u05EA \u05E0\u05D5\u05E6\u05E8 \u05D5\u05E0\u05E9\u05DC\u05D7 \u05DC\u05DE\u05D9\u05D9\u05DC \u05E9\u05DC\u05DA. \u05D0\u05E0\u05D0 \u05D1\u05D3\u05D5\u05E7 \u05D0\u05EA \u05EA\u05D9\u05D1\u05EA \u05D4\u05DE\u05D9\u05D9\u05DC \u05D5\u05D4\u05D6\u05DF \u05D0\u05EA 4 \u05D4\u05E1\u05E4\u05E8\u05D5\u05EA.",
+          code: otpCode,
+          otpCode,
           expiresInMinutes: 15
         });
       } catch (err) {
@@ -591,11 +597,11 @@ async function startServer() {
     });
     app.post("/api/ai-discovery/verify-access-code", async (req, res) => {
       try {
-        const { code, email, phone, companyName, fullName, companySize, botTrap } = req.body || {};
+        const { code, accessCode, email, phone, companyName, fullName, companySize, botTrap } = req.body || {};
         if (botTrap && String(botTrap).trim().length > 0) {
           return res.status(403).json({ success: false, error: "Access denied" });
         }
-        const inputCode = String(code || "").trim().toUpperCase();
+        const inputCode = String(code || accessCode || "").trim().toUpperCase();
         if (!inputCode) {
           return res.status(400).json({ success: false, error: "\u05D9\u05E9 \u05DC\u05D4\u05D6\u05D9\u05DF \u05E7\u05D5\u05D3 \u05D2\u05D9\u05E9\u05D4" });
         }
