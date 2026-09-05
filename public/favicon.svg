@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090d16"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="cyanBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="50%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+    <linearGradient id="screenGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7"/>
+      <stop offset="100%" stop-color="#0369a1"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background rounded squircle -->
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#bgGrad)" stroke="url(#cyanBlue)" stroke-width="3"/>
+
+  <!-- Glowing core aura -->
+  <circle cx="32" cy="30" r="16" fill="#38bdf8" opacity="0.15"/>
+
+  <!-- Laptop Display Frame -->
+  <rect x="13" y="14" width="38" height="25" rx="3" fill="#0b1120" stroke="#38bdf8" stroke-width="2.5"/>
+  
+  <!-- Screen Display with glowing prompt/signal -->
+  <rect x="16" y="17" width="32" height="19" rx="1.5" fill="#031525"/>
+  
+  <!-- Screen Tech Accent / Pulse Signal -->
+  <path d="M20 27 L25 27 L28 22 L32 31 L35 25 L38 27 L44 27" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="32" cy="31" r="2" fill="#22d3ee"/>
+
+  <!-- Laptop Base & Hinge -->
+  <path d="M7 43 C7 41 9 40 11 40 H53 C55 40 57 41 57 43 V44 C57 46 55 47 53 47 H11 C9 47 7 46 7 44 Z" fill="url(#cyanBlue)"/>
+  
+  <!-- Trackpad Notch -->
+  <path d="M27 41 H37 V43 C37 43.5 36.5 44 36 44 H28 C27.5 44 27 43.5 27 43 Z" fill="#090d16"/>
+</svg>
