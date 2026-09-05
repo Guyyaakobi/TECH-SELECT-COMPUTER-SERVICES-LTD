@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * Cloudflare Pages Function & Worker API Handler
  * GET & POST /api/tickets/lookup
@@ -10,12 +9,23 @@
  * 3. Never returns ticket details or customer names until the 4-digit code is verified.
  */
 
+import {
+  getCorsHeaders,
+  getSecurityHeaders,
+  sanitizeString,
+  getClientIp,
+  checkRateLimit,
+  recordFailedAttempt,
+  resetFailedAttempts,
+} from "../_shared/security";
+
 interface Env {
   ATERA_API_KEY?: string;
   AT_KEY?: string;
   TENANT_ID?: string;
   CLIENT_ID?: string;
   CLIENT_SECRET?: string;
+  ADMIN_MASTER_CODE?: string;
   [key: string]: any;
 }
 
@@ -28,9 +38,6 @@ interface PendingOtp {
   createdAt: number;
   expiresAt: number;
 }
-
-// Master bypass codes for testing / emergency access
-const MASTER_CODES = new Set(["9999", "1234", "8888"]);
 
 // Memory cache for active OTPs (10 min TTL)
 const pendingOtps = new Map<string, PendingOtp>();
@@ -172,28 +179,32 @@ async function sendOtpViaGraph(toEmail: string, code: string, env: any, customer
   }
 }
 
-export async function onRequestOptions() {
+export async function onRequestOptions(contextOrRequest: any): Promise<Response> {
+  const request = contextOrRequest?.request || contextOrRequest;
   return new Response(null, {
     status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-API-KEY",
-    },
+    headers: getCorsHeaders(request, "GET, POST, OPTIONS"),
   });
 }
 
 export async function handleTicketLookup(request: Request, env: Env, _ctx?: any): Promise<Response> {
-  const corsHeaders = {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-API-KEY",
-  };
+  const corsHeaders = getCorsHeaders(request, "GET, POST, OPTIONS");
+  const secHeaders = getSecurityHeaders();
+  const responseHeaders = { ...corsHeaders, ...secHeaders, "Content-Type": "application/json" };
 
   cleanupExpiredOtps();
 
   try {
+    const clientIp = getClientIp(request);
+    if (!checkRateLimit(`ticket_lookup_${clientIp}`, 30, 10 * 60 * 1000)) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "יותר מדי בקשות לאיתור קריאות. אנא נסה שוב בעוד מספר דקות.",
+        }),
+        { status: 429, headers: responseHeaders }
+      );
+    }
     const url = new URL(request.url);
     let body: any = {};
     if (request.method === "POST") {
@@ -210,7 +221,7 @@ export async function handleTicketLookup(request: Request, env: Env, _ctx?: any)
           success: false,
           error: "חובה לציין כתובת אימייל או מספר קריאה לאיתור",
         }),
-        { status: 400, headers: corsHeaders }
+        { status: 400, headers: responseHeaders }
       );
     }
 
@@ -278,7 +289,7 @@ export async function handleTicketLookup(request: Request, env: Env, _ctx?: any)
               notFound: true,
               message: `קריאה #${ticketId} לא נמצאה במערכת השירות.`,
             }),
-            { status: 404, headers: corsHeaders }
+            { status: 404, headers: responseHeaders }
           );
         }
       }
@@ -317,24 +328,28 @@ export async function handleTicketLookup(request: Request, env: Env, _ctx?: any)
             maskedEmail,
             message: `מטעמי אבטחת מידע ופרטיות, קוד אימות בן 4 ספרות נשלח לכתובת המייל הרשומה (${maskedEmail}). יש להזין את הקוד כדי לצפות בסטטוס הקריאה.`,
           }),
-          { status: 200, headers: corsHeaders }
+          { status: 200, headers: responseHeaders }
         );
       }
 
       // 2. Code IS provided -> verify
-      const isMaster = MASTER_CODES.has(code);
+      const envMaster = env.ADMIN_MASTER_CODE || (typeof process !== "undefined" && process.env?.ADMIN_MASTER_CODE);
+      const isMaster = Boolean(envMaster && envMaster.length >= 8 && code === envMaster.trim().toUpperCase());
       const pendingMatch = pendingOtps.get(code) || pendingOtps.get(`ticket_${foundTicket.TicketID}`) || (targetEmail ? pendingOtps.get(targetEmail) : null);
       const isMatch = isMaster || (pendingMatch && (pendingMatch.code === code) && Date.now() <= pendingMatch.expiresAt);
 
       if (!isMatch) {
+        const attempt = recordFailedAttempt(`ticket_otp_${targetEmail || clientIp}`, 5, 15 * 60 * 1000);
         return new Response(
           JSON.stringify({
             success: false,
-            error: "קוד האימות שהוזן שגוי או שפג תוקפו. אנא בדקו את 4 הספרות שנשלחו למייל ונסו שוב.",
+            error: `קוד האימות שהוזן שגוי או שפג תוקפו. נותרו ${attempt.remainingAttempts} ניסיונות.`,
           }),
-          { status: 401, headers: corsHeaders }
+          { status: 401, headers: responseHeaders }
         );
       }
+
+      resetFailedAttempts(`ticket_otp_${targetEmail || clientIp}`);
 
       // Clean up OTP after use
       if (pendingMatch) pendingOtps.delete(pendingMatch.code);
@@ -456,24 +471,28 @@ export async function handleTicketLookup(request: Request, env: Env, _ctx?: any)
             email,
             message: `מטעמי אבטחת מידע וסודיות, נשלח קוד אימות בן 4 ספרות למייל שלך (${maskedEmail}). אנא הזינו את 4 הספרות כדי לצפות בסטטוס הקריאות.`,
           }),
-          { status: 200, headers: corsHeaders }
+          { status: 200, headers: responseHeaders }
         );
       }
 
       // 2. Code IS provided -> verify
-      const isMaster = MASTER_CODES.has(code);
+      const envMaster = env.ADMIN_MASTER_CODE || (typeof process !== "undefined" && process.env?.ADMIN_MASTER_CODE);
+      const isMaster = Boolean(envMaster && envMaster.length >= 8 && code === envMaster.trim().toUpperCase());
       const pendingMatch = pendingOtps.get(code) || pendingOtps.get(email);
       const isMatch = isMaster || (pendingMatch && (pendingMatch.code === code) && Date.now() <= pendingMatch.expiresAt);
 
       if (!isMatch) {
+        const attempt = recordFailedAttempt(`ticket_otp_${email || clientIp}`, 5, 15 * 60 * 1000);
         return new Response(
           JSON.stringify({
             success: false,
-            error: "קוד האימות שהוזן שגוי או שפג תוקפו. אנא בדקו את 4 הספרות שנשלחו למייל ונסו שוב.",
+            error: `קוד האימות שהוזן שגוי או שפג תוקפו. נותרו ${attempt.remainingAttempts} ניסיונות.`,
           }),
-          { status: 401, headers: corsHeaders }
+          { status: 401, headers: responseHeaders }
         );
       }
+
+      resetFailedAttempts(`ticket_otp_${email || clientIp}`);
 
       if (pendingMatch) pendingOtps.delete(pendingMatch.code);
 
@@ -495,13 +514,13 @@ export async function handleTicketLookup(request: Request, env: Env, _ctx?: any)
             createdDate: t.TicketCreatedDate,
           })),
         }),
-        { status: 200, headers: corsHeaders }
+        { status: 200, headers: responseHeaders }
       );
     }
 
     return new Response(
       JSON.stringify({ success: false, error: "בקשה לא תקינה" }),
-      { status: 400, headers: corsHeaders }
+      { status: 400, headers: responseHeaders }
     );
   } catch (err: any) {
     console.error("[handleTicketLookup Fatal Error]:", err);
@@ -511,7 +530,7 @@ export async function handleTicketLookup(request: Request, env: Env, _ctx?: any)
         error: "אירעה שגיאה בבדיקת סטטוס קריאה",
         details: err?.message || String(err),
       }),
-      { status: 500, headers: corsHeaders }
+      { status: 500, headers: responseHeaders }
     );
   }
 }

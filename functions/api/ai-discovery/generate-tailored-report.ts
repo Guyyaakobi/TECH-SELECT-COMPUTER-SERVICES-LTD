@@ -1,46 +1,103 @@
-// @ts-nocheck
 import { sendGraphMail } from "../_shared/graphMail";
+import {
+  getCorsHeaders,
+  getSecurityHeaders,
+  escapeHtml,
+  sanitizeString,
+  sanitizePrompt,
+  getClientIp,
+  getSessionSecret,
+  getGeminiApiKey,
+  verifySessionToken,
+  checkRateLimit,
+} from "../_shared/security";
 
 interface Env {
   GEMINI_API_KEY?: string;
+  SESSION_SECRET?: string;
+  CLIENT_SECRET?: string;
   TENANT_ID?: string;
   CLIENT_ID?: string;
-  CLIENT_SECRET?: string;
   [key: string]: any;
 }
 
-export async function onRequestOptions() {
+export async function onRequestOptions(contextOrRequest: any): Promise<Response> {
+  const request = contextOrRequest?.request || contextOrRequest;
   return new Response(null, {
     status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    },
+    headers: getCorsHeaders(request, "POST, OPTIONS"),
   });
 }
 
 // Native Cloudflare Worker Handler: (request, env, ctx)
 export async function handleGenerateReport(request: Request, env: Env, _ctx?: any): Promise<Response> {
+  const corsHeaders = getCorsHeaders(request, "POST, OPTIONS");
+  const secHeaders = getSecurityHeaders();
+  const responseHeaders = { ...corsHeaders, ...secHeaders, "Content-Type": "application/json" };
+
   try {
-    const body: any = await request.json();
+    const clientIp = getClientIp(request);
+
+    // 1. Session Authorization Verification
+    const authHeader = request.headers.get("Authorization") || "";
+    const xSession = request.headers.get("X-Session-Token") || "";
+    const body: any = await request.json().catch(() => ({}));
+    const rawToken = authHeader.replace(/^Bearer\s+/i, "").trim() || xSession.trim() || body?.sessionToken;
+
+    const secret = getSessionSecret(env);
+    const sessionCheck = await verifySessionToken(rawToken, secret);
+
+    if (!sessionCheck.valid) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "נדרש אימות סשן תקף להפקת דוח אפיון והתכנות",
+        }),
+        { status: 401, headers: responseHeaders }
+      );
+    }
+
+    const sessionData = sessionCheck.payload;
+    const sessionRateKey = `report_rate_${sessionData.sid || clientIp}`;
+
+    // 2. Rate Limiting: Max 8 tailored reports per 10 minutes per session/IP
+    if (!checkRateLimit(sessionRateKey, 8, 10 * 60 * 1000)) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "הגעת למגבלת הפקת דוחות בפרק זמן זה. אנא נסה שוב בעוד מספר דקות.",
+        }),
+        { status: 429, headers: responseHeaders }
+      );
+    }
+
+    // 3. Honeypot check
+    if (body?.botTrap && String(body.botTrap).trim().length > 0) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Access denied" }),
+        { status: 403, headers: responseHeaders }
+      );
+    }
+
     const { formData, chatHistory, singleWindowText, businessContext, lead } = body || {};
-
     const fData = formData || lead || {};
-    const finalCompany = fData.companyName || "ארגון מוביל";
-    const finalContact = fData.fullName || "הנהלת הארגון";
-    const finalEmail = fData.email || "לא צוין";
-    const finalPhone = fData.phone || "לא צוין";
-    const size = fData.companySize || "21-100";
 
-    const userText = singleWindowText || businessContext || fData.customPainPoints || fData.dreamGoalTomorrow || (chatHistory ? JSON.stringify(chatHistory) : "מעוניינים באפיון שילוב כלי AI, חיבור למערכות ERP/CRM ואוטומציית מסמכים מאובטחת.");
+    // 4. Input Sanitization
+    const finalCompany = sanitizeString(fData.companyName || sessionData.company, 100) || "ארגון מוביל";
+    const finalContact = sanitizeString(fData.fullName || sessionData.name, 80) || "הנהלת הארגון";
+    const finalEmail = sanitizeString(fData.email || sessionData.email, 120) || "לא צוין";
+    const finalPhone = sanitizeString(fData.phone || sessionData.phone, 30) || "לא צוין";
+    const size = sanitizeString(fData.companySize || sessionData.size, 40) || "21-100";
 
-    const envObj = (env || {}) as any;
-    const apiKey =
-      envObj.GEMINI_API_KEY ||
-      envObj.GOOGLE_GENAI_API_KEY ||
-      (typeof process !== "undefined" && process?.env?.GEMINI_API_KEY) ||
-      "";
+    const rawUserText =
+      singleWindowText ||
+      businessContext ||
+      fData.customPainPoints ||
+      fData.dreamGoalTomorrow ||
+      (chatHistory ? JSON.stringify(chatHistory) : "מעוניינים באפיון שילוב כלי AI, חיבור למערכות ERP/CRM ואוטומציית מסמכים מאובטחת.");
+
+    const userText = sanitizePrompt(rawUserText, 3000);
+    const apiKey = getGeminiApiKey(env);
     let customAIReport: any = null;
 
     if (apiKey) {
@@ -140,9 +197,9 @@ ${userText}
               generationConfig: {
                 temperature: 0.3,
                 maxOutputTokens: 2500,
-                responseMimeType: "application/json"
-              }
-            })
+                responseMimeType: "application/json",
+              },
+            }),
           });
 
           if (res.ok) {
@@ -155,7 +212,7 @@ ${userText}
             }
           }
         } catch (e) {
-          console.error(`Cloudflare report Gemini error on model ${model}:`, e);
+          console.error(`Gemini report error on model ${model}:`, e);
         }
       }
     }
@@ -170,46 +227,44 @@ ${userText}
         estimatedYearlySavingsNIS: size === "500+" ? 850000 : size === "201-500" ? 540000 : 288000,
         paybackPeriodMonths: 2.8,
         efficiencyGainPercent: 32,
-        summaryExplanation: "חישוב חיסכון מבוסס שחרור שעות עבודה ידניות"
+        summaryExplanation: "חישוב חיסכון מבוסס שחרור שעות עבודה ידניות",
       },
       architectureRecommendations: {
         tier1_Identity: "אימות זהות ארגוני (Microsoft Entra ID / SSO) עם MFA",
         tier2_Gateway: "שכבת שער AI עם סינון DLP והתחייבות Zero Data Retention",
         tier3_DataPipeline: "אינדוקס RAG מאובטח עם שמירה על הרשאות",
-        tier4_ModelCluster: "מודלי שפה ייעודיים מאובטחים"
-      }
+        tier4_ModelCluster: "מודלי שפה ייעודיים מאובטחים",
+      },
     };
 
-    // Forward notification to Guy in background
+    // Forward notification to Guy in background with HTML sanitization
     try {
-      const cleanPhone = (finalPhone || "").replace(/[^0-9+]/g, '');
-      const waLink = cleanPhone ? `https://wa.me/${cleanPhone.replace(/^0/, '972')}` : "לא צוין";
-      const savingsNIS = reportToSend.financialAnalysis?.estimatedYearlySavingsNIS || 280000;
-      const hoursSaved = reportToSend.financialAnalysis?.estimatedMonthlyHoursSaved || 240;
+      const cleanPhone = (finalPhone || "").replace(/[^0-9+]/g, "");
+      const waLink = cleanPhone ? `https://wa.me/${cleanPhone.replace(/^0/, "972")}` : "לא צוין";
+      const savingsNIS = Number(reportToSend.financialAnalysis?.estimatedYearlySavingsNIS) || 280000;
+      const hoursSaved = Number(reportToSend.financialAnalysis?.estimatedMonthlyHoursSaved) || 240;
 
-      const whyTechSelect = [
-        "1. ספק מורשה משרד הביטחון (מס' 0011033280) - עמידה בסטנדרטים המחמירים ביותר של סייבר, אבטחת מידע וסודיות.",
-        "2. שילוב הנדסי מנצח של 3 עולמות: תשתית IT ארגונית יציבה, אבטחת מידע מתקדמת (DLP), ופיתוח תוכנה ייעודי עם אינטגרציות API.",
-        "3. ניסיון הנדסי מוכח של מעל 15 שנה בהובלת גיא יעקובי בניהול IT, פרויקטים מורכבים וארכיטקטורת ענן היברידי.",
-        "4. אינטגרציה עמוקה ובטוחה למערכות הליבה (Priority, SAP, Salesforce, Monday) ללא סיכון פעילות הארגון.",
-        "5. מחויבות לתוצאות, שקיפות (FinOps), SLA קשיח וליווי אנושי צמוד עד להטמעה מלאה בקרב העובדים."
-      ].join("\n");
+      const safeCompany = escapeHtml(finalCompany);
+      const safeContact = escapeHtml(finalContact);
+      const safeEmail = escapeHtml(finalEmail);
+      const safePhone = escapeHtml(finalPhone);
+      const safeSize = escapeHtml(size);
+      const safeSummary = escapeHtml(reportToSend.executiveSummary);
 
-      // 1. Primary: Send via Microsoft Graph API
-      const reportSubject = `📊 [דוח אפיון והתכנות AI הופק] ${finalCompany} (${finalContact} | ${finalPhone})`;
+      const reportSubject = `📊 [דוח אפיון והתכנות AI הופק] ${safeCompany} (${safeContact} | ${safePhone})`;
       const reportHtml = `
         <div dir="rtl" style="font-family: Arial, sans-serif; background-color: #0b0c10; color: #f1f5f9; padding: 20px; border-radius: 12px; max-width: 600px; margin: 0 auto; border: 1px solid #1e293b;">
           <h2 style="color: #38bdf8; border-bottom: 2px solid #38bdf8; padding-bottom: 8px;">📊 דוח אפיון והתכנות AI הופק בהצלחה</h2>
-          <p><strong>חברה:</strong> ${finalCompany}</p>
-          <p><strong>מנהל / איש קשר:</strong> ${finalContact}</p>
-          <p><strong>טלפון:</strong> <a href="tel:${finalPhone}" style="color: #38bdf8;">${finalPhone}</a></p>
-          <p><strong>אימייל:</strong> ${finalEmail}</p>
-          <p><strong>גודל ארגון:</strong> ${size}</p>
+          <p><strong>חברה:</strong> ${safeCompany}</p>
+          <p><strong>מנהל / איש קשר:</strong> ${safeContact}</p>
+          <p><strong>טלפון:</strong> <a href="tel:${safePhone}" style="color: #38bdf8;">${safePhone}</a></p>
+          <p><strong>אימייל:</strong> ${safeEmail}</p>
+          <p><strong>גודל ארגון:</strong> ${safeSize}</p>
           <p><strong>חיסכון כספי שנתי:</strong> <span style="color: #34d399; font-weight: bold;">₪${savingsNIS.toLocaleString()}</span></p>
           <p><strong>חיסכון שעות עבודה:</strong> ${hoursSaved} שעות בחודש</p>
           <div style="background-color: #1e293b; padding: 12px; border-radius: 6px; margin: 16px 0;">
             <strong>תמצית מנהלים:</strong>
-            <p style="white-space: pre-wrap; margin: 6px 0 0 0; color: #e2e8f0;">${reportToSend.executiveSummary}</p>
+            <p style="white-space: pre-wrap; margin: 6px 0 0 0; color: #e2e8f0;">${safeSummary}</p>
           </div>
         </div>
       `;
@@ -222,14 +277,14 @@ ${userText}
         replyTo: finalEmail && finalEmail.includes("@") ? finalEmail : undefined,
       }).catch((err) => console.error("[generate-tailored-report] Graph send error:", err));
 
-      // 2. Reliable Backup: FormSubmit (support@tech-select.co.il with _cc: g@tech-select.co.il)
-      await fetch("https://formsubmit.co/ajax/support@tech-select.co.il", {
+      // Backup: FormSubmit
+      fetch("https://formsubmit.co/ajax/support@tech-select.co.il", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Accept": "application/json",
           "Origin": "https://tech-select.co.il",
-          "Referer": "https://tech-select.co.il/ai-discovery"
+          "Referer": "https://tech-select.co.il/ai-discovery",
         },
         body: JSON.stringify({
           שם_החברה: finalCompany,
@@ -241,50 +296,36 @@ ${userText}
           חיסכון_כספי_שנתי_משוער: `₪${savingsNIS.toLocaleString()}`,
           חיסכון_שעות_חודשי: `${hoursSaved} שעות`,
           תמצית_מנהלים: reportToSend.executiveSummary,
-          למה_טק_סלקט_היא_השותף_המתאים: whyTechSelect,
           _subject: reportSubject,
           _template: "table",
           _captcha: "false",
           _cc: "g@tech-select.co.il",
           _replyto: finalEmail && finalEmail.includes("@") ? finalEmail : undefined,
-          זמן_הפקה: new Date().toLocaleString("he-IL", { timeZone: "Asia/Jerusalem" })
-        })
-      });
+          זמן_הפקה: new Date().toLocaleString("he-IL", { timeZone: "Asia/Jerusalem" }),
+        }),
+      }).catch(() => {});
     } catch (e) {
-      console.error("Cloudflare report notification error:", e);
+      console.error("Report notification error:", e);
     }
 
     return new Response(
       JSON.stringify({
         success: true,
-        report: reportToSend
+        report: reportToSend,
       }),
-      {
-        status: 200,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*"
-        }
-      }
+      { status: 200, headers: responseHeaders }
     );
   } catch (error: any) {
     return new Response(
       JSON.stringify({
         success: false,
-        error: error.message || "Failed to generate report"
+        error: error.message || "Failed to generate report",
       }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*"
-        }
-      }
+      { status: 500, headers: responseHeaders }
     );
   }
 }
 
-// Backwards-compatible Pages/Context wrapper
 export async function onRequestPost(requestOrContext: any, envParam?: Env, ctxParam?: any): Promise<Response> {
   const req = requestOrContext?.request || requestOrContext;
   const env = envParam || requestOrContext?.env || {};

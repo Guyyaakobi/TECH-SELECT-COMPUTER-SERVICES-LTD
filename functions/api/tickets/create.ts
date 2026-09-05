@@ -1,4 +1,11 @@
-// @ts-nocheck
+import {
+  getCorsHeaders,
+  getSecurityHeaders,
+  sanitizeString,
+  getClientIp,
+  checkRateLimit,
+} from "../_shared/security";
+
 /**
  * Cloudflare Pages Function & API Handler
  * POST /api/tickets/create
@@ -14,6 +21,7 @@
 
 interface Env {
   ATERA_API_KEY?: string;
+  AT_KEY?: string;
   TENANT_ID?: string;
   CLIENT_ID?: string;
   CLIENT_SECRET?: string;
@@ -166,31 +174,36 @@ async function sendTicketNotificationViaGraph(
   }
 }
 
-export async function onRequestOptions() {
+export async function onRequestOptions(contextOrRequest: any): Promise<Response> {
+  const request = contextOrRequest?.request || contextOrRequest;
   return new Response(null, {
     status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    },
+    headers: getCorsHeaders(request, "POST, OPTIONS"),
   });
 }
 
 export async function handleCreateTicket(request: Request, env: Env, _ctx?: any): Promise<Response> {
-  const corsHeaders = {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  };
+  const corsHeaders = getCorsHeaders(request, "POST, OPTIONS");
+  const secHeaders = getSecurityHeaders();
+  const responseHeaders = { ...corsHeaders, ...secHeaders, "Content-Type": "application/json" };
 
   try {
+    const clientIp = getClientIp(request);
+    if (!checkRateLimit(`ticket_create_${clientIp}`, 10, 10 * 60 * 1000)) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "יותר מדי בקשות לפתיחת קריאה. אנא המתן מספר דקות.",
+        }),
+        { status: 429, headers: responseHeaders }
+      );
+    }
+
     const body: any = await request.json().catch(() => ({}));
-    const companyName = String(body?.companyName || body?.company_name || "").trim();
-    const email = String(body?.email || "").trim();
-    const description = String(body?.description || body?.issue_description || "").trim();
-    const resolutionStatus = String(body?.resolution_status || body?.resolutionStatus || "").trim();
+    const companyName = sanitizeString(body?.companyName || body?.company_name, 100);
+    const email = sanitizeString(body?.email, 120).toLowerCase();
+    const description = sanitizeString(body?.description || body?.issue_description, 2000);
+    const resolutionStatus = sanitizeString(body?.resolution_status || body?.resolutionStatus, 40);
     const isResolved = resolutionStatus.toLowerCase() === "resolved";
     const resStatus = isResolved ? "Resolved" : (resolutionStatus ? "Tier2_Escalation" : "Open");
     const minutesSpent = Number(body?.time_spent_minutes || body?.timeSpentMinutes) || (isResolved ? 15 : 0);
@@ -207,7 +220,7 @@ export async function handleCreateTicket(request: Request, env: Env, _ctx?: any)
             description: !description,
           },
         }),
-        { status: 400, headers: corsHeaders }
+        { status: 400, headers: responseHeaders }
       );
     }
 
@@ -219,7 +232,7 @@ export async function handleCreateTicket(request: Request, env: Env, _ctx?: any)
           success: false,
           error: "כתובת האימייל שסופקה אינה תקינה",
         }),
-        { status: 400, headers: corsHeaders }
+        { status: 400, headers: responseHeaders }
       );
     }
 
@@ -430,7 +443,7 @@ export async function handleCreateTicket(request: Request, env: Env, _ctx?: any)
               ? `שמחתי לעזור! תיעדתי את הפתרון במערכת שלנו, הכל מסודר (קריאה סגורה #${ticketId}).`
               : `הקריאה הועברה לצוות המומחים ומספרה #${ticketId}. נציג יחזור אליך בהקדם.`,
           }),
-          { status: 200, headers: corsHeaders }
+          { status: 200, headers: responseHeaders }
         );
       } else {
         const errText = await ticketResponse.text().catch(() => "");
@@ -454,7 +467,7 @@ export async function handleCreateTicket(request: Request, env: Env, _ctx?: any)
               : `הקריאה הועברה לצוות המומחים ומספרה #${fallbackTicketId}. נציג יחזור אליך בהקדם.`,
             note: "processed_via_emergency_queue",
           }),
-          { status: 200, headers: corsHeaders }
+          { status: 200, headers: responseHeaders }
         );
       }
     } else {
@@ -476,7 +489,7 @@ export async function handleCreateTicket(request: Request, env: Env, _ctx?: any)
             : `הקריאה הועברה לצוות המומחים ומספרה #${devTicketId}. נציג יחזור אליך בהקדם.`,
           isDevMode: true,
         }),
-        { status: 200, headers: corsHeaders }
+        { status: 200, headers: responseHeaders }
       );
     }
   } catch (err: any) {
@@ -487,7 +500,7 @@ export async function handleCreateTicket(request: Request, env: Env, _ctx?: any)
         error: "אירעה שגיאה בעיבוד הקריאה. אנא נסו שוב או פנו ישירות בוואטסאפ.",
         details: err?.message || String(err),
       }),
-      { status: 500, headers: corsHeaders }
+      { status: 500, headers: responseHeaders }
     );
   }
 }

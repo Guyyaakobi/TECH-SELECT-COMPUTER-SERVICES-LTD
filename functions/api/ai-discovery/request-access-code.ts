@@ -1,41 +1,102 @@
-// @ts-nocheck
 import { sendGraphMail } from "../_shared/graphMail";
+import {
+  getCorsHeaders,
+  getSecurityHeaders,
+  escapeHtml,
+  sanitizeString,
+  validateEmail,
+  validatePhone,
+  checkRateLimit,
+  getClientIp,
+  getSessionSecret,
+  createOtpChallengeToken,
+} from "../_shared/security";
 
 interface Env {
   TENANT_ID?: string;
   CLIENT_ID?: string;
   CLIENT_SECRET?: string;
+  SESSION_SECRET?: string;
   [key: string]: any;
 }
 
-export async function onRequestOptions() {
+export async function onRequestOptions(contextOrRequest: any): Promise<Response> {
+  const request = contextOrRequest?.request || contextOrRequest;
   return new Response(null, {
     status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-    },
+    headers: getCorsHeaders(request, "POST, OPTIONS"),
   });
 }
 
 // Native Cloudflare Worker Handler: (request, env, ctx)
 export async function handleRequestAccessCode(request: Request, env: Env, _ctx?: any): Promise<Response> {
-  const corsHeaders = {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-  };
+  const corsHeaders = getCorsHeaders(request, "POST, OPTIONS");
+  const secHeaders = getSecurityHeaders();
+  const responseHeaders = { ...corsHeaders, ...secHeaders, "Content-Type": "application/json" };
 
   try {
-    const body: any = await request.json().catch(() => ({}));
-    const { fullName, email, phone, companyName, companySize } = body || {};
+    const clientIp = getClientIp(request);
 
-    const directCode = String(Math.floor(1000 + Math.random() * 9000));
-    const cleanPhone = (phone || "").replace(/[^0-9+]/g, "");
-    const waLink = cleanPhone ? `https://wa.me/${cleanPhone.replace(/^0/, "972")}` : "לא צוין";
+    // Rate Limiting: Max 5 code requests per 10 minutes per IP
+    if (!checkRateLimit(`req_code_${clientIp}`, 5, 10 * 60 * 1000)) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "יותר מדי בקשות בזמן קצר. אנא המתינו מספר דקות או פנו לתמיכה.",
+        }),
+        { status: 429, headers: responseHeaders }
+      );
+    }
+
+    const body: any = await request.json().catch(() => ({}));
+    const { fullName, email, phone, companyName, companySize, botTrap } = body || {};
+
+    // Honeypot anti-bot check
+    if (botTrap && String(botTrap).trim().length > 0) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Access denied" }),
+        { status: 403, headers: responseHeaders }
+      );
+    }
+
+    // Input Sanitization & Validation
+    const cleanName = sanitizeString(fullName, 80) || "מנהל בארגון";
+    const cleanCompany = sanitizeString(companyName, 100) || "חברה בבדיקה";
+    const cleanEmail = sanitizeString(email, 120).toLowerCase();
+    const cleanPhone = sanitizeString(phone, 30);
+    const cleanSize = sanitizeString(companySize, 40) || "21-100";
+
+    const isEmailValid = validateEmail(cleanEmail);
+    const isPhoneValid = validatePhone(cleanPhone);
+
+    if (!isEmailValid && !isPhoneValid) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "נא להזין כתובת מייל תקינה או מספר טלפון לקבלת קוד גישה",
+        }),
+        { status: 400, headers: responseHeaders }
+      );
+    }
+
+    // Generate cryptographically secure 4-digit OTP code (1000-9999)
+    const randomArray = new Uint32Array(1);
+    crypto.getRandomValues(randomArray);
+    const directCode = String(1000 + (randomArray[0] % 9000));
+
+    const identifier = cleanEmail || cleanPhone;
+    const secret = getSessionSecret(env);
+    const challengeToken = await createOtpChallengeToken(directCode, identifier, secret);
+
+    const safeName = escapeHtml(cleanName);
+    const safeCompany = escapeHtml(cleanCompany);
+    const safeEmail = escapeHtml(cleanEmail);
+    const safePhone = escapeHtml(cleanPhone);
+    const safeSize = escapeHtml(cleanSize);
+    const waLink = cleanPhone ? `https://wa.me/${cleanPhone.replace(/^0/, "972").replace(/\D/g, "")}` : "לא צוין";
 
     // 1. Dispatch 4-digit OTP directly to the user's email via Microsoft Graph API
-    if (email && email.includes("@")) {
+    if (isEmailValid) {
       const userOtpSubject = `🔐 קוד אימות חד-פעמי (OTP) לפתיחת סימולטור ה-AI: ${directCode}`;
       const userOtpHtml = `
         <div dir="rtl" style="font-family: 'Segoe UI', Tahoma, Arial, sans-serif; max-width: 540px; margin: 0 auto; background-color: #0b1120; color: #e2e8f0; border-radius: 14px; border: 1px solid #1e293b; padding: 24px;">
@@ -43,8 +104,8 @@ export async function handleRequestAccessCode(request: Request, env: Env, _ctx?:
             <h2 style="color: #38bdf8; margin: 0; font-size: 20px;">TECH-SELECT Computer Services LTD</h2>
             <p style="color: #94a3b8; font-size: 13px; margin: 4px 0 0 0;">סימולטור אפיון ומוכנות AI למנהלים</p>
           </div>
-          <p style="font-size: 14px; color: #cbd5e1;">שלום ${fullName || 'מנהל/ת יקר/ה'},</p>
-          <p style="font-size: 14px; color: #cbd5e1;">להלן קוד האימות בן 4 הספרות לפתיחת סימולטור ה-AI של ארגון <strong>${companyName || 'החברה'}</strong>:</p>
+          <p style="font-size: 14px; color: #cbd5e1;">שלום ${safeName},</p>
+          <p style="font-size: 14px; color: #cbd5e1;">להלן קוד האימות בן 4 הספרות לפתיחת סימולטור ה-AI של ארגון <strong>${safeCompany}</strong>:</p>
           <div style="text-align: center; background: rgba(56, 189, 248, 0.1); border: 2px dashed #38bdf8; border-radius: 12px; padding: 20px; margin: 24px 0;">
             <div style="font-size: 12px; color: #94a3b8; margin-bottom: 6px;">קוד אימות חד-פעמי (תקף ל-15 דקות):</div>
             <div style="font-size: 38px; font-weight: 900; letter-spacing: 8px; color: #38bdf8; font-family: monospace;">${directCode}</div>
@@ -57,7 +118,7 @@ export async function handleRequestAccessCode(request: Request, env: Env, _ctx?:
       `;
 
       sendGraphMail(env, {
-        to: email.trim(),
+        to: cleanEmail,
         subject: userOtpSubject,
         content: userOtpHtml,
         isHtml: true,
@@ -65,16 +126,16 @@ export async function handleRequestAccessCode(request: Request, env: Env, _ctx?:
     }
 
     // 2. Dispatch internal alert to Guy via Microsoft Graph API
-    const internalLeadSubject = `🚨 [קוד 4 ספרות הופק בסימולטור AI] ${companyName || 'חברה'} - ${fullName || 'מנהל'} (${phone || 'ללא טלפון'})`;
+    const internalLeadSubject = `🚨 [קוד 4 ספרות הופק בסימולטור AI] ${safeCompany} - ${safeName} (${safePhone || 'ללא טלפון'})`;
     const internalLeadHtml = `
       <div dir="rtl" style="font-family: Arial, sans-serif; padding: 20px; background-color: #0b0c10; color: #f1f5f9; border-radius: 12px;">
         <h2 style="color: #38bdf8; border-bottom: 2px solid #38bdf8; padding-bottom: 8px;">ליד חדש ביקש קוד גישה לסימולטור ה-AI</h2>
         <p><strong>קוד 4 ספרות שהופק:</strong> <span style="font-size: 22px; color: #34d399; font-weight: bold; font-family: monospace;">${directCode}</span></p>
-        <p><strong>שם:</strong> ${fullName || 'מנהל בארגון'}</p>
-        <p><strong>חברה:</strong> ${companyName || 'חברה בבדיקה'}</p>
-        <p><strong>טלפון:</strong> <a href="tel:${phone}" style="color: #38bdf8;">${phone || 'לא צוין'}</a></p>
-        <p><strong>אימייל:</strong> ${email || 'לא צוין'}</p>
-        <p><strong>גודל ארגון:</strong> ${companySize || 'לא צוין'}</p>
+        <p><strong>שם:</strong> ${safeName}</p>
+        <p><strong>חברה:</strong> ${safeCompany}</p>
+        <p><strong>טלפון:</strong> <a href="tel:${safePhone}" style="color: #38bdf8;">${safePhone || 'לא צוין'}</a></p>
+        <p><strong>אימייל:</strong> ${safeEmail || 'לא צוין'}</p>
+        <p><strong>גודל ארגון:</strong> ${safeSize}</p>
         <p><strong>וואטסאפ:</strong> <a href="${waLink}" style="color: #34d399;">פתיחת שיחה מהירה בוואטסאפ</a></p>
       </div>
     `;
@@ -84,46 +145,17 @@ export async function handleRequestAccessCode(request: Request, env: Env, _ctx?:
       subject: internalLeadSubject,
       content: internalLeadHtml,
       isHtml: true,
-      replyTo: email || undefined,
+      replyTo: isEmailValid ? cleanEmail : undefined,
     }).catch((e) => console.error("[request-access-code] Admin alert email failed:", e));
-
-    // 3. Backup delivery to FormSubmit (support@tech-select.co.il with _cc: g@tech-select.co.il)
-    try {
-      await fetch("https://formsubmit.co/ajax/support@tech-select.co.il", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json",
-          "Origin": "https://tech-select.co.il",
-          "Referer": "https://tech-select.co.il/ai-discovery",
-        },
-        body: JSON.stringify({
-          סוג_הודעה: "🚨 ליד חדש - בקשת קוד גישה לסימולטור AI Discovery",
-          קוד_גישה_4_ספרות: directCode,
-          שם_המנהל: fullName || "מנהל בארגון",
-          שם_החברה: companyName || "חברה בבדיקה",
-          טלפון: phone || "לא צוין",
-          אימייל: email || "לא צוין",
-          גודל_ארגון: companySize || "לא צוין",
-          קישור_וואטסאפ_ישיר_למנהל: waLink,
-          _subject: internalLeadSubject,
-          _template: "table",
-          _captcha: "false",
-          _cc: "g@tech-select.co.il",
-          _replyto: email || undefined,
-          זמן_פנייה: new Date().toLocaleString("he-IL", { timeZone: "Asia/Jerusalem" }),
-        }),
-      });
-    } catch (e) {
-      console.warn("[request-access-code] FormSubmit backup error:", e);
-    }
 
     return new Response(
       JSON.stringify({
         success: true,
         message: "Access code generated successfully and sent to email",
+        challengeToken,
+        expiresInMinutes: 15,
       }),
-      { status: 200, headers: corsHeaders }
+      { status: 200, headers: responseHeaders }
     );
   } catch (error: any) {
     return new Response(
@@ -131,7 +163,7 @@ export async function handleRequestAccessCode(request: Request, env: Env, _ctx?:
         success: false,
         error: error.message || "Failed to process request",
       }),
-      { status: 500, headers: corsHeaders }
+      { status: 500, headers: responseHeaders }
     );
   }
 }

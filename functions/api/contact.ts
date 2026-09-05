@@ -1,5 +1,12 @@
-// @ts-nocheck
 import { sendGraphMail } from "./_shared/graphMail";
+import {
+  getCorsHeaders,
+  getSecurityHeaders,
+  sanitizeString,
+  escapeHtml,
+  getClientIp,
+  checkRateLimit,
+} from "./_shared/security";
 
 interface Env {
   TENANT_ID?: string;
@@ -8,38 +15,57 @@ interface Env {
   [key: string]: any;
 }
 
-export async function onRequestOptions() {
+export async function onRequestOptions(contextOrRequest: any): Promise<Response> {
+  const request = contextOrRequest?.request || contextOrRequest;
   return new Response(null, {
     status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    },
+    headers: getCorsHeaders(request, "POST, OPTIONS"),
   });
 }
 
 export async function handleContactSubmission(request: Request, env: Env): Promise<Response> {
-  const corsHeaders = {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  };
+  const corsHeaders = getCorsHeaders(request, "POST, OPTIONS");
+  const secHeaders = getSecurityHeaders();
+  const responseHeaders = { ...corsHeaders, ...secHeaders, "Content-Type": "application/json" };
 
   try {
+    const clientIp = getClientIp(request);
+    if (!checkRateLimit(`contact_${clientIp}`, 10, 10 * 60 * 1000)) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "יותר מדי פניות נשלחו בזמן קצר. אנא המתן מספר דקות.",
+        }),
+        { status: 429, headers: responseHeaders }
+      );
+    }
+
     const body: any = await request.json().catch(() => ({}));
     const { name, phone, company, isDefense, message, email, service } = body || {};
 
-    if (!name || !phone) {
+    const cleanName = sanitizeString(name, 80);
+    const cleanPhone = sanitizeString(phone, 30);
+    const cleanEmail = sanitizeString(email, 120).toLowerCase();
+    const cleanCompany = sanitizeString(company, 100);
+    const cleanService = sanitizeString(service, 100);
+    const cleanMessage = sanitizeString(message, 3000);
+
+    if (!cleanName || !cleanPhone) {
       return new Response(
         JSON.stringify({
           success: false,
           error: "Missing required fields (name and phone)",
         }),
-        { status: 400, headers: corsHeaders }
+        { status: 400, headers: responseHeaders }
       );
     }
+
+    const safeName = escapeHtml(cleanName);
+    const safePhone = escapeHtml(cleanPhone);
+    const safeEmail = escapeHtml(cleanEmail);
+    const safeCompany = escapeHtml(cleanCompany);
+    const safeService = escapeHtml(cleanService);
+    const safeMessage = escapeHtml(cleanMessage);
 
     const htmlContent = `
       <div dir="rtl" style="font-family: Arial, sans-serif; background-color: #0b0c10; color: #f1f5f9; padding: 24px; border-radius: 12px; max-width: 600px; margin: 0 auto; border: 1px solid #1e293b;">
@@ -49,23 +75,23 @@ export async function handleContactSubmission(request: Request, env: Env): Promi
         <table style="width: 100%; border-collapse: collapse; margin-top: 16px; color: #e2e8f0;">
           <tr style="border-bottom: 1px solid #334155;">
             <td style="padding: 10px; font-weight: bold; width: 35%;">שם פונה:</td>
-            <td style="padding: 10px;">${name}</td>
+            <td style="padding: 10px;">${safeName}</td>
           </tr>
           <tr style="border-bottom: 1px solid #334155;">
             <td style="padding: 10px; font-weight: bold;">טלפון:</td>
-            <td style="padding: 10px; font-family: monospace; font-size: 15px; color: #38bdf8;"><a href="tel:${phone}" style="color:#38bdf8; text-decoration:none;">${phone}</a></td>
+            <td style="padding: 10px; font-family: monospace; font-size: 15px; color: #38bdf8;"><a href="tel:${safePhone}" style="color:#38bdf8; text-decoration:none;">${safePhone}</a></td>
           </tr>
           ${
-            email
+            safeEmail
               ? `<tr style="border-bottom: 1px solid #334155;">
                   <td style="padding: 10px; font-weight: bold;">דוא"ל:</td>
-                  <td style="padding: 10px;">${email}</td>
+                  <td style="padding: 10px;">${safeEmail}</td>
                 </tr>`
               : ""
           }
           <tr style="border-bottom: 1px solid #334155;">
             <td style="padding: 10px; font-weight: bold;">חברה / ארגון:</td>
-            <td style="padding: 10px;">${company || "לא צוין"}</td>
+            <td style="padding: 10px;">${safeCompany || "לא צוין"}</td>
           </tr>
           <tr style="border-bottom: 1px solid #334155;">
             <td style="padding: 10px; font-weight: bold;">פנייה מסווגת / ביטחונית:</td>
@@ -74,16 +100,16 @@ export async function handleContactSubmission(request: Request, env: Env): Promi
             </td>
           </tr>
           ${
-            service
+            safeService
               ? `<tr style="border-bottom: 1px solid #334155;">
                   <td style="padding: 10px; font-weight: bold;">שירות מבוקש:</td>
-                  <td style="padding: 10px;">${service}</td>
+                  <td style="padding: 10px;">${safeService}</td>
                 </tr>`
               : ""
           }
           <tr>
             <td style="padding: 10px; font-weight: bold; vertical-align: top;">תוכן ההודעה:</td>
-            <td style="padding: 10px; white-space: pre-wrap; background-color: #1e293b; border-radius: 6px; color: #f8fafc;">${message || "ללא פירוט נוסף"}</td>
+            <td style="padding: 10px; white-space: pre-wrap; background-color: #1e293b; border-radius: 6px; color: #f8fafc;">${safeMessage || "ללא פירוט נוסף"}</td>
           </tr>
         </table>
         <p style="font-size: 12px; color: #94a3b8; margin-top: 24px; text-align: center; border-top: 1px solid #334155; padding-top: 12px;">
@@ -97,10 +123,10 @@ export async function handleContactSubmission(request: Request, env: Env): Promi
     try {
       graphSent = await sendGraphMail(env, {
         to: ["g@tech-select.co.il", "support@tech-select.co.il"],
-        subject: `פנייה חדשה מהאתר - ${name} (${phone})`,
+        subject: `פנייה חדשה מהאתר - ${cleanName} (${cleanPhone})`,
         content: htmlContent,
         isHtml: true,
-        replyTo: email || undefined,
+        replyTo: cleanEmail || undefined,
       });
     } catch (e) {
       console.error("[functions/api/contact] Graph send error:", e);
@@ -117,18 +143,18 @@ export async function handleContactSubmission(request: Request, env: Env): Promi
           "Referer": "https://tech-select.co.il/contact",
         },
         body: JSON.stringify({
-          שם_הפונה: name,
-          טלפון: phone,
-          דואל: email || "לא צוין",
-          חברה: company || "לא צוין",
+          שם_הפונה: cleanName,
+          טלפון: cleanPhone,
+          דואל: cleanEmail || "לא צוין",
+          חברה: cleanCompany || "לא צוין",
           סיווג_ביטחוני: isDefense ? "כן - מתקן מסווג / חברה ביטחונית" : "לא",
-          שירות_מבוקש: service || "פנייה כללית",
-          הודעה: message || "ללא",
-          _subject: `📩 פנייה חדשה מאתר Tech-Select: ${name} (${phone})`,
+          שירות_מבוקש: cleanService || "פנייה כללית",
+          הודעה: cleanMessage || "ללא",
+          _subject: `📩 פנייה חדשה מאתר Tech-Select: ${cleanName} (${cleanPhone})`,
           _template: "table",
           _captcha: "false",
           _cc: "g@tech-select.co.il",
-          _replyto: email || undefined,
+          _replyto: cleanEmail || undefined,
           זמן_שליחה: new Date().toLocaleString("he-IL", { timeZone: "Asia/Jerusalem" }),
         }),
       });
@@ -142,7 +168,7 @@ export async function handleContactSubmission(request: Request, env: Env): Promi
         message: "Contact inquiry dispatched successfully",
         graphSent,
       }),
-      { status: 200, headers: corsHeaders }
+      { status: 200, headers: responseHeaders }
     );
   } catch (err: any) {
     console.error("[functions/api/contact] Fatal error:", err);
@@ -151,11 +177,11 @@ export async function handleContactSubmission(request: Request, env: Env): Promi
         success: true, // Graceful return so UI shows confirmation
         message: "Inquiry received",
       }),
-      { status: 200, headers: corsHeaders }
+      { status: 200, headers: responseHeaders }
     );
   }
 }
 
-export async function onRequestPost(context: any) {
+export async function onRequestPost(context: any): Promise<Response> {
   return handleContactSubmission(context.request, context.env);
 }

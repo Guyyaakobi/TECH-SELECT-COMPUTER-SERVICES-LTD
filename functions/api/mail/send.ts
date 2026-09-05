@@ -1,4 +1,12 @@
-// @ts-nocheck
+import {
+  getCorsHeaders,
+  getSecurityHeaders,
+  sanitizeString,
+  getClientIp,
+  checkRateLimit,
+} from "../_shared/security";
+import { sendGraphMail } from "../_shared/graphMail";
+
 /**
  * Cloudflare Pages Function & API Handler
  * POST /api/mail/send
@@ -15,29 +23,34 @@ interface Env {
   [key: string]: any;
 }
 
-export async function onRequestOptions() {
+export async function onRequestOptions(contextOrRequest: any): Promise<Response> {
+  const request = contextOrRequest?.request || contextOrRequest;
   return new Response(null, {
     status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    },
+    headers: getCorsHeaders(request, "POST, OPTIONS"),
   });
 }
 
 export async function handleSendMail(request: Request, env: Env): Promise<Response> {
-  const corsHeaders = {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  };
+  const corsHeaders = getCorsHeaders(request, "POST, OPTIONS");
+  const secHeaders = getSecurityHeaders();
+  const responseHeaders = { ...corsHeaders, ...secHeaders, "Content-Type": "application/json" };
 
   try {
+    const clientIp = getClientIp(request);
+    if (!checkRateLimit(`send_mail_${clientIp}`, 15, 10 * 60 * 1000)) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "יותר מדי בקשות לשליחת מייל. אנא המתן מספר דקות.",
+        }),
+        { status: 429, headers: responseHeaders }
+      );
+    }
+
     const body: any = await request.json().catch(() => ({}));
     const to = body?.to;
-    const subject = body?.subject || "הודעה חדשה ממוקד טק-סלקט";
+    const subject = sanitizeString(body?.subject, 200) || "הודעה חדשה ממוקד טק-סלקט";
     const content = body?.content || body?.message || body?.html || "";
     const isHtml = Boolean(body?.isHtml || body?.html);
 
@@ -47,127 +60,55 @@ export async function handleSendMail(request: Request, env: Env): Promise<Respon
           success: false,
           error: "חובה לציין נמען (to) ותוכן הודעה (content/html)",
         }),
-        { status: 400, headers: corsHeaders }
+        { status: 400, headers: responseHeaders }
       );
     }
 
-    const toAddresses = Array.isArray(to) ? to : [to];
+    const toAddresses: string[] = Array.isArray(to) ? to : [to];
+    const validRecipients = toAddresses
+      .map((a: string) => sanitizeString(a, 120).toLowerCase())
+      .filter((a: string) => a.includes("@") && a.includes("."));
 
-    const envObj = (env || {}) as any;
-    const tenantId = (envObj.TENANT_ID || (typeof process !== "undefined" && process?.env?.TENANT_ID) || "").trim();
-    const clientId = (envObj.CLIENT_ID || (typeof process !== "undefined" && process?.env?.CLIENT_ID) || "").trim();
-    const clientSecret = (envObj.CLIENT_SECRET || (typeof process !== "undefined" && process?.env?.CLIENT_SECRET) || "").trim();
-
-    if (!tenantId || !clientId || !clientSecret) {
+    if (validRecipients.length === 0) {
       return new Response(
         JSON.stringify({
           success: false,
-          error: "חסרים נתוני הזדהות של Microsoft Graph (TENANT_ID, CLIENT_ID, CLIENT_SECRET)",
+          error: "לא סופקו כתובות מייל תקינות",
         }),
-        { status: 500, headers: corsHeaders }
+        { status: 400, headers: responseHeaders }
       );
     }
 
-    // 1. Acquire OAuth2 token from Azure AD
-    const tokenUrl = `https://login.microsoftonline.com/${encodeURIComponent(tenantId)}/oauth2/v2.0/token`;
-    const tokenParams = new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      scope: "https://graph.microsoft.com/.default",
-      grant_type: "client_credentials",
-    });
-
-    const tokenRes = await fetch(tokenUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: tokenParams.toString(),
-    });
-
-    if (!tokenRes.ok) {
-      const tokenErr = await tokenRes.text().catch(() => "");
-      console.error("[Graph OAuth Token Error]:", tokenRes.status, tokenErr);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: "שגיאה בהנפקת טוקן הזדהות מול Azure AD",
-          details: tokenErr,
-        }),
-        { status: 502, headers: corsHeaders }
-      );
+    let allSent = true;
+    for (const recipient of validRecipients) {
+      const sent = await sendGraphMail(env, {
+        to: recipient,
+        subject,
+        content: String(content),
+        isHtml,
+      });
+      if (!sent) {
+        allSent = false;
+      }
     }
 
-    const tokenData: any = await tokenRes.json();
-    const accessToken = tokenData?.access_token;
-
-    if (!accessToken) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: "לא התקבל Access Token מ-Azure AD",
-        }),
-        { status: 502, headers: corsHeaders }
-      );
-    }
-
-    // 2. Dispatch email via Microsoft Graph API sendMail endpoint
-    const senderUser = "support@tech-select.co.il";
-    const sendMailUrl = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(senderUser)}/sendMail`;
-
-    const recipients = toAddresses.map((addr: string) => ({
-      emailAddress: {
-        address: addr.trim(),
-      },
-    }));
-
-    const mailPayload = {
-      message: {
-        subject: subject,
-        body: {
-          contentType: isHtml ? "HTML" : "Text",
-          content: content,
-        },
-        toRecipients: recipients,
-        from: {
-          emailAddress: {
-            address: senderUser,
-            name: "טק-סלקט מוקד תמיכה",
-          },
-        },
-      },
-      saveToSentItems: true,
-    };
-
-    const graphRes = await fetch(sendMailUrl, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(mailPayload),
-    });
-
-    if (graphRes.ok || graphRes.status === 202) {
+    if (allSent) {
       return new Response(
         JSON.stringify({
           success: true,
           message: "המייל נשלח בהצלחה דרך Microsoft Graph API מ-support@tech-select.co.il",
-          recipients: toAddresses,
+          recipients: validRecipients,
         }),
-        { status: 200, headers: corsHeaders }
+        { status: 200, headers: responseHeaders }
       );
     } else {
-      const graphErr = await graphRes.text().catch(() => "");
-      console.error("[Graph sendMail Error]:", graphRes.status, graphErr);
       return new Response(
         JSON.stringify({
           success: false,
-          error: "שגיאה בשליחת המייל דרך Microsoft Graph API",
-          details: graphErr,
-          status: graphRes.status,
+          error: "שגיאה בשליחת חלק מהמיילים דרך Microsoft Graph API",
+          recipients: validRecipients,
         }),
-        { status: 502, headers: corsHeaders }
+        { status: 502, headers: responseHeaders }
       );
     }
   } catch (err: any) {
@@ -178,11 +119,11 @@ export async function handleSendMail(request: Request, env: Env): Promise<Respon
         error: "שגיאה פנימית בשליחת המייל",
         details: err?.message || String(err),
       }),
-      { status: 500, headers: corsHeaders }
+      { status: 500, headers: responseHeaders }
     );
   }
 }
 
-export async function onRequestPost(context: any) {
+export async function onRequestPost(context: any): Promise<Response> {
   return handleSendMail(context.request, context.env);
 }

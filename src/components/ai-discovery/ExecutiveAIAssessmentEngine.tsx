@@ -69,6 +69,7 @@ export const ExecutiveAIAssessmentEngine: React.FC<ExecutiveAIAssessmentEnginePr
   const [gateError, setGateError] = useState<string | null>(null);
   const [gateSuccessMsg, setGateSuccessMsg] = useState<string | null>(null);
   const [suggestedOtp, setSuggestedOtp] = useState<string | null>(null);
+  const [challengeToken, setChallengeToken] = useState<string | null>(null);
 
   // Main Simulator mode & view state
   const [mode, setMode] = useState<'guided' | 'chat'>(defaultMode);
@@ -145,71 +146,45 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
         })
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setCodeRequested(true);
-          setGateSuccessMsg(
-            isHe
-              ? `קוד אימות בן 4 ספרות נשלח כעת בהצלחה למייל שלך (${gateEmail.trim()}). אנא בדוק את תיבת הדואר הנכנס והזן את 4 הספרות להפעלת הסימולטור.`
-              : `A 4-digit verification passcode was sent to your email (${gateEmail.trim()}). Please check your inbox and enter the 4 digits below to unlock:`
-          );
-          // Do NOT auto-fill the code - wait for user to enter it from the email!
-          setSuggestedOtp(null);
-          setAccessCodeInput('');
-          setOtpDigits(['', '', '', '']);
-          setTimeout(() => {
-            otpInputRefs[0]?.current?.focus();
-          }, 150);
+      const data = await res.json().catch(() => ({}));
 
-          // Direct browser dispatch to guarantee Guy receives the lead immediately
-          sendLeadNotificationViaFormSubmit({
-            name: gateFullName.trim() || 'מנהל בארגון',
-            company: gateCompanyName.trim() || 'חברה בבדיקה',
-            email: gateEmail.trim(),
-            phone: gatePhone.trim(),
-            subject: `🚨 [ליד חדש בסימולטור AI] ${gateCompanyName.trim() || 'חברה'} - ${gateFullName.trim() || 'מנהל'} (${gatePhone.trim() || 'ללא טלפון'})`,
-            message: `ליד חדש הזין פרטים וביקש קוד גישה לסימולטור ה-AI Excellence של Tech-Select.\nגודל ארגון: ${gateCompanySize}`,
-            extraData: {
-              גודל_ארגון: gateCompanySize,
-              סטטוס_אימות: 'קוד נשלח למייל - ממתין להזנת המשתמש'
-            }
-          }).catch(() => {});
-
-          return;
+      if (res.ok && data.success) {
+        if (data.challengeToken) {
+          setChallengeToken(data.challengeToken);
         }
+        setCodeRequested(true);
+        setGateSuccessMsg(
+          isHe
+            ? `קוד אימות בן 4 ספרות נשלח כעת בהצלחה למייל שלך (${gateEmail.trim()}). אנא בדוק את תיבת הדואר הנכנס והזן את 4 הספרות להפעלת הסימולטור.`
+            : `A 4-digit verification passcode was sent to your email (${gateEmail.trim()}). Please check your inbox and enter the 4 digits below to unlock:`
+        );
+        setSuggestedOtp(null);
+        setAccessCodeInput('');
+        setOtpDigits(['', '', '', '']);
+        setTimeout(() => {
+          otpInputRefs[0]?.current?.focus();
+        }, 150);
+
+        // Direct browser dispatch to guarantee Guy receives the lead immediately
+        sendLeadNotificationViaFormSubmit({
+          name: gateFullName.trim() || 'מנהל בארגון',
+          company: gateCompanyName.trim() || 'חברה בבדיקה',
+          email: gateEmail.trim(),
+          phone: gatePhone.trim(),
+          subject: `🚨 [ליד חדש בסימולטור AI] ${gateCompanyName.trim() || 'חברה'} - ${gateFullName.trim() || 'מנהל'} (${gatePhone.trim() || 'ללא טלפון'})`,
+          message: `ליד חדש הזין פרטים וביקש קוד גישה לסימולטור ה-AI Excellence של Tech-Select.\nגודל ארגון: ${gateCompanySize}`,
+          extraData: {
+            גודל_ארגון: gateCompanySize,
+            סטטוס_אימות: 'קוד נשלח למייל - ממתין להזנת המשתמש'
+          }
+        }).catch(() => {});
+
+        return;
+      } else {
+        setGateError(data.error || (isHe ? 'שגיאה בהפקת קוד אימות' : 'Failed to request access code'));
       }
-      throw new Error('Fallback to local generation');
     } catch {
-      // Offline / Static Hosting fallback (e.g. GitHub Pages / Vercel static)
-      const randomOtp = String(Math.floor(1000 + Math.random() * 9000));
-      setCodeRequested(true);
-      setSuggestedOtp(randomOtp);
-      // Do NOT auto-fill the code - wait for user to enter it!
-      setAccessCodeInput('');
-      setOtpDigits(['', '', '', '']);
-      setTimeout(() => {
-        otpInputRefs[0]?.current?.focus();
-      }, 150);
-      
-      // Dispatch background notification via FormSubmit so Guy gets the lead on static hosting too
-      sendLeadNotificationViaFormSubmit({
-        name: gateFullName.trim() || 'מנהל בארגון',
-        company: gateCompanyName.trim() || 'חברה בבדיקה',
-        email: gateEmail.trim(),
-        phone: gatePhone.trim(),
-        subject: `🚨 [ליד חדש בסימולטור AI - קוד 4 ספרות נשלח] ${gateCompanyName.trim() || 'חברה'} - ${gateFullName.trim() || 'מנהל'} (${gatePhone.trim() || 'ללא טלפון'})`,
-        message: `ליד חדש הזין פרטים וביקש קוד גישה 4 ספרות לסימולטור ה-AI.\nגודל ארגון: ${gateCompanySize}`,
-        extraData: {
-          גודל_ארגון: gateCompanySize
-        }
-      }).catch(() => {});
-
-      setGateSuccessMsg(
-        isHe 
-          ? `קוד אימות בן 4 ספרות נשלח למייל שלך (${gateEmail.trim()}). אנא הזן את 4 הספרות שקיבלת כדי להיכנס לסימולטור:` 
-          : `A 4-digit passcode was sent to your email (${gateEmail.trim()}). Please enter the 4 digits to unlock:`
-      );
+      setGateError(isHe ? 'שגיאת תקשורת עם השרת. אנא נסה שוב מאוחר יותר.' : 'Network error. Please try again.');
     } finally {
       setIsRequestingCode(false);
     }
@@ -273,15 +248,13 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
 
     setIsVerifyingCode(true);
 
-    const isMasterCode = ['TECH-AI-2026', 'GUY-VIP', 'SELECT-AI', '7788', '9903', '1234', '8899', '0503900903'].includes(code);
-    const isGeneratedOtp = suggestedOtp && code === suggestedOtp;
-
     try {
       const res = await fetch('/api/ai-discovery/verify-access-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           code,
+          challengeToken,
           email: gateEmail.trim(),
           phone: gatePhone.trim(),
           companyName: gateCompanyName.trim(),
@@ -291,42 +264,26 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
         })
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          const token = data.sessionToken || 'verified_token_' + Date.now();
-          setSessionToken(token);
-          setIsAuthenticated(true);
-          try {
-            localStorage.setItem('tech_select_ai_session', token);
-          } catch {}
+      const data = await res.json().catch(() => ({}));
 
-          if (data.lead?.companyName) setCompanyName(data.lead.companyName);
-          if (data.lead?.fullName) setFullName(data.lead.fullName);
-          if (data.lead?.email) setEmail(data.lead.email);
-          if (data.lead?.phone) setPhone(data.lead.phone);
-          if (data.lead?.companySize) setCompanySize(data.lead.companySize);
-          return;
-        }
-      }
-      throw new Error('API verify failed');
-    } catch {
-      // Local verification fallback for static environments or VIP codes
-      if (isMasterCode || isGeneratedOtp || (code.length === 4 && /^\d+$/.test(code)) || (code.length === 6 && /^\d+$/.test(code))) {
-        const token = 'static_token_' + Date.now();
-        setSessionToken(token);
+      if (res.ok && data.success && data.sessionToken) {
+        setSessionToken(data.sessionToken);
         setIsAuthenticated(true);
         try {
-          localStorage.setItem('tech_select_ai_session', token);
+          localStorage.setItem('tech_select_ai_session', data.sessionToken);
         } catch {}
-        if (gateCompanyName) setCompanyName(gateCompanyName);
-        if (gateFullName) setFullName(gateFullName);
-        if (gateEmail) setEmail(gateEmail);
-        if (gatePhone) setPhone(gatePhone);
-        if (gateCompanySize) setCompanySize(gateCompanySize);
+
+        if (data.lead?.companyName) setCompanyName(data.lead.companyName);
+        if (data.lead?.fullName) setFullName(data.lead.fullName);
+        if (data.lead?.email) setEmail(data.lead.email);
+        if (data.lead?.phone) setPhone(data.lead.phone);
+        if (data.lead?.companySize) setCompanySize(data.lead.companySize);
+        return;
       } else {
-        setGateError(isHe ? 'קוד שגוי. השתמש בקוד בן 4 ספרות או ב-TECH-AI-2026' : 'Invalid code. Use the 4-digit code or TECH-AI-2026');
+        setGateError(data.error || (isHe ? 'קוד אימות שגוי או שפג תוקפו' : 'Invalid or expired access code'));
       }
+    } catch {
+      setGateError(isHe ? 'שגיאת תקשורת באימות הקוד. אנא נסה שוב.' : 'Communication error verifying access code. Please try again.');
     } finally {
       setIsVerifyingCode(false);
     }
@@ -375,7 +332,11 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
     try {
       const res = await fetch('/api/ai-discovery/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': sessionToken ? `Bearer ${sessionToken}` : '',
+          'X-Session-Token': sessionToken || '',
+        },
         body: JSON.stringify({
           messages: updated.map(m => ({ 
             role: m.role === 'user' ? 'user' : 'model', 
@@ -492,7 +453,11 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
 
       const res = await fetch('/api/ai-discovery/generate-tailored-report', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': sessionToken ? `Bearer ${sessionToken}` : '',
+          'X-Session-Token': sessionToken || '',
+        },
         signal: controller.signal,
         body: JSON.stringify({
           formData,
@@ -524,9 +489,14 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
           // Also trigger server-side dispatch
           fetch('/api/ai-discovery/send-email-report', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': sessionToken ? `Bearer ${sessionToken}` : '',
+              'X-Session-Token': sessionToken || '',
+            },
             body: JSON.stringify({
               report: finalReport,
+              sessionToken,
               lead: {
                 companyName: finalCompany,
                 fullName: finalContact,
@@ -561,9 +531,14 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
 
     fetch('/api/ai-discovery/send-email-report', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': sessionToken ? `Bearer ${sessionToken}` : '',
+        'X-Session-Token': sessionToken || '',
+      },
       body: JSON.stringify({
         report: baseReport,
+        sessionToken,
         lead: {
           companyName: finalCompany,
           fullName: finalContact,

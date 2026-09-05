@@ -1,52 +1,74 @@
-// @ts-nocheck
 import { sendGraphMail } from "../_shared/graphMail";
+import {
+  getCorsHeaders,
+  getSecurityHeaders,
+  escapeHtml,
+  sanitizeString,
+  getClientIp,
+  checkRateLimit,
+  getSessionSecret,
+  createOtpChallengeToken,
+} from "../_shared/security";
 
 interface Env {
   TENANT_ID?: string;
   CLIENT_ID?: string;
   CLIENT_SECRET?: string;
+  SESSION_SECRET?: string;
   [key: string]: any;
 }
 
-export async function onRequestOptions() {
+export async function onRequestOptions(contextOrRequest: any): Promise<Response> {
+  const request = contextOrRequest?.request || contextOrRequest;
   return new Response(null, {
     status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    },
+    headers: getCorsHeaders(request, "POST, OPTIONS"),
   });
 }
 
 // Native Cloudflare Worker Handler: (request, env, ctx)
 export async function handleSendOtp(request: Request, env: Env, _ctx?: any): Promise<Response> {
-  const corsHeaders = {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  };
+  const corsHeaders = getCorsHeaders(request, "POST, OPTIONS");
+  const secHeaders = getSecurityHeaders();
+  const responseHeaders = { ...corsHeaders, ...secHeaders, "Content-Type": "application/json" };
 
   try {
+    const clientIp = getClientIp(request);
+
+    // Rate Limiting: Max 5 OTP requests per 10 minutes per IP
+    if (!checkRateLimit(`send_otp_${clientIp}`, 5, 10 * 60 * 1000)) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "יותר מדי בקשות לקוד אימות. אנא המתן מספר דקות לפני ניסיון נוסף.",
+        }),
+        { status: 429, headers: responseHeaders }
+      );
+    }
+
     const body: any = await request.json().catch(() => ({}));
-    const { email, fullName, companyName, action } = body || {};
-    const cleanEmail = String(email || "").trim().toLowerCase();
-    const cleanName = String(fullName || "").trim() || "משתמש באתר";
-    const cleanCompany = String(companyName || "").trim() || "אתר Tech-Select";
-    const actionDesc = String(action || "אימות זהות למוקד התמיכה וה-AI");
+    const { email, fullName, action } = body || {};
+    const cleanEmail = sanitizeString(email, 120).toLowerCase();
+    const cleanName = sanitizeString(fullName, 80) || "משתמש באתר";
+    const actionDesc = sanitizeString(action, 100) || "אימות זהות למוקד התמיכה וה-AI";
 
     if (!cleanEmail || !cleanEmail.includes("@") || !cleanEmail.includes(".")) {
       return new Response(
         JSON.stringify({ success: false, error: "כתובת דוא״ל תקינה נדרשת לקבלת קוד אימות" }),
-        { status: 400, headers: corsHeaders }
+        { status: 400, headers: responseHeaders }
       );
     }
 
+    // Generate secure cryptographic OTP challenge
     const randomNum = Math.floor(1000 + Math.random() * 9000);
     const otpCode = String(randomNum);
+    const secret = getSessionSecret(env);
+    const challengeToken = await createOtpChallengeToken(otpCode, cleanEmail, secret);
 
-    const userOtpSubject = `🔐 קוד אימות 4 ספרות [${otpCode}] - Tech-Select`;
+    const safeName = escapeHtml(cleanName);
+    const safeAction = escapeHtml(actionDesc);
+
+    const userOtpSubject = `🔐 קוד אימות 4 ספרות - Tech-Select`;
     const userOtpHtml = `
       <div dir="rtl" style="font-family: Arial, sans-serif; background-color: #0b0f19; color: #f1f5f9; padding: 24px; max-width: 550px; margin: 0 auto; border-radius: 12px; border: 1px solid #1e293b;">
         <div style="border-bottom: 2px solid #38bdf8; padding-bottom: 12px; margin-bottom: 16px;">
@@ -54,8 +76,8 @@ export async function handleSendOtp(request: Request, env: Env, _ctx?: any): Pro
           <h2 style="color: #38bdf8; margin: 8px 0 2px 0; font-size: 20px;">קוד אימות 4 ספרות</h2>
         </div>
         <p style="font-size: 14px; line-height: 1.6; color: #cbd5e1;">
-          שלום <strong>${cleanName}</strong>,<br>
-          התקבלה בקשת אימות זהות עבור ${actionDesc}.<br>
+          שלום <strong>${safeName}</strong>,<br>
+          התקבלה בקשת אימות זהות עבור ${safeAction}.<br>
           קוד האימות שלך בן 4 ספרות הוא:
         </p>
         <div style="background-color: #1e1b4b; border: 2px solid #38bdf8; border-radius: 10px; padding: 20px; text-align: center; margin: 20px 0;">
@@ -82,7 +104,7 @@ export async function handleSendOtp(request: Request, env: Env, _ctx?: any): Pro
       // Internal copy to support
       sendGraphMail(env, {
         to: "support@tech-select.co.il",
-        subject: `🔐 קוד אימות 4 ספרות [${otpCode}] נשלח אל ${cleanEmail}`,
+        subject: `🔐 קוד אימות נשלח אל ${cleanEmail}`,
         content: userOtpHtml,
         isHtml: true,
       }).catch(() => {});
@@ -92,44 +114,40 @@ export async function handleSendOtp(request: Request, env: Env, _ctx?: any): Pro
 
     // 2. Fallback backup if Graph isn't configured in this Worker
     if (!graphSent) {
-      try {
-        await fetch("https://formsubmit.co/ajax/support@tech-select.co.il", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Origin": "https://tech-select.co.il",
-          },
-          body: JSON.stringify({
-            נושא: `קוד אימות 4 ספרות: ${otpCode}`,
-            נמען: cleanEmail,
-            שם: cleanName,
-            קוד_אימות: otpCode,
-            זמן: new Date().toISOString(),
-          }),
-        }).catch(() => {});
-      } catch {}
+      fetch("https://formsubmit.co/ajax/support@tech-select.co.il", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "Origin": "https://tech-select.co.il",
+        },
+        body: JSON.stringify({
+          נושא: `קוד אימות 4 ספרות`,
+          נמען: cleanEmail,
+          שם: cleanName,
+          זמן: new Date().toISOString(),
+        }),
+      }).catch(() => {});
     }
 
     return new Response(
       JSON.stringify({
         success: true,
+        challengeToken,
         maskedEmail: cleanEmail.replace(/(.{2})(.*)(@.*)/, "$1***$3"),
         expiresInMinutes: 15,
-        directCode: otpCode,
       }),
-      { status: 200, headers: corsHeaders }
+      { status: 200, headers: responseHeaders }
     );
   } catch (err: any) {
     console.error("[functions/api/auth/send-otp] Fatal error:", err);
     return new Response(
       JSON.stringify({ success: false, error: err?.message || "שגיאה בשליחת קוד אימות" }),
-      { status: 500, headers: corsHeaders }
+      { status: 500, headers: responseHeaders }
     );
   }
 }
 
-// Backwards-compatible Pages/Context wrapper
-export async function onRequestPost(context: { request: Request; env: Env }) {
-  return handleSendOtp(context.request, context.env, context);
+export async function onRequestPost(context: { request: Request; env: Env; ctx?: any }): Promise<Response> {
+  return handleSendOtp(context.request, context.env, context.ctx);
 }

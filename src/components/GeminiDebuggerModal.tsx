@@ -1,4 +1,3 @@
-// @ts-nocheck
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Send,
@@ -169,7 +168,11 @@ export const GeminiDebuggerModal: React.FC<GeminiDebuggerModalProps> = ({
   const runHealthCheck = async () => {
     setIsCheckingHealth(true);
     try {
-      const res = await fetch('/api/ai-discovery/diagnostic');
+      const res = await fetch('/api/ai-discovery/diagnostic', {
+        headers: {
+          Authorization: 'Bearer tech-select-dev-1981',
+        },
+      });
       const text = await res.text();
       let data: any = {};
       try {
@@ -205,12 +208,14 @@ export const GeminiDebuggerModal: React.FC<GeminiDebuggerModalProps> = ({
     try {
       const res = await fetch('/api/ai-discovery/diagnostic', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer tech-select-dev-1981',
+        },
         body: JSON.stringify({
           prompt: query,
           model: selectedModel,
-          customApiKey: customKey.trim() || undefined
-        })
+        }),
       });
 
       const responseText = await res.text();

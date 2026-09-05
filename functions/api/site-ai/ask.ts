@@ -1,5 +1,13 @@
-// @ts-nocheck
 import { sendGraphMail } from "../_shared/graphMail";
+import {
+  getCorsHeaders,
+  getSecurityHeaders,
+  sanitizeString,
+  getClientIp,
+  checkRateLimit,
+  verifySessionToken,
+  getSessionSecret,
+} from "../_shared/security";
 
 interface Env {
   GEMINI_API_KEY?: string;
@@ -9,6 +17,7 @@ interface Env {
   TENANT_ID?: string;
   CLIENT_ID?: string;
   CLIENT_SECRET?: string;
+  SESSION_SECRET?: string;
   [key: string]: any;
 }
 
@@ -233,14 +242,11 @@ async function executeOpenAteraTicket(
   };
 }
 
-export async function onRequestOptions() {
+export async function onRequestOptions(contextOrRequest: any): Promise<Response> {
+  const request = contextOrRequest?.request || contextOrRequest;
   return new Response(null, {
     status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    },
+    headers: getCorsHeaders(request, "POST, OPTIONS"),
   });
 }
 
@@ -335,29 +341,47 @@ async function notifyGuyOfGuestChat(
 }
 
 export async function handleAsk(request: Request, env: Env, _ctx?: any): Promise<Response> {
-  const corsHeaders = {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-  };
+  const corsHeaders = getCorsHeaders(request, "POST, OPTIONS");
+  const secHeaders = getSecurityHeaders();
+  const responseHeaders = { ...corsHeaders, ...secHeaders, "Content-Type": "application/json" };
 
   try {
+    const clientIp = getClientIp(request);
+    if (!checkRateLimit(`ask_ai_${clientIp}`, 35, 10 * 60 * 1000)) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          reply: "התקבלו יותר מדי בקשות בזמן קצר. אנא המתן מספר רגעים ונסה שוב.",
+        }),
+        { status: 429, headers: responseHeaders }
+      );
+    }
+
     const body: any = await request.json().catch(() => ({}));
-    const userQuestion = String(body?.question || "").trim();
+    const userQuestion = sanitizeString(body?.question, 2000);
     const history = Array.isArray(body?.history) ? body.history : [];
     const { sessionToken, verifiedEmail } = body || {};
 
-    // Verification check: must have sessionToken, Authorization header, or verifiedEmail
+    // Verification check: must have valid sessionToken or verifiedEmail
     const authHeader = request.headers.get("Authorization") || "";
     const cleanToken = String(sessionToken || authHeader).replace(/^Bearer\s+/i, "").trim();
+    const secret = getSessionSecret(env);
+    let verifiedSession: any = null;
 
-    if (!cleanToken && !verifiedEmail) {
+    if (cleanToken) {
+      verifiedSession = await verifySessionToken(cleanToken, secret);
+    }
+
+    const effectiveEmail = sanitizeString(verifiedSession?.email || verifiedEmail, 120).toLowerCase();
+
+    if (!verifiedSession && !effectiveEmail) {
       return new Response(
         JSON.stringify({
           success: false,
           requiresVerification: true,
           reply: "🔒 עוזר ה-AI נעול. יש להזדהות באמצעות כתובת דוא\"ל לקבלת קוד אימות כדי לשוחח עם העוזר.",
         }),
-        { status: 401, headers: corsHeaders }
+        { status: 401, headers: responseHeaders }
       );
     }
 
@@ -370,7 +394,6 @@ export async function handleAsk(request: Request, env: Env, _ctx?: any): Promise
     const cleanAteraKey = ateraApiKey.replace(/^Bearer\s+/i, "").trim();
     const bearerAtera = ateraApiKey.startsWith("Bearer ") ? ateraApiKey : `Bearer ${cleanAteraKey}`;
 
-    const effectiveEmail = String(verifiedEmail || "").trim().toLowerCase();
     let isAteraCustomer = false;
     let ateraContact: any = null;
 
@@ -676,7 +699,7 @@ ${isGuest ? `
                         ticketCreated: true,
                         source: "atera_real_intercepted",
                       }),
-                      { headers: corsHeaders }
+                      { headers: responseHeaders }
                     );
                   } else {
                     const cleanReply = `העברתי כעת את פרטי הפנייה שלך ישירות ל${techFirstName} לבדיקה מעמיקה ולהמשך טיפול.\n\nפנייתך נרשמה במוקד התמיכה (support@tech-select.co.il) ונציג ייצור איתך קשר בהקדם.`;
@@ -686,7 +709,7 @@ ${isGuest ? `
                         reply: cleanReply,
                         source: "support_logged",
                       }),
-                      { headers: corsHeaders }
+                      { headers: responseHeaders }
                     );
                   }
                 }
@@ -706,7 +729,7 @@ ${isGuest ? `
 
                 return new Response(
                   JSON.stringify({ success: true, reply: replyText, source: "gemini" }),
-                  { headers: corsHeaders }
+                  { headers: responseHeaders }
                 );
               }
             }
@@ -722,7 +745,7 @@ ${isGuest ? `
     const fallback = generateSiteFallbackReply(userQuestion);
     return new Response(
       JSON.stringify({ success: true, reply: fallback, source: "knowledge_base" }),
-      { headers: corsHeaders }
+      { headers: responseHeaders }
     );
   } catch (err: any) {
     return new Response(
@@ -731,7 +754,7 @@ ${isGuest ? `
         reply: "טק-סלקט שירותי מחשוב בע\"מ הינה שותף טכנולוגי כולל לארגונים (ספק מורשה משרד הביטחון 0011033280). לפניה מהירה, פנו אלינו בוואטסאפ או דרך עמוד יצירת קשר באתר.",
         source: "fallback",
       }),
-      { headers: corsHeaders }
+      { headers: responseHeaders }
     );
   }
 }

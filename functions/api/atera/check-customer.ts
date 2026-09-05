@@ -1,18 +1,22 @@
-// @ts-nocheck
+import {
+  getCorsHeaders,
+  getSecurityHeaders,
+  sanitizeString,
+  getClientIp,
+  checkRateLimit,
+} from "../_shared/security";
+
 interface Env {
   ATERA_API_KEY?: string;
   AT_KEY?: string;
   [key: string]: any;
 }
 
-export async function onRequestOptions() {
+export async function onRequestOptions(contextOrRequest: any): Promise<Response> {
+  const request = contextOrRequest?.request || contextOrRequest;
   return new Response(null, {
     status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    },
+    headers: getCorsHeaders(request, "POST, OPTIONS"),
   });
 }
 
@@ -21,21 +25,29 @@ const TECH_TEAM = [
   "אמיר בן ארויה",
   "תבור כהן",
   "אריאל מורי",
-  "יוסף איאסה"
+  "יוסף איאסה",
 ];
 
 export async function handleCheckCustomer(request: Request, env: Env): Promise<Response> {
-  const corsHeaders = {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  };
+  const corsHeaders = getCorsHeaders(request, "POST, OPTIONS");
+  const secHeaders = getSecurityHeaders();
+  const responseHeaders = { ...corsHeaders, ...secHeaders, "Content-Type": "application/json" };
 
   try {
+    const clientIp = getClientIp(request);
+    if (!checkRateLimit(`check_customer_${clientIp}`, 20, 10 * 60 * 1000)) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "יותר מדי בקשות לבדיקת לקוח. אנא המתן מספר דקות.",
+        }),
+        { status: 429, headers: responseHeaders }
+      );
+    }
+
     const body: any = await request.json().catch(() => ({}));
     const { email, technician } = body || {};
-    const cleanEmail = String(email || "").trim().toLowerCase();
+    const cleanEmail = sanitizeString(email, 120).toLowerCase();
 
     const selectedTech = (technician && TECH_TEAM.includes(technician))
       ? technician
@@ -48,7 +60,7 @@ export async function handleCheckCustomer(request: Request, env: Env): Promise<R
           error: "כתובת מייל תקינה נדרשת לבדיקה במערכת אטרה",
           technician: selectedTech,
         }),
-        { status: 400, headers: corsHeaders }
+        { status: 400, headers: responseHeaders }
       );
     }
 
@@ -58,6 +70,7 @@ export async function handleCheckCustomer(request: Request, env: Env): Promise<R
       envObj.AT_KEY ||
       (typeof process !== "undefined" && (process?.env?.ATERA_API_KEY || process?.env?.AT_KEY)) ||
       "";
+
     const cleanAteraKey = ateraApiKey.replace(/^Bearer\s+/i, "").trim();
     const bearerAtera = ateraApiKey.startsWith("Bearer ") ? ateraApiKey : `Bearer ${cleanAteraKey}`;
 
@@ -102,7 +115,7 @@ export async function handleCheckCustomer(request: Request, env: Env): Promise<R
           technician: selectedTech,
           greeting: `היי, אני העוזר של ${selectedTech}. אני רואה שאתה עדיין לא לקוח שלנו, אבל לא נורא, שאל מה שאתה צריך ואני אראה מה אני יכול לעשות.`,
         }),
-        { status: 200, headers: corsHeaders }
+        { status: 200, headers: responseHeaders }
       );
     }
 
@@ -123,7 +136,7 @@ export async function handleCheckCustomer(request: Request, env: Env): Promise<R
         },
         greeting: `שלום ${contactName}! אני העוזר של ${selectedTech} מחברת טק-סלקט. זיהיתי אותך כלקוח קיים במערכת השירות (${customerName}). אני כאן כדי להעניק לך שירות מצוין, לפתוח קריאה במידת הצורך או לענות על כל שאלה. במה אוכל לעזור לך היום?`,
       }),
-      { status: 200, headers: corsHeaders }
+      { status: 200, headers: responseHeaders }
     );
   } catch (err: any) {
     const fallbackTech = TECH_TEAM[Math.floor(Math.random() * TECH_TEAM.length)];
@@ -134,7 +147,7 @@ export async function handleCheckCustomer(request: Request, env: Env): Promise<R
         technician: fallbackTech,
         greeting: `היי, אני העוזר של ${fallbackTech}. אני רואה שאתה עדיין לא לקוח שלנו, אבל לא נורא, שאל מה שאתה צריך ואני אראה מה אני יכול לעשות.`,
       }),
-      { status: 200, headers: corsHeaders }
+      { status: 200, headers: responseHeaders }
     );
   }
 }

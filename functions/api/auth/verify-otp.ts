@@ -1,58 +1,114 @@
-// @ts-nocheck
+import {
+  getCorsHeaders,
+  getSecurityHeaders,
+  sanitizeString,
+  getClientIp,
+  checkRateLimit,
+  recordFailedAttempt,
+  resetFailedAttempts,
+  createSessionToken,
+  verifyOtpChallenge,
+  getSessionSecret,
+} from "../_shared/security";
+
 interface Env {
+  ADMIN_MASTER_CODE?: string;
+  SESSION_SECRET?: string;
   [key: string]: any;
 }
 
-export async function onRequestOptions() {
+export async function onRequestOptions(contextOrRequest: any): Promise<Response> {
+  const request = contextOrRequest?.request || contextOrRequest;
   return new Response(null, {
     status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    },
+    headers: getCorsHeaders(request, "POST, OPTIONS"),
   });
 }
 
 // Native Cloudflare Worker Handler: (request, env, ctx)
-export async function handleVerifyOtp(request: Request, _env: Env, _ctx?: any): Promise<Response> {
-  const corsHeaders = {
-    "Content-Type": "application/json",
-    "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type, Authorization",
-  };
+export async function handleVerifyOtp(request: Request, env: Env, _ctx?: any): Promise<Response> {
+  const corsHeaders = getCorsHeaders(request, "POST, OPTIONS");
+  const secHeaders = getSecurityHeaders();
+  const responseHeaders = { ...corsHeaders, ...secHeaders, "Content-Type": "application/json" };
 
   try {
-    const body: any = await request.json().catch(() => ({}));
-    const { email, code, fullName, companyName } = body || {};
-    const inputCode = String(code || "").trim().toUpperCase();
-    const cleanEmail = String(email || "").trim().toLowerCase();
+    const clientIp = getClientIp(request);
 
-    if (!inputCode) {
-      return new Response(
-        JSON.stringify({ success: false, error: "יש להזין קוד אימות בן 4 ספרות" }),
-        { status: 400, headers: corsHeaders }
-      );
-    }
-
-    const validMasterCodes = ["TECH-AI-2026", "GUY-VIP", "SELECT-AI", "7788", "9903", "1234", "8899", "0503900903"];
-    const isMaster = validMasterCodes.includes(inputCode);
-    const is4Digit = /^\d{4}$/.test(inputCode);
-
-    if (!isMaster && !is4Digit) {
+    // Rate Limiting: Max 10 verification attempts per 10 minutes per IP
+    if (!checkRateLimit(`verify_otp_${clientIp}`, 10, 10 * 60 * 1000)) {
       return new Response(
         JSON.stringify({
           success: false,
-          error: "קוד האימות שגוי. יש להזין 4 ספרות שנשלחו למייל.",
+          error: "יותר מדי ניסיונות אימות. אנא המתן מספר דקות לפני ניסיון נוסף.",
         }),
-        { status: 401, headers: corsHeaders }
+        { status: 429, headers: responseHeaders }
       );
     }
 
-    const sessionToken = "session_" + Date.now() + "_" + Math.random().toString(36).substring(2, 10);
-    const finalName = fullName || "משתמש מאומת";
-    const finalCompany = companyName || "לקוח מאומת";
+    const body: any = await request.json().catch(() => ({}));
+    const { email, code, challengeToken, fullName, companyName } = body || {};
+    const inputCode = sanitizeString(code, 20).toUpperCase();
+    const cleanEmail = sanitizeString(email, 120).toLowerCase();
+
+    if (!inputCode) {
+      return new Response(
+        JSON.stringify({ success: false, error: "יש להזין קוד אימות" }),
+        { status: 400, headers: responseHeaders }
+      );
+    }
+
+    // Brute force protection per identifier
+    const rateLimitKey = `otp_auth_${cleanEmail || clientIp}`;
+
+    // Optional admin master code configured strictly via Cloudflare secret
+    const envMaster = env.ADMIN_MASTER_CODE || (typeof process !== "undefined" && process.env?.ADMIN_MASTER_CODE);
+    const isMaster = Boolean(envMaster && envMaster.length >= 8 && inputCode === envMaster.trim().toUpperCase());
+
+    const secret = getSessionSecret(env);
+    let isValid = isMaster;
+
+    if (!isValid && challengeToken) {
+      const verifyResult = await verifyOtpChallenge(inputCode, challengeToken, cleanEmail, secret);
+      isValid = verifyResult.valid;
+    }
+
+    if (!isValid) {
+      const attemptCheck = recordFailedAttempt(rateLimitKey, 5, 15 * 60 * 1000);
+      if (attemptCheck.locked) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: "חשבונך ננעל זמנית עקב ריבוי ניסיונות שגויים. אנא נסה שוב בעוד 15 דקות.",
+          }),
+          { status: 429, headers: responseHeaders }
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: `קוד האימות שגוי או שפג תוקפו. נותרו ${attemptCheck.remainingAttempts} ניסיונות.`,
+        }),
+        { status: 401, headers: responseHeaders }
+      );
+    }
+
+    // Reset failed attempts on success
+    resetFailedAttempts(rateLimitKey);
+
+    const safeName = sanitizeString(fullName, 80) || "משתמש מאומת";
+    const safeCompany = sanitizeString(companyName, 100) || "לקוח מאומת";
+
+    // Generate cryptographic HMAC-SHA256 signed session token
+    const sessionToken = await createSessionToken(
+      {
+        email: cleanEmail,
+        name: safeName,
+        company: safeCompany,
+        role: "verified_user",
+      },
+      secret,
+      8
+    );
 
     return new Response(
       JSON.stringify({
@@ -60,23 +116,22 @@ export async function handleVerifyOtp(request: Request, _env: Env, _ctx?: any): 
         sessionToken,
         token: sessionToken,
         lead: {
-          fullName: finalName,
+          fullName: safeName,
           email: cleanEmail,
-          companyName: finalCompany,
+          companyName: safeCompany,
         },
       }),
-      { status: 200, headers: corsHeaders }
+      { status: 200, headers: responseHeaders }
     );
   } catch (err: any) {
     console.error("[functions/api/auth/verify-otp] Error:", err);
     return new Response(
       JSON.stringify({ success: false, error: "שגיאה באימות הקוד" }),
-      { status: 500, headers: corsHeaders }
+      { status: 500, headers: responseHeaders }
     );
   }
 }
 
-// Backwards-compatible Pages/Context wrapper
-export async function onRequestPost(context: { request: Request; env: Env }) {
-  return handleVerifyOtp(context.request, context.env, context);
+export async function onRequestPost(context: { request: Request; env: Env; ctx?: any }): Promise<Response> {
+  return handleVerifyOtp(context.request, context.env, context.ctx);
 }
