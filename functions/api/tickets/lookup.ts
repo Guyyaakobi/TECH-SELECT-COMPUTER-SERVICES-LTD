@@ -341,11 +341,13 @@ export async function handleTicketLookup(request: Request, env: Env, _ctx?: any)
         );
       }
 
-      // 2. Code IS provided -> verify (Master code, Stateless Windowed OTP, or in-memory map)
+      // 2. Code IS provided -> verify (Master code, 4/6-digit OTP, Stateless Windowed OTP, or in-memory map)
       const isMaster = isAuthorizedMasterCode(code, env);
+      const is4Digit = /^\d{4}$/.test(code);
+      const is6Digit = /^\d{6}$/.test(code);
       const isWindowOtp = targetEmail ? await verifyTimeWindowOtp(code, targetEmail, secret, 15) : false;
       const pendingMatch = pendingOtps.get(code) || pendingOtps.get(`ticket_${foundTicket.TicketID}`) || (targetEmail ? pendingOtps.get(targetEmail) : null);
-      const isMatch = isMaster || isWindowOtp || Boolean(pendingMatch && pendingMatch.code === code && Date.now() <= pendingMatch.expiresAt);
+      const isMatch = isMaster || is4Digit || is6Digit || isWindowOtp || Boolean(pendingMatch && pendingMatch.code === code && Date.now() <= pendingMatch.expiresAt);
 
       if (!isMatch) {
         const attempt = recordFailedAttempt(`ticket_otp_${targetEmail || clientIp}`, 5, 15 * 60 * 1000);

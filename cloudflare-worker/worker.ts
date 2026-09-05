@@ -15,6 +15,15 @@
 
 import { handleAsk } from "../functions/api/site-ai/ask";
 import { handleCheckCustomer } from "../functions/api/atera/check-customer";
+import { handleRequestAccessCode } from "../functions/api/ai-discovery/request-access-code";
+import { handleVerifyAccessCode } from "../functions/api/ai-discovery/verify-access-code";
+import { handleChat } from "../functions/api/ai-discovery/chat";
+import { handleGenerateReport } from "../functions/api/ai-discovery/generate-tailored-report";
+import { handleSendEmailReport } from "../functions/api/ai-discovery/send-email-report";
+import { handleDiagnosticGet as handleDiagnostic } from "../functions/api/ai-discovery/diagnostic";
+import { handleContactSubmission } from "../functions/api/contact";
+import { handleSendOtp } from "../functions/api/auth/send-otp";
+import { handleVerifyOtp } from "../functions/api/auth/verify-otp";
 
 export interface Env {
   GEMINI_API_KEY?: string;
@@ -74,20 +83,55 @@ export default {
 
     // Route 4: Send AI Concierge 4-digit OTP
     if (url.pathname.endsWith("/api/auth/send-otp") || url.pathname.endsWith("/api/otp/send")) {
-      return handleAuthSendOtp(request, env);
+      return handleSendOtp(request, env);
     }
 
     // Route 5: Verify AI Concierge 4-digit OTP
     if (url.pathname.endsWith("/api/auth/verify-otp") || url.pathname.endsWith("/api/otp/verify")) {
-      return handleAuthVerifyOtp(request, env);
+      return handleVerifyOtp(request, env);
     }
 
-    // Route 6: Site AI Concierge & Ticket Automation
+    // Route 6: AI Discovery - Request Access Code
+    if (url.pathname.endsWith("/api/ai-discovery/request-access-code")) {
+      return handleRequestAccessCode(request, env);
+    }
+
+    // Route 7: AI Discovery - Verify Access Code
+    if (url.pathname.endsWith("/api/ai-discovery/verify-access-code")) {
+      return handleVerifyAccessCode(request, env);
+    }
+
+    // Route 8: AI Discovery - Chat with Gemini
+    if (url.pathname.endsWith("/api/ai-discovery/chat")) {
+      return handleChat(request, env);
+    }
+
+    // Route 9: AI Discovery - Generate Tailored Executive Report
+    if (url.pathname.endsWith("/api/ai-discovery/generate-tailored-report")) {
+      return handleGenerateReport(request, env);
+    }
+
+    // Route 10: AI Discovery - Send Email Report
+    if (url.pathname.endsWith("/api/ai-discovery/send-report") || url.pathname.endsWith("/api/ai-discovery/send-email-report")) {
+      return handleSendEmailReport(request, env);
+    }
+
+    // Route 11: AI Discovery Diagnostic
+    if (url.pathname.endsWith("/api/ai-discovery/diagnostic") || url.pathname === "/diagnostic") {
+      return handleDiagnostic(request, env);
+    }
+
+    // Route 12: Contact Submission
+    if (url.pathname.endsWith("/api/contact")) {
+      return handleContactSubmission(request, env);
+    }
+
+    // Route 13: Site AI Concierge & Ticket Automation
     if (url.pathname.endsWith("/api/site-ai/ask")) {
       return handleAsk(request, env);
     }
 
-    // Route 7: Atera Customer Verification & Random Tech Greeting
+    // Route 14: Atera Customer Verification & Random Tech Greeting
     if (url.pathname.endsWith("/api/atera/check-customer") || url.pathname.endsWith("/api/customer/verify")) {
       return handleCheckCustomer(request, env);
     }

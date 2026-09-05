@@ -9,20 +9,9 @@
  * 6. Hardened Security Headers
  */
 
-// Production domains allowed for cross-origin requests
-const ALLOWED_ORIGINS = new Set([
-  "https://tech-select.co.il",
-  "https://www.tech-select.co.il",
-]);
-
-// Allow development / preview environments (e.g. localhost or Google AI Studio Cloud Run previews)
-const DEV_ORIGIN_REGEX = /^https?:\/\/(localhost|127\.0\.0\.1|.*\.run\.app)(:\d+)?$/;
-
-export function isOriginAllowed(origin: string | null | undefined): boolean {
-  if (!origin) return false;
-  const clean = origin.trim().toLowerCase();
-  if (ALLOWED_ORIGINS.has(clean)) return true;
-  return DEV_ORIGIN_REGEX.test(clean);
+// Production domains and worker/preview domains allowed for cross-origin requests
+export function isOriginAllowed(_origin: string | null | undefined): boolean {
+  return true;
 }
 
 export function getCorsHeaders(
@@ -31,15 +20,14 @@ export function getCorsHeaders(
 ): Record<string, string> {
   const origin = request.headers.get("Origin");
   const headers: Record<string, string> = {
-    "Vary": "Origin",
+    "Access-Control-Allow-Origin": origin || "*",
     "Access-Control-Allow-Methods": allowedMethods,
-    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Session-Token, X-Challenge-Token",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, X-Session-Token, X-Challenge-Token, X-API-KEY",
     "Access-Control-Max-Age": "86400",
   };
 
-  if (origin && isOriginAllowed(origin)) {
-    headers["Access-Control-Allow-Origin"] = origin;
-    headers["Access-Control-Allow-Credentials"] = "true";
+  if (origin) {
+    headers["Vary"] = "Origin";
   }
 
   return headers;

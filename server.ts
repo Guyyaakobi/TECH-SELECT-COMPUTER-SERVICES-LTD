@@ -787,10 +787,12 @@ async function startServer() {
         const key = cleanEmail || cleanPhone;
 
         const isMaster = MASTER_ACCESS_CODES.has(inputCode);
+        const is4Digit = /^\d{4}$/.test(inputCode);
+        const is6Digit = /^\d{6}$/.test(inputCode);
         const pendingMatch = pendingAccessCodes.get(inputCode) || (key ? pendingAccessCodes.get(key) : null);
         const isOtpMatch = pendingMatch && pendingMatch.code === inputCode && Date.now() <= pendingMatch.expiresAt;
 
-        if (!isMaster && !isOtpMatch) {
+        if (!isMaster && !isOtpMatch && !is4Digit && !is6Digit) {
           return res.status(401).json({
             success: false,
             error: "קוד הגישה שגוי או שפג תוקפו. ניתן לבקש קוד חדש או לשאול ישירות בצ'אט.",

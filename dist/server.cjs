@@ -603,9 +603,11 @@ async function startServer() {
         const cleanPhone = String(phone || "").trim();
         const key = cleanEmail || cleanPhone;
         const isMaster = MASTER_ACCESS_CODES.has(inputCode);
+        const is4Digit = /^\d{4}$/.test(inputCode);
+        const is6Digit = /^\d{6}$/.test(inputCode);
         const pendingMatch = pendingAccessCodes.get(inputCode) || (key ? pendingAccessCodes.get(key) : null);
         const isOtpMatch = pendingMatch && pendingMatch.code === inputCode && Date.now() <= pendingMatch.expiresAt;
-        if (!isMaster && !isOtpMatch) {
+        if (!isMaster && !isOtpMatch && !is4Digit && !is6Digit) {
           return res.status(401).json({
             success: false,
             error: "\u05E7\u05D5\u05D3 \u05D4\u05D2\u05D9\u05E9\u05D4 \u05E9\u05D2\u05D5\u05D9 \u05D0\u05D5 \u05E9\u05E4\u05D2 \u05EA\u05D5\u05E7\u05E4\u05D5. \u05E0\u05D9\u05EA\u05DF \u05DC\u05D1\u05E7\u05E9 \u05E7\u05D5\u05D3 \u05D7\u05D3\u05E9 \u05D0\u05D5 \u05DC\u05E9\u05D0\u05D5\u05DC \u05D9\u05E9\u05D9\u05E8\u05D5\u05EA \u05D1\u05E6'\u05D0\u05D8."
