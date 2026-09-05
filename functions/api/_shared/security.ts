@@ -70,8 +70,20 @@ export function validateEmail(email: any): boolean {
 
 export function validatePhone(phone: any): boolean {
   if (!phone || typeof phone !== "string") return false;
-  const digits = phone.replace(/\D/g, "");
-  return digits.length >= 7 && digits.length <= 15;
+  const clean = phone.replace(/[\s\-\(\)\.]/g, "");
+  if (!/^\+?\d+$/.test(clean)) return false;
+  const digitsOnly = clean.replace(/\+/g, "");
+  if (/^(\d)\1+$/.test(digitsOnly)) return false;
+  const isrNational = /^0(?:5[0-9]|7[2-9]|[23489])\d{7}$/;
+  const isrIntl = /^(?:(?:\+?972)|972)(?:5[0-9]|7[2-9]|[23489])\d{7}$/;
+  const generalIntl = /^\+?[1-9]\d{8,14}$/;
+  return isrNational.test(clean) || isrIntl.test(clean) || generalIntl.test(clean);
+}
+
+export function validateFullName(name: any): boolean {
+  if (!name || typeof name !== "string") return false;
+  const parts = name.trim().split(/\s+/).filter((p: string) => p.length >= 2);
+  return parts.length >= 2;
 }
 
 export function sanitizePrompt(text: any, maxLen = 3000): string {

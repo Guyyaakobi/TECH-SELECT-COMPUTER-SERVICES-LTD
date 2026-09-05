@@ -396,7 +396,21 @@ async function sendAlertEmail({
 }
 async function startServer() {
   try {
-    let getAteraAuthHeaders = function() {
+    let isValidPhoneFormat = function(p) {
+      if (!p) return false;
+      const clean = p.replace(/[\s\-\(\)\.]/g, "");
+      if (!/^\+?\d+$/.test(clean)) return false;
+      const digitsOnly = clean.replace(/\+/g, "");
+      if (/^(\d)\1+$/.test(digitsOnly)) return false;
+      const isrNational = /^0(?:5[0-9]|7[2-9]|[23489])\d{7}$/;
+      const isrIntl = /^(?:(?:\+?972)|972)(?:5[0-9]|7[2-9]|[23489])\d{7}$/;
+      const generalIntl = /^\+?[1-9]\d{8,14}$/;
+      return isrNational.test(clean) || isrIntl.test(clean) || generalIntl.test(clean);
+    }, isValidFullNameFormat = function(name) {
+      if (!name) return false;
+      const parts = name.trim().split(/\s+/).filter((p) => p.length >= 2);
+      return parts.length >= 2;
+    }, getAteraAuthHeaders = function() {
       const ateraApiKey = (process.env.ATERA_API_KEY || process.env.AT_KEY || "").trim();
       const cleanApiKey = ateraApiKey.replace(/^Bearer\s+/i, "");
       const bearerHeader = ateraApiKey.startsWith("Bearer ") ? ateraApiKey : `Bearer ${cleanApiKey}`;
@@ -472,10 +486,22 @@ async function startServer() {
         const cleanCompany = String(companyName || "").trim() || "\u05D7\u05D1\u05E8\u05D4 \u05DC\u05DC\u05D0 \u05E9\u05DD";
         const cleanName = String(fullName || "").trim() || "\u05E0\u05E6\u05D9\u05D2 \u05D4\u05E0\u05D4\u05DC\u05D4";
         const cleanSize = String(companySize || "").trim() || "21-100";
-        if (!cleanEmail && !cleanPhone) {
+        if (!isValidFullNameFormat(cleanName)) {
           return res.status(400).json({
             success: false,
-            error: "\u05E0\u05D0 \u05DC\u05D4\u05D6\u05D9\u05DF \u05DB\u05EA\u05D5\u05D1\u05EA \u05DE\u05D9\u05D9\u05DC \u05D0\u05D5 \u05DE\u05E1\u05E4\u05E8 \u05D8\u05DC\u05E4\u05D5\u05DF \u05DC\u05E7\u05D1\u05DC\u05EA \u05E7\u05D5\u05D3 \u05D2\u05D9\u05E9\u05D4"
+            error: "\u05E0\u05D0 \u05DC\u05D4\u05D6\u05D9\u05DF \u05E9\u05DD \u05E4\u05E8\u05D8\u05D9 \u05D5\u05E9\u05DD \u05DE\u05E9\u05E4\u05D7\u05D4 \u05EA\u05E7\u05D9\u05E0\u05D9\u05DD (\u05DC\u05E4\u05D7\u05D5\u05EA 2 \u05DE\u05D9\u05DC\u05D9\u05DD)"
+          });
+        }
+        if (!isValidPhoneFormat(cleanPhone)) {
+          return res.status(400).json({
+            success: false,
+            error: "\u05E0\u05D0 \u05DC\u05D4\u05D6\u05D9\u05DF \u05DE\u05E1\u05E4\u05E8 \u05D8\u05DC\u05E4\u05D5\u05DF \u05EA\u05E7\u05D9\u05DF (\u05DC\u05D3\u05D5\u05D2\u05DE\u05D4: 050-1234567)"
+          });
+        }
+        if (!cleanEmail || !cleanEmail.includes("@")) {
+          return res.status(400).json({
+            success: false,
+            error: "\u05E0\u05D0 \u05DC\u05D4\u05D6\u05D9\u05DF \u05DB\u05EA\u05D5\u05D1\u05EA \u05DE\u05D9\u05D9\u05DC \u05EA\u05E7\u05D9\u05E0\u05D4 \u05DC\u05E7\u05D1\u05DC\u05EA \u05E7\u05D5\u05D3 \u05D2\u05D9\u05E9\u05D4"
           });
         }
         const randomNum = Math.floor(1e3 + Math.random() * 9e3);
@@ -685,13 +711,20 @@ async function startServer() {
     });
     app.post(["/api/auth/send-otp", "/api/otp/send"], async (req, res) => {
       try {
-        const { email, fullName, companyName, action } = req.body || {};
+        const { email, fullName, companyName, action, phone } = req.body || {};
         const cleanEmail = String(email || "").trim().toLowerCase();
         const cleanName = String(fullName || "").trim() || "\u05DE\u05E9\u05EA\u05DE\u05E9 \u05D1\u05D0\u05EA\u05E8";
+        const cleanPhone = String(phone || "").trim();
         const cleanCompany = String(companyName || "").trim();
         const actionDesc = String(action || "\u05D1\u05D9\u05E6\u05D5\u05E2 \u05E4\u05E2\u05D5\u05DC\u05D5\u05EA \u05D1\u05D0\u05EA\u05E8 / \u05E9\u05D9\u05D7\u05D4 \u05E2\u05DD \u05DE\u05D5\u05E7\u05D3 \u05D4-AI");
         if (!cleanEmail || !cleanEmail.includes("@")) {
           return res.status(400).json({ success: false, error: "\u05DB\u05EA\u05D5\u05D1\u05EA \u05D3\u05D5\u05D0\u05F4\u05DC \u05EA\u05E7\u05D9\u05E0\u05D4 \u05E0\u05D3\u05E8\u05E9\u05EA \u05DC\u05E7\u05D1\u05DC\u05EA \u05E7\u05D5\u05D3 \u05D0\u05D9\u05DE\u05D5\u05EA" });
+        }
+        if (fullName && !isValidFullNameFormat(cleanName)) {
+          return res.status(400).json({ success: false, error: "\u05E0\u05D0 \u05DC\u05D4\u05D6\u05D9\u05DF \u05E9\u05DD \u05E4\u05E8\u05D8\u05D9 \u05D5\u05E9\u05DD \u05DE\u05E9\u05E4\u05D7\u05D4 \u05EA\u05E7\u05D9\u05E0\u05D9\u05DD (\u05DC\u05E4\u05D7\u05D5\u05EA 2 \u05DE\u05D9\u05DC\u05D9\u05DD)" });
+        }
+        if (phone && !isValidPhoneFormat(cleanPhone)) {
+          return res.status(400).json({ success: false, error: "\u05E0\u05D0 \u05DC\u05D4\u05D6\u05D9\u05DF \u05DE\u05E1\u05E4\u05E8 \u05D8\u05DC\u05E4\u05D5\u05DF \u05EA\u05E7\u05D9\u05DF (\u05DC\u05D3\u05D5\u05D2\u05DE\u05D4: 050-1234567)" });
         }
         const clientIp = req.ip || req.headers["x-forwarded-for"] || "unknown";
         if (!checkRateLimit(String(clientIp), 12, 3 * 60 * 1e3)) {
@@ -703,7 +736,7 @@ async function startServer() {
         const pendingData = {
           code: otpCode,
           email: cleanEmail,
-          phone: "",
+          phone: cleanPhone,
           companyName: cleanCompany || "\u05D0\u05EA\u05E8 Tech-Select",
           fullName: cleanName,
           companySize: "1-20",

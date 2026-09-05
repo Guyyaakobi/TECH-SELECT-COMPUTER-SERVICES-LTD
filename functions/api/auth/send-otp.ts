@@ -4,6 +4,9 @@ import {
   getSecurityHeaders,
   escapeHtml,
   sanitizeString,
+  validateEmail,
+  validatePhone,
+  validateFullName,
   getClientIp,
   checkRateLimit,
   getSessionSecret,
@@ -68,14 +71,29 @@ export async function handleSendOtp(
     }
 
     const body: any = await request.json().catch(() => ({}));
-    const { email, fullName, action } = body || {};
+    const { email, fullName, action, phone } = body || {};
     const cleanEmail = sanitizeString(email, 120).toLowerCase();
     const cleanName = sanitizeString(fullName, 80) || "משתמש באתר";
+    const cleanPhone = sanitizeString(phone, 30);
     const actionDesc = sanitizeString(action, 100) || "אימות זהות למוקד התמיכה וה-AI";
 
-    if (!cleanEmail || !cleanEmail.includes("@") || !cleanEmail.includes(".")) {
+    if (!cleanEmail || !validateEmail(cleanEmail)) {
       return new Response(
         JSON.stringify({ success: false, error: "כתובת דוא״ל תקינה נדרשת לקבלת קוד אימות" }),
+        { status: 400, headers: responseHeaders }
+      );
+    }
+
+    if (fullName && !validateFullName(cleanName)) {
+      return new Response(
+        JSON.stringify({ success: false, error: "נא להזין שם פרטי ושם משפחה תקינים (לפחות 2 מילים)" }),
+        { status: 400, headers: responseHeaders }
+      );
+    }
+
+    if (phone && !validatePhone(cleanPhone)) {
+      return new Response(
+        JSON.stringify({ success: false, error: "נא להזין מספר טלפון תקין (לדוגמה: 050-1234567)" }),
         { status: 400, headers: responseHeaders }
       );
     }
@@ -94,6 +112,7 @@ export async function handleSendOtp(
         const kvPayload = JSON.stringify({
           code: otpCode,
           email: cleanEmail,
+          phone: cleanPhone,
           fullName: cleanName,
           action: actionDesc,
           createdAt: Date.now(),
@@ -115,6 +134,7 @@ export async function handleSendOtp(
       const memPayload = {
         code: otpCode,
         email: cleanEmail,
+        phone: cleanPhone,
         fullName: cleanName,
         createdAt: Date.now(),
         expiresAt: Date.now() + 15 * 60 * 1000,

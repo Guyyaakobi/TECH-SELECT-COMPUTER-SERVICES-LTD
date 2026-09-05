@@ -3,12 +3,14 @@ import {
   Sparkles, Send, X, Bot, Copy, Check, 
   Ticket, CheckCircle2, AlertCircle,
   RefreshCw, ArrowRight, ArrowLeft,
-  KeyRound, ShieldCheck, Lock, Unlock, Mail, User, LogOut, Loader2, Shield,
+  KeyRound, ShieldCheck, Lock, Unlock, Mail, User, Phone, LogOut, Loader2, Shield,
   Cpu, Zap, Play
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
 import { detectIncognito } from '../utils/incognitoDetector';
+import { isValidPhoneNumber, isValidEmail, isValidName } from '../utils/validation';
+import { sendLeadNotificationViaFormSubmit } from '../utils/formSubmit';
 
 interface FloatingAIConciergeProps {
   onNavigateToSimulator?: () => void;
@@ -151,8 +153,36 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
   });
 
   const [authStep, setAuthStep] = useState<'email' | 'otp' | 'success'>('email');
-  const [authEmail, setAuthEmail] = useState('');
-  const [authName, setAuthName] = useState('');
+
+  const initialConciergeInfo = (() => {
+    try {
+      const saved = localStorage.getItem('techselect_executive_lead_v3') || localStorage.getItem('techselect_simulator_lead');
+      if (saved) {
+        const p = JSON.parse(saved);
+        let first = p.firstName || '';
+        let last = p.lastName || '';
+        if (!first && p.fullName) {
+          const parts = String(p.fullName).trim().split(/\s+/);
+          first = parts[0] || '';
+          last = parts.slice(1).join(' ') || '';
+        }
+        return {
+          first,
+          last,
+          phone: p.phone || '',
+          email: p.email || '',
+        };
+      }
+    } catch {}
+    return { first: '', last: '', phone: '', email: '' };
+  })();
+
+  const [authFirstName, setAuthFirstName] = useState(initialConciergeInfo.first);
+  const [authLastName, setAuthLastName] = useState(initialConciergeInfo.last);
+  const [authPhone, setAuthPhone] = useState(initialConciergeInfo.phone);
+  const [authEmail, setAuthEmail] = useState(initialConciergeInfo.email);
+  const authName = `${authFirstName.trim()} ${authLastName.trim()}`.trim();
+
   const [authOtp, setAuthOtp] = useState('');
   const [authChallengeToken, setAuthChallengeToken] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
@@ -162,6 +192,7 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
 
   const otpInputRef = useRef<HTMLInputElement>(null);
   const emailInputRef = useRef<HTMLInputElement>(null);
+  const firstNameInputRef = useRef<HTMLInputElement>(null);
 
   // Countdown timer for OTP resend
   useEffect(() => {
@@ -176,13 +207,17 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
     if (isOpen && !isVerified) {
       setTimeout(() => {
         if (authStep === 'email') {
-          emailInputRef.current?.focus();
+          if (!authFirstName.trim()) {
+            firstNameInputRef.current?.focus();
+          } else {
+            emailInputRef.current?.focus();
+          }
         } else if (authStep === 'otp') {
           otpInputRef.current?.focus();
         }
       }, 250);
     }
-  }, [isOpen, isVerified, authStep]);
+  }, [isOpen, isVerified, authStep, authFirstName]);
 
   // Mobile/Tablet background scroll lock & ESC key listener
   useEffect(() => {
@@ -589,20 +624,39 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
   const handleSendOtp = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setAuthError('');
+
+    if (!isValidName(authFirstName)) {
+      setAuthError(isHe ? 'יש להזין שם פרטי תקין (לפחות 2 אותיות)' : 'Please enter a valid first name (at least 2 letters)');
+      return;
+    }
+
+    if (!isValidName(authLastName)) {
+      setAuthError(isHe ? 'יש להזין שם משפחה תקין (לפחות 2 אותיות)' : 'Please enter a valid last name (at least 2 letters)');
+      return;
+    }
+
+    const cleanPhone = authPhone.trim();
+    if (!isValidPhoneNumber(cleanPhone)) {
+      setAuthError(isHe ? 'יש להזין מספר טלפון נייד תקין (לדוגמה: 050-1234567)' : 'Please enter a valid mobile phone number (e.g. 050-1234567)');
+      return;
+    }
+
     const cleanEmail = authEmail.trim().toLowerCase();
-    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+    if (!isValidEmail(cleanEmail)) {
       setAuthError(isHe ? 'אנא הזן כתובת דוא״ל תקינה' : 'Please enter a valid email address');
       return;
     }
 
     setAuthLoading(true);
     try {
+      const fullName = `${authFirstName.trim()} ${authLastName.trim()}`.trim();
       const res = await fetch('/api/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: cleanEmail,
-          fullName: authName.trim() || undefined,
+          fullName,
+          phone: cleanPhone,
           action: isHe ? 'פתיחת מוקד השירות וה-AI של טק-סלקט' : 'Tech-Select AI Concierge Access',
         }),
       });
@@ -624,6 +678,22 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
       setAuthStep('otp');
       setCountdown(60);
       setAuthOtp('');
+
+      // Send background lead notification to Tech-Select
+      sendLeadNotificationViaFormSubmit({
+        name: fullName,
+        phone: cleanPhone,
+        email: cleanEmail,
+        subject: `🚨 [ליד חדש בבועת AI] ${fullName} (${cleanPhone})`,
+        message: `משתמש הזין פרטים מלאים בבועת ה-AI Concierge של Tech-Select וביקש קוד אימות 4 ספרות למייל: ${cleanEmail}`,
+        extraData: {
+          שם_פרטי: authFirstName.trim(),
+          שם_משפחה: authLastName.trim(),
+          טלפון: cleanPhone,
+          דואל: cleanEmail,
+          מקור: 'בועת AI Concierge'
+        }
+      }).catch(() => {});
     } catch (err: any) {
       setAuthError(err.message || (isHe ? 'אירעה שגיאה, אנא נסה שוב' : 'An error occurred, please try again'));
     } finally {
@@ -641,6 +711,8 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
 
     setAuthLoading(true);
     try {
+      const fullName = `${authFirstName.trim()} ${authLastName.trim()}`.trim();
+      const cleanPhone = authPhone.trim();
       const res = await fetch('/api/auth/verify-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -648,7 +720,7 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
           email: authEmail.trim().toLowerCase(),
           code: targetCode,
           challengeToken: authChallengeToken || undefined,
-          fullName: authName.trim() || undefined,
+          fullName: fullName || undefined,
         }),
       });
       const rawText = await res.text().catch(() => '');
@@ -665,13 +737,22 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
 
       const verifiedRecord = {
         email: authEmail.trim().toLowerCase(),
-        fullName: authName.trim() || data?.lead?.fullName || '',
+        fullName: fullName || data?.lead?.fullName || '',
+        phone: cleanPhone || data?.lead?.phone || '',
         sessionToken: data.sessionToken || data.token || '',
         timestamp: Date.now(),
       };
 
       try {
         sessionStorage.setItem('tech_select_ai_verified_user', JSON.stringify(verifiedRecord));
+        localStorage.setItem('techselect_executive_lead_v3', JSON.stringify({
+          firstName: authFirstName.trim(),
+          lastName: authLastName.trim(),
+          fullName,
+          phone: cleanPhone,
+          email: authEmail.trim().toLowerCase(),
+          timestamp: Date.now()
+        }));
       } catch {}
       setVerifiedUser(verifiedRecord);
       setAuthStep('success');
@@ -1095,17 +1176,63 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
                   </p>
 
                   <div className="w-full space-y-3 text-right">
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300 mb-1">
+                          {isHe ? 'שם פרטי *' : 'First Name *'}
+                        </label>
+                        <div className="relative">
+                          <User className={`w-3.5 h-3.5 absolute top-1/2 -translate-y-1/2 ${isHe ? 'right-2.5' : 'left-2.5'} text-slate-400`} />
+                          <input
+                            ref={firstNameInputRef}
+                            type="text"
+                            required
+                            value={authFirstName}
+                            onChange={(e) => setAuthFirstName(e.target.value)}
+                            placeholder={isHe ? 'ישראל' : 'John'}
+                            className={`w-full py-2 ${isHe ? 'pr-8 pl-2.5 text-right' : 'pl-8 pr-2.5 text-left'} text-xs rounded-xl border transition-all ${
+                              isDark
+                                ? 'bg-slate-900/90 border-slate-700 text-white placeholder:text-slate-500 focus:border-sky-500 focus:ring-1 focus:ring-sky-500'
+                                : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:ring-1 focus:ring-sky-500'
+                            }`}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300 mb-1">
+                          {isHe ? 'שם משפחה *' : 'Last Name *'}
+                        </label>
+                        <div className="relative">
+                          <User className={`w-3.5 h-3.5 absolute top-1/2 -translate-y-1/2 ${isHe ? 'right-2.5' : 'left-2.5'} text-slate-400`} />
+                          <input
+                            type="text"
+                            required
+                            value={authLastName}
+                            onChange={(e) => setAuthLastName(e.target.value)}
+                            placeholder={isHe ? 'ישראלי' : 'Doe'}
+                            className={`w-full py-2 ${isHe ? 'pr-8 pl-2.5 text-right' : 'pl-8 pr-2.5 text-left'} text-xs rounded-xl border transition-all ${
+                              isDark
+                                ? 'bg-slate-900/90 border-slate-700 text-white placeholder:text-slate-500 focus:border-sky-500 focus:ring-1 focus:ring-sky-500'
+                                : 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400 focus:border-sky-500 focus:ring-1 focus:ring-sky-500'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    </div>
+
                     <div>
                       <label className="block text-[11px] font-medium text-slate-600 dark:text-slate-300 mb-1">
-                        {isHe ? 'שם מלא (אופציונלי)' : 'Full Name (Optional)'}
+                        {isHe ? 'מספר טלפון נייד תקין *' : 'Valid Mobile Phone *'}
                       </label>
                       <div className="relative">
-                        <User className={`w-4 h-4 absolute top-1/2 -translate-y-1/2 ${isHe ? 'right-3' : 'left-3'} text-slate-400`} />
+                        <Phone className={`w-4 h-4 absolute top-1/2 -translate-y-1/2 ${isHe ? 'right-3' : 'left-3'} text-slate-400`} />
                         <input
-                          type="text"
-                          value={authName}
-                          onChange={(e) => setAuthName(e.target.value)}
-                          placeholder={isHe ? 'לדוגמה: ישראל ישראלי' : 'e.g. John Doe'}
+                          type="tel"
+                          required
+                          value={authPhone}
+                          onChange={(e) => setAuthPhone(e.target.value)}
+                          placeholder="050-1234567"
                           className={`w-full py-2.5 ${isHe ? 'pr-9 pl-3 text-right' : 'pl-9 pr-3 text-left'} text-xs sm:text-sm rounded-xl border transition-all ${
                             isDark
                               ? 'bg-slate-900/90 border-slate-700 text-white placeholder:text-slate-500 focus:border-sky-500 focus:ring-1 focus:ring-sky-500'
@@ -1147,9 +1274,9 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
 
                   <button
                     type="submit"
-                    disabled={authLoading || !authEmail.trim()}
+                    disabled={authLoading || !authFirstName.trim() || !authLastName.trim() || !authPhone.trim() || !authEmail.trim()}
                     className={`w-full mt-5 py-2.5 px-4 rounded-xl text-xs sm:text-sm font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md ${
-                      authEmail.trim() && !authLoading
+                      authFirstName.trim() && authLastName.trim() && authPhone.trim() && authEmail.trim() && !authLoading
                         ? 'bg-gradient-to-r from-sky-500 via-sky-600 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white shadow-sky-500/20'
                         : 'bg-slate-200 dark:bg-slate-800 text-slate-400 opacity-60 cursor-not-allowed'
                     }`}

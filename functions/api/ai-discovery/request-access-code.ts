@@ -6,6 +6,7 @@ import {
   sanitizeString,
   validateEmail,
   validatePhone,
+  validateFullName,
   checkRateLimit,
   getClientIp,
   getSessionSecret,
@@ -81,12 +82,33 @@ export async function handleRequestAccessCode(
 
     const isEmailValid = validateEmail(cleanEmail);
     const isPhoneValid = validatePhone(cleanPhone);
+    const isNameValid = validateFullName(cleanName);
 
-    if (!isEmailValid && !isPhoneValid) {
+    if (!isNameValid) {
       return new Response(
         JSON.stringify({
           success: false,
-          error: "נא להזין כתובת מייל תקינה או מספר טלפון לקבלת קוד גישה",
+          error: "נא להזין שם פרטי ושם משפחה תקינים (לפחות 2 מילים)",
+        }),
+        { status: 400, headers: responseHeaders }
+      );
+    }
+
+    if (!isPhoneValid) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "נא להזין מספר טלפון תקין (לדוגמה: 050-1234567)",
+        }),
+        { status: 400, headers: responseHeaders }
+      );
+    }
+
+    if (!isEmailValid) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "נא להזין כתובת מייל תקינה לקבלת קוד גישה",
         }),
         { status: 400, headers: responseHeaders }
       );

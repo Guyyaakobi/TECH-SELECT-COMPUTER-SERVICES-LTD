@@ -614,6 +614,24 @@ async function startServer() {
       }
     }, 10 * 60 * 1000);
 
+    function isValidPhoneFormat(p?: string): boolean {
+      if (!p) return false;
+      const clean = p.replace(/[\s\-\(\)\.]/g, "");
+      if (!/^\+?\d+$/.test(clean)) return false;
+      const digitsOnly = clean.replace(/\+/g, "");
+      if (/^(\d)\1+$/.test(digitsOnly)) return false;
+      const isrNational = /^0(?:5[0-9]|7[2-9]|[23489])\d{7}$/;
+      const isrIntl = /^(?:(?:\+?972)|972)(?:5[0-9]|7[2-9]|[23489])\d{7}$/;
+      const generalIntl = /^\+?[1-9]\d{8,14}$/;
+      return isrNational.test(clean) || isrIntl.test(clean) || generalIntl.test(clean);
+    }
+
+    function isValidFullNameFormat(name?: string): boolean {
+      if (!name) return false;
+      const parts = name.trim().split(/\s+/).filter((p) => p.length >= 2);
+      return parts.length >= 2;
+    }
+
     // ==========================================
     // 0. API Route: Request One-Time Access Code (OTP) & Alert Guy Yaakobi
     // ==========================================
@@ -640,10 +658,24 @@ async function startServer() {
         const cleanName = String(fullName || "").trim() || "נציג הנהלה";
         const cleanSize = String(companySize || "").trim() || "21-100";
 
-        if (!cleanEmail && !cleanPhone) {
+        if (!isValidFullNameFormat(cleanName)) {
           return res.status(400).json({
             success: false,
-            error: "נא להזין כתובת מייל או מספר טלפון לקבלת קוד גישה",
+            error: "נא להזין שם פרטי ושם משפחה תקינים (לפחות 2 מילים)",
+          });
+        }
+
+        if (!isValidPhoneFormat(cleanPhone)) {
+          return res.status(400).json({
+            success: false,
+            error: "נא להזין מספר טלפון תקין (לדוגמה: 050-1234567)",
+          });
+        }
+
+        if (!cleanEmail || !cleanEmail.includes("@")) {
+          return res.status(400).json({
+            success: false,
+            error: "נא להזין כתובת מייל תקינה לקבלת קוד גישה",
           });
         }
 
@@ -882,14 +914,23 @@ async function startServer() {
     // ==========================================
     app.post(["/api/auth/send-otp", "/api/otp/send"], async (req, res) => {
       try {
-        const { email, fullName, companyName, action } = req.body || {};
+        const { email, fullName, companyName, action, phone } = req.body || {};
         const cleanEmail = String(email || "").trim().toLowerCase();
         const cleanName = String(fullName || "").trim() || "משתמש באתר";
+        const cleanPhone = String(phone || "").trim();
         const cleanCompany = String(companyName || "").trim();
         const actionDesc = String(action || "ביצוע פעולות באתר / שיחה עם מוקד ה-AI");
 
         if (!cleanEmail || !cleanEmail.includes("@")) {
           return res.status(400).json({ success: false, error: "כתובת דוא״ל תקינה נדרשת לקבלת קוד אימות" });
+        }
+
+        if (fullName && !isValidFullNameFormat(cleanName)) {
+          return res.status(400).json({ success: false, error: "נא להזין שם פרטי ושם משפחה תקינים (לפחות 2 מילים)" });
+        }
+
+        if (phone && !isValidPhoneFormat(cleanPhone)) {
+          return res.status(400).json({ success: false, error: "נא להזין מספר טלפון תקין (לדוגמה: 050-1234567)" });
         }
 
         const clientIp = req.ip || req.headers["x-forwarded-for"] || "unknown";
@@ -904,7 +945,7 @@ async function startServer() {
         const pendingData: PendingAccessCode = {
           code: otpCode,
           email: cleanEmail,
-          phone: "",
+          phone: cleanPhone,
           companyName: cleanCompany || "אתר Tech-Select",
           fullName: cleanName,
           companySize: "1-20",

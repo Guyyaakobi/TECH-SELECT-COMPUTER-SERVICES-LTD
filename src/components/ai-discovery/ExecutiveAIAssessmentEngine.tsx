@@ -13,6 +13,7 @@ import { AIExcellenceReportView } from './AIExcellenceReportView';
 import { generateExcellenceReport, normalizeAIReport, AI_DISCOVERY_PRESETS } from '../../data/aiDiscoveryPresets';
 import { COMPANY_INFO } from '../../data/content';
 import { sendLeadNotificationViaFormSubmit, sendReportEmailViaFormSubmit } from '../../utils/formSubmit';
+import { isValidPhoneNumber, isValidEmail, isValidName } from '../../utils/validation';
 
 interface ExecutiveAIAssessmentEngineProps {
   onNavigateToContact?: () => void;
@@ -67,16 +68,27 @@ export const ExecutiveAIAssessmentEngine: React.FC<ExecutiveAIAssessmentEnginePr
   });
 
   // Access Gate inputs - Prepopulate from existing leads or user profile if stored
-  const [gateFullName, setGateFullName] = useState(() => {
+  const initialGateNames = (() => {
     try {
       const saved = localStorage.getItem('techselect_executive_lead_v3') || localStorage.getItem('techselect_simulator_lead');
       if (saved) {
         const parsed = JSON.parse(saved);
-        return parsed.fullName || parsed.name || '';
+        if (parsed.firstName || parsed.lastName) {
+          return { first: parsed.firstName || '', last: parsed.lastName || '' };
+        }
+        const fn = (parsed.fullName || parsed.name || '').trim();
+        if (fn) {
+          const parts = fn.split(/\s+/);
+          return { first: parts[0] || '', last: parts.slice(1).join(' ') || '' };
+        }
       }
     } catch {}
-    return '';
-  });
+    return { first: '', last: '' };
+  })();
+
+  const [gateFirstName, setGateFirstName] = useState(initialGateNames.first);
+  const [gateLastName, setGateLastName] = useState(initialGateNames.last);
+  const gateFullName = `${gateFirstName.trim()} ${gateLastName.trim()}`.trim();
   const [gateCompanyName, setGateCompanyName] = useState(() => {
     try {
       const saved = localStorage.getItem('techselect_executive_lead_v3') || localStorage.getItem('techselect_simulator_lead');
@@ -181,8 +193,28 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
     setGateError(null);
     setGateSuccessMsg(null);
 
-    if (!gateEmail.trim() && !gatePhone.trim()) {
-      setGateError(isHe ? 'נא להזין כתובת מייל או מספר טלפון לקבלת קוד הגישה' : 'Please enter email or phone to receive access code');
+    if (!isValidName(gateFirstName)) {
+      setGateError(isHe ? 'יש להזין שם פרטי תקין (לפחות 2 אותיות)' : 'Please enter a valid first name (at least 2 letters)');
+      return;
+    }
+
+    if (!isValidName(gateLastName)) {
+      setGateError(isHe ? 'יש להזין שם משפחה תקין (לפחות 2 אותיות)' : 'Please enter a valid last name (at least 2 letters)');
+      return;
+    }
+
+    if (!gateCompanyName.trim() || gateCompanyName.trim().length < 2) {
+      setGateError(isHe ? 'יש להזין את שם הארגון / החברה' : 'Please enter your organization/company name');
+      return;
+    }
+
+    if (!isValidPhoneNumber(gatePhone)) {
+      setGateError(isHe ? 'יש להזין מספר טלפון נייד תקין (לדוגמה: 050-1234567)' : 'Please enter a valid mobile phone number (e.g. 050-1234567)');
+      return;
+    }
+
+    if (!isValidEmail(gateEmail)) {
+      setGateError(isHe ? 'יש להזין כתובת דוא״ל תקינה לקבלת קוד אימות' : 'Please enter a valid corporate email address');
       return;
     }
 
@@ -744,15 +776,16 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">
-                  {isHe ? 'שם מלא *' : 'Full Name *'}
+                  {isHe ? 'שם פרטי *' : 'First Name *'}
                 </label>
                 <div className="relative">
                   <User className="w-4 h-4 text-slate-500 absolute top-3 right-3" />
                   <input
                     type="text"
-                    value={gateFullName}
-                    onChange={(e) => setGateFullName(e.target.value)}
-                    placeholder={isHe ? 'ישראל ישראלי' : 'Jane Doe'}
+                    required
+                    value={gateFirstName}
+                    onChange={(e) => setGateFirstName(e.target.value)}
+                    placeholder={isHe ? 'ישראל' : 'Jane'}
                     className={`w-full py-2.5 pr-9 pl-3 text-xs sm:text-sm rounded-xl border outline-none ${
                       isDark ? 'bg-[#060a14] border-slate-700 text-white focus:border-cyan-500' : 'bg-slate-50 border-slate-300 text-slate-900 focus:border-blue-600'
                     }`}
@@ -762,20 +795,40 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
 
               <div>
                 <label className="block text-xs font-bold text-slate-300 mb-1">
-                  {isHe ? 'שם הארגון / החברה *' : 'Company Name *'}
+                  {isHe ? 'שם משפחה *' : 'Last Name *'}
                 </label>
                 <div className="relative">
-                  <Building2 className="w-4 h-4 text-slate-500 absolute top-3 right-3" />
+                  <User className="w-4 h-4 text-slate-500 absolute top-3 right-3" />
                   <input
                     type="text"
-                    value={gateCompanyName}
-                    onChange={(e) => setGateCompanyName(e.target.value)}
-                    placeholder={isHe ? 'חברת טכנולוגיות בע"מ' : 'Enterprise Ltd.'}
+                    required
+                    value={gateLastName}
+                    onChange={(e) => setGateLastName(e.target.value)}
+                    placeholder={isHe ? 'ישראלי' : 'Doe'}
                     className={`w-full py-2.5 pr-9 pl-3 text-xs sm:text-sm rounded-xl border outline-none ${
                       isDark ? 'bg-[#060a14] border-slate-700 text-white focus:border-cyan-500' : 'bg-slate-50 border-slate-300 text-slate-900 focus:border-blue-600'
                     }`}
                   />
                 </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-300 mb-1">
+                {isHe ? 'שם הארגון / החברה *' : 'Company Name *'}
+              </label>
+              <div className="relative">
+                <Building2 className="w-4 h-4 text-slate-500 absolute top-3 right-3" />
+                <input
+                  type="text"
+                  required
+                  value={gateCompanyName}
+                  onChange={(e) => setGateCompanyName(e.target.value)}
+                  placeholder={isHe ? 'חברת טכנולוגיות בע"מ' : 'Enterprise Ltd.'}
+                  className={`w-full py-2.5 pr-9 pl-3 text-xs sm:text-sm rounded-xl border outline-none ${
+                    isDark ? 'bg-[#060a14] border-slate-700 text-white focus:border-cyan-500' : 'bg-slate-50 border-slate-300 text-slate-900 focus:border-blue-600'
+                  }`}
+                />
               </div>
             </div>
 
@@ -818,12 +871,13 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
 
               <div className="sm:col-span-1">
                 <label className="block text-xs font-bold text-slate-300 mb-1">
-                  {isHe ? 'טלפון נייד *' : 'Phone *'}
+                  {isHe ? 'טלפון נייד תקין *' : 'Valid Mobile Phone *'}
                 </label>
                 <div className="relative">
                   <Phone className="w-4 h-4 text-slate-500 absolute top-3 right-3" />
                   <input
                     type="tel"
+                    required
                     value={gatePhone}
                     onChange={(e) => setGatePhone(e.target.value)}
                     placeholder="050-1234567"
@@ -879,7 +933,7 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
                   className="py-3 px-4 rounded-xl border border-emerald-500/40 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer transition-all"
                 >
                   <ExternalLink className="w-4 h-4" />
-                  <span>{isHe ? 'בקש אישור ב-WhatsApp' : 'Instant WhatsApp VIP'}</span>
+                  <span>{isHe ? 'בקש אישור ב-WhatsApp' : 'Request Access via WhatsApp'}</span>
                 </a>
               </div>
 
