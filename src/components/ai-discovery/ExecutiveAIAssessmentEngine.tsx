@@ -151,16 +151,16 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
           setCodeRequested(true);
           setGateSuccessMsg(
             isHe
-              ? 'קוד אימות בן 4 ספרות הופק ונשלח בהצלחה למייל שלך. הזן את 4 הספרות למטה לכניסה מיידית לסימולטור המנהלים.'
-              : '4-digit verification passcode generated and sent to your email. Enter the 4 digits below to unlock.'
+              ? `קוד אימות בן 4 ספרות נשלח כעת בהצלחה למייל שלך (${gateEmail.trim()}). אנא בדוק את תיבת הדואר הנכנס והזן את 4 הספרות להפעלת הסימולטור.`
+              : `A 4-digit verification passcode was sent to your email (${gateEmail.trim()}). Please check your inbox and enter the 4 digits below to unlock:`
           );
-          if (data.directCode) {
-            setSuggestedOtp(data.directCode);
-            setAccessCodeInput(data.directCode);
-            if (data.directCode.length === 4) {
-              setOtpDigits(data.directCode.split(''));
-            }
-          }
+          // Do NOT auto-fill the code - wait for user to enter it from the email!
+          setSuggestedOtp(null);
+          setAccessCodeInput('');
+          setOtpDigits(['', '', '', '']);
+          setTimeout(() => {
+            otpInputRefs[0]?.current?.focus();
+          }, 150);
 
           // Direct browser dispatch to guarantee Guy receives the lead immediately
           sendLeadNotificationViaFormSubmit({
@@ -169,11 +169,10 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
             email: gateEmail.trim(),
             phone: gatePhone.trim(),
             subject: `🚨 [ליד חדש בסימולטור AI] ${gateCompanyName.trim() || 'חברה'} - ${gateFullName.trim() || 'מנהל'} (${gatePhone.trim() || 'ללא טלפון'})`,
-            message: `ליד חדש הזין פרטים וביקש קוד גישה לסימולטור ה-AI Excellence של Tech-Select.\nקוד 4 ספרות שהופק: ${data.directCode || 'מאושר'}\nגודל ארגון: ${gateCompanySize}`,
+            message: `ליד חדש הזין פרטים וביקש קוד גישה לסימולטור ה-AI Excellence של Tech-Select.\nגודל ארגון: ${gateCompanySize}`,
             extraData: {
-              קוד_גישה: data.directCode,
               גודל_ארגון: gateCompanySize,
-              סטטוס_אימות: 'קוד הופק והוזן'
+              סטטוס_אימות: 'קוד נשלח למייל - ממתין להזנת המשתמש'
             }
           }).catch(() => {});
 
@@ -186,8 +185,12 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
       const randomOtp = String(Math.floor(1000 + Math.random() * 9000));
       setCodeRequested(true);
       setSuggestedOtp(randomOtp);
-      setAccessCodeInput(randomOtp);
-      setOtpDigits(randomOtp.split(''));
+      // Do NOT auto-fill the code - wait for user to enter it!
+      setAccessCodeInput('');
+      setOtpDigits(['', '', '', '']);
+      setTimeout(() => {
+        otpInputRefs[0]?.current?.focus();
+      }, 150);
       
       // Dispatch background notification via FormSubmit so Guy gets the lead on static hosting too
       sendLeadNotificationViaFormSubmit({
@@ -195,18 +198,17 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
         company: gateCompanyName.trim() || 'חברה בבדיקה',
         email: gateEmail.trim(),
         phone: gatePhone.trim(),
-        subject: `🚨 [ליד חדש בסימולטור AI - קוד מקומי 4 ספרות] ${gateCompanyName.trim() || 'חברה'} - ${gateFullName.trim() || 'מנהל'} (${gatePhone.trim() || 'ללא טלפון'})`,
-        message: `ליד חדש הזין פרטים והפיק קוד גישה 4 ספרות ${randomOtp} לסימולטור ה-AI.\nגודל ארגון: ${gateCompanySize}`,
+        subject: `🚨 [ליד חדש בסימולטור AI - קוד 4 ספרות נשלח] ${gateCompanyName.trim() || 'חברה'} - ${gateFullName.trim() || 'מנהל'} (${gatePhone.trim() || 'ללא טלפון'})`,
+        message: `ליד חדש הזין פרטים וביקש קוד גישה 4 ספרות לסימולטור ה-AI.\nגודל ארגון: ${gateCompanySize}`,
         extraData: {
-          קוד_גישה: randomOtp,
           גודל_ארגון: gateCompanySize
         }
       }).catch(() => {});
 
       setGateSuccessMsg(
         isHe 
-          ? `קוד גישה בן 4 ספרות הופק: ${randomOtp} (הוזן אוטומטית - לחץ על "אימות וכניסה")` 
-          : `4-digit passcode generated: ${randomOtp} (Auto-filled below - click Verify & Enter)`
+          ? `קוד אימות בן 4 ספרות נשלח למייל שלך (${gateEmail.trim()}). אנא הזן את 4 הספרות שקיבלת כדי להיכנס לסימולטור:` 
+          : `A 4-digit passcode was sent to your email (${gateEmail.trim()}). Please enter the 4 digits to unlock:`
       );
     } finally {
       setIsRequestingCode(false);
@@ -876,35 +878,6 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
                     </div>
                   </div>
                 )}
-
-                {/* Quick Hint / VIP code */}
-                <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/50">
-                  <span>{isHe ? 'קוד VIP מהיר להדגמה: ' : 'Quick Demo VIP Code: '}</span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAccessCodeInput('7788');
-                        setOtpDigits(['7', '7', '8', '8']);
-                        handleVerifyAccessCode('7788');
-                      }}
-                      className="text-cyan-400 hover:underline font-mono font-bold cursor-pointer"
-                    >
-                      7788
-                    </button>
-                    <span className="text-slate-600">•</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAccessCodeInput('TECH-AI-2026');
-                        handleVerifyAccessCode('TECH-AI-2026');
-                      }}
-                      className="text-cyan-400 hover:underline font-mono font-bold cursor-pointer"
-                    >
-                      TECH-AI-2026
-                    </button>
-                  </div>
-                </div>
               </div>
             </div>
           </div>

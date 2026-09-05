@@ -26,6 +26,7 @@ import * as mailHandler from "./functions/api/mail/send";
 import * as sendOtpHandler from "./functions/api/auth/send-otp";
 import * as verifyOtpHandler from "./functions/api/auth/verify-otp";
 import * as contactHandler from "./functions/api/contact";
+import * as checkCustomerHandler from "./functions/api/atera/check-customer";
 
 interface Env {
   ASSETS?: {
@@ -137,6 +138,11 @@ export default {
     // 8.1 Service Ticket Status & Lookup (Protected by 4-digit Email OTP)
     if (pathname === "/api/tickets/lookup" || pathname === "/api/atera/lookup") {
       return ticketLookupHandler.handleTicketLookup(request, env, ctx);
+    }
+
+    // 8.2 Atera Customer Verification & Random Tech Greeting
+    if (pathname === "/api/atera/check-customer" || pathname === "/api/customer/verify") {
+      return checkCustomerHandler.handleCheckCustomer(request, env);
     }
 
     // 9. Send Email via Microsoft Graph API (support@tech-select.co.il)

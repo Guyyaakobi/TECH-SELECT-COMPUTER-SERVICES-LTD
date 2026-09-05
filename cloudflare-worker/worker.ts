@@ -14,6 +14,7 @@
  */
 
 import { handleAsk } from "../functions/api/site-ai/ask";
+import { handleCheckCustomer } from "../functions/api/atera/check-customer";
 
 export interface Env {
   GEMINI_API_KEY?: string;
@@ -84,6 +85,11 @@ export default {
     // Route 6: Site AI Concierge & Ticket Automation
     if (url.pathname.endsWith("/api/site-ai/ask")) {
       return handleAsk(request, env);
+    }
+
+    // Route 7: Atera Customer Verification & Random Tech Greeting
+    if (url.pathname.endsWith("/api/atera/check-customer") || url.pathname.endsWith("/api/customer/verify")) {
+      return handleCheckCustomer(request, env);
     }
 
     return new Response(
@@ -601,7 +607,6 @@ async function handleAuthSendOtp(request: Request, env: Env): Promise<Response> 
         success: true,
         maskedEmail: cleanEmail.replace(/(.{2})(.*)(@.*)/, "$1***$3"),
         expiresInMinutes: 15,
-        directCode: otpCode,
       }),
       { status: 200, headers: jsonHeaders }
     );

@@ -43,6 +43,18 @@ interface ChatMessage {
   createdTicketId?: string | number;
 }
 
+const TECH_TEAM_MEMBERS: { he: string; en: string }[] = [
+  { he: 'אוריאל פחימה', en: 'Uriel Fahima' },
+  { he: 'אמיר בן ארויה', en: 'Amir Ben Arouya' },
+  { he: 'תבור כהן', en: 'Tavor Cohen' },
+  { he: 'אריאל מורי', en: 'Ariel Mori' },
+  { he: 'יוסף איאסה', en: 'Yosef Ayasa' },
+];
+
+const getRandomTech = (): { he: string; en: string } => {
+  return TECH_TEAM_MEMBERS[Math.floor(Math.random() * TECH_TEAM_MEMBERS.length)];
+};
+
 export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
   onNavigateToSimulator,
   onNavigateToContact,
@@ -53,15 +65,24 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
   // Assistant Open State (Always closed initially until user clicks)
   const [isOpen, setIsOpen] = useState(false);
 
-  // Bubble Visibility: Hidden on initial site load, rolls in from left to right after 3 seconds
+  // Bubble Visibility: Hidden on initial site load, circle rolls in from left after 3 seconds,
+  // then the text "LET THE AI WORK..." expands 1.25s later.
   const [isBubbleVisible, setIsBubbleVisible] = useState(false);
+  const [isPillExpanded, setIsPillExpanded] = useState(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const bubbleTimer = setTimeout(() => {
       setIsBubbleVisible(true);
     }, 3000);
 
-    return () => clearTimeout(timer);
+    const expandTimer = setTimeout(() => {
+      setIsPillExpanded(true);
+    }, 4250);
+
+    return () => {
+      clearTimeout(bubbleTimer);
+      clearTimeout(expandTimer);
+    };
   }, []);
 
   // Chat State
@@ -185,11 +206,8 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
     };
   }, [isOpen]);
 
-  // Assigned Technician & Incognito State (Deterministic once on mount - Guy Yaakobi)
-  const [assignedTech, setAssignedTech] = useState<{ he: string; en: string }>({
-    he: 'גיא יעקובי',
-    en: 'Guy Yaakobi',
-  });
+  // Assigned Technician & Incognito State (Deterministic once on mount from technical team)
+  const [assignedTech, setAssignedTech] = useState<{ he: string; en: string }>(() => getRandomTech());
   const [isIncognito, setIsIncognito] = useState(false);
 
   useEffect(() => {
@@ -288,10 +306,9 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
     }
 
     // Default standard greeting
-    const techFirstName = techDisplayName.split(' ')[0] || techDisplayName;
     return isHe
-      ? `שלום! אני העוזר הווירטואלי של **${techDisplayName}** מחברת **טק-סלקט**.\n\nאני מחובר ישירות למאגרי הידע של חברת **טק-סלקט** שנאספו לאורך שנים של פעילות הנדסית, ניהול רשתות ותשתיות, ענן וסייבר בארגונים מובילים.\n\nאני כאן כדי לסייע לך בפתרון בעיות, במענה מקצועי, בבדיקת סטטוס פנייה, או בפתיחת קריאת שירות שתועבר ישירות ל${techFirstName} לבדיקה מעמיקה ולהמשך טיפול אישי.\n\nאיך אוכל לעזור לך היום?`
-      : `Hello! I am the AI assistant of **${techDisplayName}** at **Tech-Select**.\n\nI am connected directly to Tech-Select's enterprise knowledge base, accumulated over years of advanced IT management, cloud solutions, and cybersecurity support.\n\nI am here to assist with technical inquiries, ticket status checks, or opening a service ticket directly forwarded to ${techFirstName} for deep review.\n\nHow may I assist you today?`;
+      ? `היי, אני העוזר של ${techDisplayName}. אני רואה שאתה עדיין לא לקוח שלנו, אבל לא נורא, שאל מה שאתה צריך ואני אראה מה אני יכול לעשות.`
+      : `Hi, I am the assistant of ${techDisplayName}. I see that you are not yet our client, but no worries! Feel free to ask whatever you need, and I'll see what I can do for you.`;
   };
 
   // Check customer status in Atera API
@@ -303,21 +320,30 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, technician: currentTech }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
       if (data && data.success) {
-        let finalTech = data.technician || (isHe ? 'גיא יעקובי' : 'Guy Yaakobi');
+        let selectedTechObj = assignedTech;
         if (!data.isCustomer) {
-          const guy = { he: 'גיא יעקובי', en: 'Guy Yaakobi' };
-          setAssignedTech(guy);
-          finalTech = isHe ? guy.he : guy.en;
+          // If not customer: select one of the 5 technicians randomly
+          const techName = data.technician;
+          const found = TECH_TEAM_MEMBERS.find((t) => t.he === techName || t.en === techName);
+          selectedTechObj = found || getRandomTech();
+          setAssignedTech(selectedTechObj);
+        } else {
+          // If active customer:
+          if (data.technician) {
+            const found = TECH_TEAM_MEMBERS.find((t) => t.he === data.technician || t.en === data.technician);
+            if (found) setAssignedTech(found);
+          }
         }
 
+        const finalTechName = isHe ? selectedTechObj.he : selectedTechObj.en;
         const info = {
           checked: true,
           isCustomer: Boolean(data.isCustomer),
-          companyName: data.companyName,
-          contactName: data.contactName,
-          technician: finalTech,
+          companyName: data.companyName || data.contact?.customerName,
+          contactName: data.contactName || data.contact?.name,
+          technician: finalTechName,
         };
         setCustomerInfo(info);
         try {
@@ -328,7 +354,20 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
     } catch (e) {
       console.warn('Atera check error:', e);
     }
-    return null;
+
+    // Fallback: pick one of the 5 technicians randomly for non-customers
+    const fallbackTech = getRandomTech();
+    setAssignedTech(fallbackTech);
+    const fallbackInfo = {
+      checked: true,
+      isCustomer: false,
+      technician: isHe ? fallbackTech.he : fallbackTech.en,
+    };
+    setCustomerInfo(fallbackInfo);
+    try {
+      sessionStorage.setItem('tech_select_atera_status', JSON.stringify(fallbackInfo));
+    } catch {}
+    return fallbackInfo;
   };
 
   // Initial Gemini-style welcome message or updated Atera-based greeting
@@ -823,14 +862,18 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
       {!isOpen && isBubbleVisible && (
         <div
           id="floating-ai-concierge-trigger"
-          className={`fixed bottom-6 ${isHe ? 'right-6' : 'left-6'} z-[9990] print:hidden max-w-[calc(100vw-3rem)] animate-roll-in-from-left pointer-events-auto`}
+          className={`fixed bottom-6 ${isHe ? 'right-6' : 'left-6'} z-[9990] print:hidden max-w-[calc(100vw-3rem)] pointer-events-auto`}
         >
           <div
             onClick={handleOpenConcierge}
             role="button"
             tabIndex={0}
             onKeyDown={(e) => e.key === 'Enter' && handleOpenConcierge()}
-            className={`group relative flex items-center gap-3 px-4 py-3 rounded-full cursor-pointer transition-all duration-300 shadow-2xl backdrop-blur-2xl border active:scale-98 ${
+            className={`group relative flex items-center rounded-full cursor-pointer transition-all duration-500 ease-out shadow-2xl backdrop-blur-2xl border active:scale-98 ${
+              isPillExpanded
+                ? 'px-3.5 py-2.5 gap-2.5 max-w-[420px]'
+                : 'p-1.5 gap-0 max-w-[56px]'
+            } ${
               isDark
                 ? 'bg-slate-900/90 hover:bg-slate-800/95 border-white/10 hover:border-sky-500/50 shadow-black/60 shadow-[0_10px_35px_rgba(0,0,0,0.5),0_0_20px_rgba(56,189,248,0.12)]'
                 : 'bg-white/95 hover:bg-white border-slate-200 hover:border-sky-400 shadow-slate-900/15 shadow-[0_10px_35px_rgba(14,165,233,0.15)]'
@@ -846,8 +889,8 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
             }
             aria-label={isHe ? 'עוזר וירטואלי חכם' : 'AI Assistant'}
           >
-            {/* Status Icon with Dynamic Active AI Glow */}
-            <div className="relative flex items-center justify-center shrink-0">
+            {/* Status Icon - ONLY this circle rolls and rotates rightwards! */}
+            <div className="relative flex items-center justify-center shrink-0 animate-roll-in-from-left">
               <div className="w-8 h-8 rounded-full p-[1.5px] shadow-sm bg-gradient-to-tr from-cyan-500 via-sky-500 to-indigo-600">
                 <div className={`w-full h-full rounded-full flex items-center justify-center ${isDark ? 'bg-slate-950' : 'bg-white'}`}>
                   <Sparkles className="w-4 h-4 text-sky-400 transition-transform duration-300 group-hover:scale-115 group-hover:rotate-12" />
@@ -858,8 +901,12 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
               </span>
             </div>
 
-            {/* Dynamic Rotating Animated Text (Always Runs: LET THE AI WORK...) */}
-            <div className="flex-1 min-w-0 pr-1 pl-1">
+            {/* Dynamic Rotating Animated Text - unfolded AFTER the circle arrives! */}
+            <div
+              className={`min-w-0 transition-all duration-500 ease-out overflow-hidden ${
+                isPillExpanded ? 'max-w-[280px] opacity-100 pr-1 pl-1' : 'max-w-0 opacity-0 p-0 pointer-events-none'
+              }`}
+            >
               <div className="h-5 overflow-hidden flex items-center">
                 <span
                   key={placeholderIndex}
@@ -871,9 +918,13 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
             </div>
 
             {/* Action Arrow Icon Button */}
-            <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 transition-transform duration-200 group-hover:translate-x-[-2px] ${
-              isDark ? 'bg-white/5 text-slate-400 group-hover:text-sky-400 group-hover:bg-sky-500/20' : 'bg-slate-100 text-slate-500 group-hover:text-sky-600 group-hover:bg-sky-50'
-            }`}>
+            <div
+              className={`rounded-full flex items-center justify-center shrink-0 transition-all duration-500 ease-out ${
+                isPillExpanded ? 'w-7 h-7 opacity-100 scale-100' : 'w-0 h-0 opacity-0 scale-0 pointer-events-none'
+              } ${
+                isDark ? 'bg-white/5 text-slate-400 group-hover:text-sky-400 group-hover:bg-sky-500/20' : 'bg-slate-100 text-slate-500 group-hover:text-sky-600 group-hover:bg-sky-50'
+              }`}
+            >
               {isHe ? <ArrowLeft className="w-3.5 h-3.5" /> : <ArrowRight className="w-3.5 h-3.5" />}
             </div>
           </div>

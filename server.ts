@@ -757,10 +757,8 @@ async function startServer() {
 
         return res.json({
           success: true,
-          message: "קוד האימות נוצר ונשלח לאישור. בנוסף תוכל להשתמש בקוד VIP או לקבל אישור ישיר.",
+          message: "קוד האימות נוצר ונשלח למייל שלך. אנא בדוק את תיבת המייל והזן את 4 הספרות.",
           expiresInMinutes: 15,
-          // We provide the demo OTP directly for frictionless client-side trial while still capturing the full lead
-          directCode: otpCode,
         });
       } catch (err: any) {
         console.error("[REQUEST ACCESS CODE ERROR]", err);
@@ -2436,22 +2434,22 @@ ${formData?.customPainPoints || "N/A"}
     // ==========================================
     // 3.4.1 API Route: Atera Customer Verification & Random Tech Greeting
     // ==========================================
+    const TECH_TEAM_LIST = [
+      "אוריאל פחימה",
+      "אמיר בן ארויה",
+      "תבור כהן",
+      "אריאל מורי",
+      "יוסף איאסה"
+    ];
+
     app.post(["/api/atera/check-customer", "/api/customer/verify"], async (req, res) => {
       try {
         const { email, technician } = req.body || {};
         const cleanEmail = String(email || "").trim().toLowerCase();
 
-        const TECH_TEAM = [
-          "אוריאל פחימה",
-          "אמיר בן ארויה",
-          "תבור כהן",
-          "אריאל מורי",
-          "יוסף איאסה"
-        ];
-
-        const selectedTech = (technician && TECH_TEAM.includes(technician))
+        const selectedTech = (technician && TECH_TEAM_LIST.includes(technician))
           ? technician
-          : TECH_TEAM[Math.floor(Math.random() * TECH_TEAM.length)];
+          : TECH_TEAM_LIST[Math.floor(Math.random() * TECH_TEAM_LIST.length)];
 
         if (!cleanEmail || !cleanEmail.includes("@")) {
           return res.status(400).json({
@@ -2495,7 +2493,7 @@ ${formData?.customPainPoints || "N/A"}
         });
       } catch (err: any) {
         console.error("[ATERA CHECK CUSTOMER ERROR]", err);
-        const fallbackTech = "גיא יעקובי";
+        const fallbackTech = TECH_TEAM_LIST[Math.floor(Math.random() * TECH_TEAM_LIST.length)];
         return res.json({
           success: true,
           isCustomer: false,

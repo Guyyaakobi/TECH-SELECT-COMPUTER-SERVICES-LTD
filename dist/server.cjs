@@ -581,10 +581,8 @@ async function startServer() {
         console.log(`[ACCESS CODE GENERATED] Code: ${otpCode} for ${cleanCompany} (${cleanEmail || cleanPhone})`);
         return res.json({
           success: true,
-          message: "\u05E7\u05D5\u05D3 \u05D4\u05D0\u05D9\u05DE\u05D5\u05EA \u05E0\u05D5\u05E6\u05E8 \u05D5\u05E0\u05E9\u05DC\u05D7 \u05DC\u05D0\u05D9\u05E9\u05D5\u05E8. \u05D1\u05E0\u05D5\u05E1\u05E3 \u05EA\u05D5\u05DB\u05DC \u05DC\u05D4\u05E9\u05EA\u05DE\u05E9 \u05D1\u05E7\u05D5\u05D3 VIP \u05D0\u05D5 \u05DC\u05E7\u05D1\u05DC \u05D0\u05D9\u05E9\u05D5\u05E8 \u05D9\u05E9\u05D9\u05E8.",
-          expiresInMinutes: 15,
-          // We provide the demo OTP directly for frictionless client-side trial while still capturing the full lead
-          directCode: otpCode
+          message: "\u05E7\u05D5\u05D3 \u05D4\u05D0\u05D9\u05DE\u05D5\u05EA \u05E0\u05D5\u05E6\u05E8 \u05D5\u05E0\u05E9\u05DC\u05D7 \u05DC\u05DE\u05D9\u05D9\u05DC \u05E9\u05DC\u05DA. \u05D0\u05E0\u05D0 \u05D1\u05D3\u05D5\u05E7 \u05D0\u05EA \u05EA\u05D9\u05D1\u05EA \u05D4\u05DE\u05D9\u05D9\u05DC \u05D5\u05D4\u05D6\u05DF \u05D0\u05EA 4 \u05D4\u05E1\u05E4\u05E8\u05D5\u05EA.",
+          expiresInMinutes: 15
         });
       } catch (err) {
         console.error("[REQUEST ACCESS CODE ERROR]", err);
@@ -2025,18 +2023,18 @@ ${formData?.customPainPoints || "N/A"}
         });
       }
     });
+    const TECH_TEAM_LIST = [
+      "\u05D0\u05D5\u05E8\u05D9\u05D0\u05DC \u05E4\u05D7\u05D9\u05DE\u05D4",
+      "\u05D0\u05DE\u05D9\u05E8 \u05D1\u05DF \u05D0\u05E8\u05D5\u05D9\u05D4",
+      "\u05EA\u05D1\u05D5\u05E8 \u05DB\u05D4\u05DF",
+      "\u05D0\u05E8\u05D9\u05D0\u05DC \u05DE\u05D5\u05E8\u05D9",
+      "\u05D9\u05D5\u05E1\u05E3 \u05D0\u05D9\u05D0\u05E1\u05D4"
+    ];
     app.post(["/api/atera/check-customer", "/api/customer/verify"], async (req, res) => {
       try {
         const { email, technician } = req.body || {};
         const cleanEmail = String(email || "").trim().toLowerCase();
-        const TECH_TEAM = [
-          "\u05D0\u05D5\u05E8\u05D9\u05D0\u05DC \u05E4\u05D7\u05D9\u05DE\u05D4",
-          "\u05D0\u05DE\u05D9\u05E8 \u05D1\u05DF \u05D0\u05E8\u05D5\u05D9\u05D4",
-          "\u05EA\u05D1\u05D5\u05E8 \u05DB\u05D4\u05DF",
-          "\u05D0\u05E8\u05D9\u05D0\u05DC \u05DE\u05D5\u05E8\u05D9",
-          "\u05D9\u05D5\u05E1\u05E3 \u05D0\u05D9\u05D0\u05E1\u05D4"
-        ];
-        const selectedTech = technician && TECH_TEAM.includes(technician) ? technician : TECH_TEAM[Math.floor(Math.random() * TECH_TEAM.length)];
+        const selectedTech = technician && TECH_TEAM_LIST.includes(technician) ? technician : TECH_TEAM_LIST[Math.floor(Math.random() * TECH_TEAM_LIST.length)];
         if (!cleanEmail || !cleanEmail.includes("@")) {
           return res.status(400).json({
             success: false,
@@ -2074,7 +2072,7 @@ ${formData?.customPainPoints || "N/A"}
         });
       } catch (err) {
         console.error("[ATERA CHECK CUSTOMER ERROR]", err);
-        const fallbackTech = "\u05D2\u05D9\u05D0 \u05D9\u05E2\u05E7\u05D5\u05D1\u05D9";
+        const fallbackTech = TECH_TEAM_LIST[Math.floor(Math.random() * TECH_TEAM_LIST.length)];
         return res.json({
           success: true,
           isCustomer: false,

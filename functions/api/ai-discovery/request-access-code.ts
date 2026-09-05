@@ -121,8 +121,7 @@ export async function handleRequestAccessCode(request: Request, env: Env, _ctx?:
     return new Response(
       JSON.stringify({
         success: true,
-        directCode,
-        message: "Access code generated successfully",
+        message: "Access code generated successfully and sent to email",
       }),
       { status: 200, headers: corsHeaders }
     );
