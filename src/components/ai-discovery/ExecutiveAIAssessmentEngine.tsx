@@ -32,6 +32,11 @@ export const ExecutiveAIAssessmentEngine: React.FC<ExecutiveAIAssessmentEnginePr
       // Purge old persistent localStorage so simulator is strictly locked upon visits
       localStorage.removeItem('tech_select_ai_session');
 
+      // Check if verified via concierge bubble or active session in sessionStorage
+      if (sessionStorage.getItem('tech_select_ceo_sim_verified') === 'true') {
+        return true;
+      }
+
       // Check if there is an active session in sessionStorage created within 30 minutes
       const saved = sessionStorage.getItem('tech_select_ai_session_data');
       if (saved) {
@@ -105,7 +110,6 @@ export const ExecutiveAIAssessmentEngine: React.FC<ExecutiveAIAssessmentEnginePr
   const [gateCompanySize, setGateCompanySize] = useState('21-100');
   const [accessCodeInput, setAccessCodeInput] = useState('');
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '']);
-  const [showVipInput, setShowVipInput] = useState(false);
   const [botTrap, setBotTrap] = useState(''); // Anti-bot honeypot
 
   const otpInputRefs = [
@@ -307,7 +311,7 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
     if (isVerifyingCode) return;
     setGateError(null);
 
-    const rawCode = overrideCode || (!showVipInput ? otpDigits.join('') : accessCodeInput);
+    const rawCode = overrideCode || accessCodeInput || otpDigits.join('');
     const code = String(rawCode || '').trim().toUpperCase();
     if (!code) {
       setGateError(isHe ? 'נא להזין את 4 ספרות קוד האימות' : 'Please enter the 4-digit access code');
@@ -336,12 +340,14 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
 
       const data = await res.json().catch(() => ({}));
 
-      if (res.ok && data.success && data.sessionToken) {
-        setSessionToken(data.sessionToken);
+      const finalToken = data.sessionToken || data.token;
+      if (res.ok && data.success && finalToken) {
+        setSessionToken(finalToken);
         setIsAuthenticated(true);
         try {
+          sessionStorage.setItem('tech_select_ceo_sim_verified', 'true');
           const sessionPayload = {
-            token: data.sessionToken,
+            token: finalToken,
             timestamp: Date.now(),
             companyName: data.lead?.companyName || gateCompanyName.trim(),
             fullName: data.lead?.fullName || gateFullName.trim(),
@@ -359,7 +365,7 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
         if (data.lead?.companySize) setCompanySize(data.lead.companySize);
         return;
       } else {
-        setGateError(data.error || (isHe ? 'קוד אימות שגוי או שפג תוקפו' : 'Invalid or expired access code'));
+        setGateError(data.error || (isHe ? 'קוד אימות שגוי או שפג תוקפו. אנא בדוק את תיבת המייל ונסה שוב.' : 'Invalid or expired access code. Please check your email and try again.'));
       }
     } catch {
       setGateError(isHe ? 'שגיאת תקשורת באימות הקוד. אנא נסה שוב.' : 'Communication error verifying access code. Please try again.');
@@ -881,103 +887,67 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
               <div className={`p-5 rounded-2xl border space-y-4 ${
                 isDark ? 'bg-[#060a14] border-slate-800' : 'bg-slate-50 border-slate-200'
               }`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <KeyRound className="w-4 h-4 text-cyan-400" />
-                    <label className="text-xs sm:text-sm font-bold text-slate-200">
-                      {isHe ? 'אימות קוד 4 ספרות (OTP):' : 'Enter 4-Digit Verification Code:'}
-                    </label>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowVipInput(!showVipInput)}
-                    className="text-[11px] text-cyan-400 hover:underline cursor-pointer"
-                  >
-                    {showVipInput 
-                      ? (isHe ? 'חזרה ל-4 ספרות' : 'Switch to 4 digits') 
-                      : (isHe ? 'הזנת קוד VIP טקסטואלי' : 'Enter text VIP passcode')}
-                  </button>
+                <div className="flex items-center gap-2">
+                  <KeyRound className="w-4 h-4 text-cyan-400" />
+                  <label className="text-xs sm:text-sm font-bold text-slate-200">
+                    {isHe ? 'אימות קוד 4 ספרות (OTP):' : 'Enter 4-Digit Verification Code:'}
+                  </label>
                 </div>
 
-                {!showVipInput ? (
-                  <div className="space-y-3">
-                    <p className="text-[11px] sm:text-xs text-slate-400">
-                      {isHe
-                        ? 'הזן את 4 ספרות קוד האימות שנשלח למייל. בהקלדת 4 הספרות המערכת תאמת ותפתח את הסימולטור מיידית:'
-                        : 'Enter the 4 digits sent to your email. The simulator will unlock automatically upon 4 digits:'}
-                    </p>
+                <div className="space-y-4">
+                  <p className="text-[11px] sm:text-xs text-slate-400 text-center">
+                    {isHe
+                      ? 'הזן את 4 ספרות קוד האימות שנשלח לתיבת המייל שלך לפתיחת הסימולטור:'
+                      : 'Enter the 4-digit verification code sent to your email to unlock the simulator:'}
+                  </p>
 
-                    <div className="flex justify-center items-center gap-2.5 sm:gap-3 py-1" dir="ltr">
-                      {[0, 1, 2, 3].map((idx) => (
-                        <input
-                          key={idx}
-                          ref={otpInputRefs[idx]}
-                          type="text"
-                          inputMode="numeric"
-                          maxLength={1}
-                          value={otpDigits[idx]}
-                          onChange={(e) => handleDigitChange(idx, e.target.value)}
-                          onKeyDown={(e) => handleDigitKeyDown(idx, e)}
-                          onPaste={handleDigitPaste}
-                          placeholder="-"
-                          className={`w-12 h-14 sm:w-14 sm:h-16 text-center text-2xl sm:text-3xl font-mono font-black rounded-xl border-2 transition-all outline-none ${
-                            otpDigits[idx]
-                              ? 'border-cyan-400 bg-cyan-500/10 text-cyan-300 shadow-md shadow-cyan-500/20 ring-1 ring-cyan-400/30'
-                              : isDark
-                              ? 'bg-[#090e1a] border-slate-700 text-white focus:border-cyan-500 focus:bg-cyan-500/5'
-                              : 'bg-white border-slate-300 text-slate-900 focus:border-blue-600 focus:bg-blue-50'
-                          }`}
-                        />
-                      ))}
-                    </div>
+                  <div className="flex flex-col items-center justify-center gap-2" dir="ltr">
+                    <input
+                      ref={otpInputRefs[0]}
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={4}
+                      value={accessCodeInput}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 4);
+                        setAccessCodeInput(val);
+                        setGateError(null);
+                        if (val.length === 4) {
+                          handleVerifyAccessCode(val);
+                        }
+                      }}
+                      placeholder="••••"
+                      className={`w-44 sm:w-52 py-3 text-center text-3xl sm:text-4xl font-mono font-black tracking-[0.45em] rounded-2xl border-2 transition-all outline-none ${
+                        accessCodeInput
+                          ? 'border-cyan-400 bg-cyan-500/10 text-cyan-300 shadow-lg shadow-cyan-500/20 ring-2 ring-cyan-400/30'
+                          : isDark
+                          ? 'bg-[#090e1a] border-slate-700 text-white focus:border-cyan-500 focus:bg-cyan-500/5'
+                          : 'bg-white border-slate-300 text-slate-900 focus:border-blue-600 focus:bg-blue-50'
+                      }`}
+                    />
+                    <span className="text-[11px] text-cyan-400/80 font-mono">
+                      {accessCodeInput.length > 0 ? `${accessCodeInput.length}/4 ספרות` : '4 ספרות נדרשות'}
+                    </span>
+                  </div>
 
-                    <button
-                      type="button"
-                      onClick={() => handleVerifyAccessCode(otpDigits.join(''))}
-                      disabled={isVerifyingCode || otpDigits.join('').length < 4}
-                      className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shadow-md transition-all"
-                    >
-                      {isVerifyingCode ? (
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <>
-                          <ShieldCheck className="w-4 h-4" />
-                          <span>{isHe ? 'אימות 4 ספרות וכניסה לסימולטור המנהלים' : 'Verify 4 Digits & Open Executive Simulator'}</span>
-                          <ChevronRight className="w-4 h-4" />
-                        </>
-                      )}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={accessCodeInput}
-                        onChange={(e) => setAccessCodeInput(e.target.value)}
-                        placeholder="לדוגמה: TECH-AI-2026 או 7788"
-                        className={`flex-1 py-2.5 px-3.5 text-sm font-mono font-bold tracking-widest rounded-xl border outline-none ${
-                          isDark ? 'bg-[#090e1a] border-slate-700 text-cyan-400 focus:border-cyan-500' : 'bg-white border-slate-300 text-blue-600 focus:border-blue-600'
-                        }`}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleVerifyAccessCode(accessCodeInput)}
-                        disabled={isVerifyingCode || !accessCodeInput.trim()}
-                        className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs sm:text-sm flex items-center gap-2 cursor-pointer disabled:opacity-50 shadow-md"
-                      >
-                        {isVerifyingCode ? (
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <>
-                            <span>{isHe ? 'אימות וכניסה' : 'Verify & Enter'}</span>
-                            <ChevronRight className="w-4 h-4" />
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                )}
+                  <button
+                    type="button"
+                    onClick={() => handleVerifyAccessCode(accessCodeInput)}
+                    disabled={isVerifyingCode || accessCodeInput.length < 4}
+                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shadow-md transition-all"
+                  >
+                    {isVerifyingCode ? (
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        <ShieldCheck className="w-4 h-4" />
+                        <span>{isHe ? 'אימות 4 ספרות וכניסה לסימולטור המנהלים' : 'Verify 4 Digits & Open Executive Simulator'}</span>
+                        <ChevronRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

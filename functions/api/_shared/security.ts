@@ -197,18 +197,9 @@ export async function verifySessionToken(token: string | null | undefined, secre
 }
 
 // -------------------------------------------------------------
-// Authorized Master Codes (Guy, Team & QA)
+// Authorized Master Codes (Empty by default - no hardcoded backdoors)
 // -------------------------------------------------------------
-export const AUTHORIZED_MASTER_CODES = new Set([
-  "TECH-AI-2026",
-  "GUY-VIP",
-  "SELECT-AI",
-  "7788",
-  "9903",
-  "1234",
-  "8899",
-  "0503900903",
-]);
+export const AUTHORIZED_MASTER_CODES = new Set<string>();
 
 export function isAuthorizedMasterCode(code: string | null | undefined, env?: any): boolean {
   if (!code) return false;

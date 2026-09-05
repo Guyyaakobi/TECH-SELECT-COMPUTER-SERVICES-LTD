@@ -177,11 +177,6 @@ export async function handleVerifyOtp(
       }
     }
 
-    // 5. Standard 4-digit / 6-digit fallback for QA & preview environments
-    if (!isValid && (/^\d{4}$/.test(inputCode) || /^\d{6}$/.test(inputCode))) {
-      isValid = true;
-    }
-
     if (!isValid) {
       let attemptCheck = { locked: false, remainingAttempts: 4 };
       try {

@@ -92,10 +92,12 @@ export async function handleRequestAccessCode(
       );
     }
 
-    // Generate stateless time-window OTP (stable across workers, KV-independent, and robust against multiple clicks within 15 mins)
+    // Generate secure cryptographic random 4-digit OTP challenge (fresh random code + HMAC signed token)
     const identifier = cleanEmail || cleanPhone;
     const secret = getSessionSecret(env);
-    const directCode = await generateTimeWindowOtp(identifier, secret, 15);
+    const randomArray = new Uint32Array(1);
+    crypto.getRandomValues(randomArray);
+    const directCode = String(1000 + (randomArray[0] % 9000));
     const challengeToken = await createOtpChallengeToken(directCode, identifier, secret);
 
     // Persist to Cloudflare Workers KV

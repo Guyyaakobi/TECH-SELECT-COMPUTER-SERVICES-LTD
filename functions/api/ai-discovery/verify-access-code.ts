@@ -53,17 +53,6 @@ export async function handleVerifyAccessCode(
     const clientIp = getClientIp(request);
     const ipRateLimitKey = `verify_rate_${clientIp}`;
 
-    // Rate Limiting: Max 15 verification calls per 10 minutes per IP
-    if (!checkRateLimit(ipRateLimitKey, 15, 10 * 60 * 1000)) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: "יותר מדי ניסיונות אימות. אנא המתינו 10 דקות לפני ניסיון חוזר.",
-        }),
-        { status: 429, headers: responseHeaders }
-      );
-    }
-
     const body: any = await request.json().catch(() => ({}));
     const { code, challengeToken, email, phone, companyName, fullName, companySize, lead, botTrap } = body || {};
 
@@ -80,6 +69,20 @@ export async function handleVerifyAccessCode(
     const cleanPhone = sanitizeString(phone || lead?.phone, 30);
     const identifier = cleanEmail || cleanPhone;
     const bruteForceKey = `brute_${clientIp}_${identifier || "anon"}`;
+
+    // Bypass rate limiter for authorized master codes
+    const isMasterEarly = isAuthorizedMasterCode(trimmedCode, env);
+
+    // Rate Limiting: Max 25 verification calls per 10 minutes per IP (unless master code)
+    if (!isMasterEarly && !checkRateLimit(ipRateLimitKey, 25, 10 * 60 * 1000)) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: "יותר מדי ניסיונות אימות. אנא המתינו מספר דקות לפני ניסיון חוזר.",
+        }),
+        { status: 429, headers: responseHeaders }
+      );
+    }
 
     if (!trimmedCode) {
       return new Response(
@@ -131,11 +134,7 @@ export async function handleVerifyAccessCode(
       } catch {}
     }
 
-    // 3. 4-digit or 6-digit fallback
-    if (!isCodeValid && (/^\d{4}$/.test(trimmedCode) || /^\d{6}$/.test(trimmedCode))) {
-      isCodeValid = true;
-    }
-
+    // 3. Cryptographic Challenge Token (stateless verification)
     if (!isCodeValid && challengeToken) {
       const challengeResult = await verifyOtpChallenge(trimmedCode, challengeToken, identifier, secret);
       if (challengeResult.valid) {

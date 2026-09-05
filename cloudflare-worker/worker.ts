@@ -680,13 +680,27 @@ async function handleAuthVerifyOtp(request: Request, _env: Env): Promise<Respons
       );
     }
 
-    const validMasterCodes = ["TECH-AI-2026", "GUY-VIP", "SELECT-AI", "7788", "9903", "1234", "8899", "0503900903"];
-    const isMaster = validMasterCodes.includes(cleanCode);
-    const is4Digit = /^\d{4}$/.test(cleanCode);
+    const envMaster = (_env.ADMIN_MASTER_CODE || "").trim().toUpperCase();
+    const isMaster = Boolean(envMaster && envMaster === cleanCode);
 
-    if (!isMaster && !is4Digit) {
+    let isCodeValid = isMaster;
+    const kv = (_env as any).OTP_KV || (_env as any).KV || (_env as any).AUTH_KV;
+    if (!isCodeValid && kv && typeof kv.get === "function") {
+      try {
+        const storedByCode = await kv.get(`otp_code_${cleanCode}`);
+        if (storedByCode) {
+          const parsed = JSON.parse(storedByCode);
+          if (parsed && (parsed.code === cleanCode || String(parsed.code).toUpperCase() === cleanCode)) {
+            isCodeValid = true;
+            await kv.delete(`otp_code_${cleanCode}`).catch(() => {});
+          }
+        }
+      } catch {}
+    }
+
+    if (!isCodeValid) {
       return new Response(
-        JSON.stringify({ success: false, error: "קוד אימות שגוי. יש להזין 4 ספרות שנשלחו למייל." }),
+        JSON.stringify({ success: false, error: "קוד אימות שגוי או שפג תוקפו. יש להזין את 4 הספרות שנשלחו למייל." }),
         { status: 401, headers: jsonHeaders }
       );
     }

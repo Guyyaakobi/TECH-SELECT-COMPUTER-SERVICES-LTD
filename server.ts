@@ -582,17 +582,8 @@ async function startServer() {
     const verifiedSessions = new Map<string, VerifiedSession>();
     const ipRateLimits = new Map<string, { count: number; resetAt: number }>();
 
-    // VIP / Master Codes for instant evaluation & testing
-    const MASTER_ACCESS_CODES = new Set([
-      "TECH-AI-2026",
-      "GUY-VIP",
-      "SELECT-AI",
-      "7788",
-      "9903",
-      "1234",
-      "8899",
-      "0503900903"
-    ]);
+    // Authorized Master Codes (Empty by default - set ADMIN_MASTER_CODE in env to enable)
+    const MASTER_ACCESS_CODES = new Set<string>();
 
     // Rate limiter helper (max 20 calls per 5 minutes per IP)
     const checkRateLimit = (ip: string, maxCalls: number = 25, windowMs: number = 5 * 60 * 1000): boolean => {
@@ -759,9 +750,19 @@ async function startServer() {
 
         console.log(`[ACCESS CODE GENERATED] Code: ${otpCode} for ${cleanCompany} (${cleanEmail || cleanPhone})`);
 
+        const sessionSecret = process.env.SESSION_SECRET || "tech_select_secret_2026_default";
+        const challengePayload = Buffer.from(JSON.stringify({
+          h: crypto.createHash("sha256").update(`${otpCode}:${(cleanEmail || cleanPhone).toLowerCase().trim()}:${sessionSecret}`).digest("hex"),
+          id: (cleanEmail || cleanPhone).toLowerCase().trim(),
+          exp: Math.floor(Date.now() / 1000) + 15 * 60,
+        })).toString("base64url");
+        const challengeSig = crypto.createHmac("sha256", sessionSecret).update(challengePayload).digest("hex");
+        const challengeToken = `ts_otp.${challengePayload}.${challengeSig}`;
+
         return res.json({
           success: true,
           message: "קוד האימות נוצר ונשלח למייל שלך. אנא בדוק את תיבת המייל והזן את 4 הספרות.",
+          challengeToken,
           expiresInMinutes: 15,
         });
       } catch (err: any) {
@@ -775,7 +776,7 @@ async function startServer() {
     // ==========================================
     app.post("/api/ai-discovery/verify-access-code", async (req, res) => {
       try {
-        const { code, accessCode, email, phone, companyName, fullName, companySize, botTrap } = req.body || {};
+        const { code, accessCode, challengeToken, email, phone, companyName, fullName, companySize, botTrap } = req.body || {};
 
         if (botTrap && String(botTrap).trim().length > 0) {
           return res.status(403).json({ success: false, error: "Access denied" });
@@ -790,16 +791,40 @@ async function startServer() {
         const cleanPhone = String(phone || "").trim();
         const key = cleanEmail || cleanPhone;
 
-        const isMaster = MASTER_ACCESS_CODES.has(inputCode);
-        const is4Digit = /^\d{4}$/.test(inputCode);
-        const is6Digit = /^\d{6}$/.test(inputCode);
+        const isMaster = Boolean(
+          (process.env.ADMIN_MASTER_CODE && process.env.ADMIN_MASTER_CODE.trim() === inputCode) ||
+          MASTER_ACCESS_CODES.has(inputCode)
+        );
+
+        // Challenge Token HMAC verification (Stateless cryptographic verification)
+        let isChallengeValid = false;
+        if (challengeToken && typeof challengeToken === "string" && challengeToken.startsWith("ts_otp.")) {
+          try {
+            const parts = challengeToken.split(".");
+            if (parts.length === 3) {
+              const [, payloadB64, sig] = parts;
+              const sessionSecret = process.env.SESSION_SECRET || "tech_select_secret_2026_default";
+              const expectedSig = crypto.createHmac("sha256", sessionSecret).update(payloadB64).digest("hex");
+              if (crypto.timingSafeEqual(Buffer.from(sig, "hex"), Buffer.from(expectedSig, "hex"))) {
+                const payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
+                const expectedHash = crypto.createHash("sha256").update(`${inputCode}:${key.toLowerCase().trim()}:${sessionSecret}`).digest("hex");
+                if (payload.h === expectedHash && Date.now() / 1000 <= payload.exp) {
+                  isChallengeValid = true;
+                }
+              }
+            }
+          } catch (e) {
+            console.warn("[VERIFY ACCESS CODE] Challenge token verification error:", e);
+          }
+        }
+
         const pendingMatch = pendingAccessCodes.get(inputCode) || (key ? pendingAccessCodes.get(key) : null);
         const isOtpMatch = (pendingAccessCodes.has(inputCode) || (pendingMatch && pendingMatch.code === inputCode)) && (pendingMatch ? Date.now() <= pendingMatch.expiresAt : true);
 
-        if (!isMaster && !isOtpMatch && !is4Digit && !is6Digit) {
+        if (!isMaster && !isOtpMatch && !isChallengeValid) {
           return res.status(401).json({
             success: false,
-            error: "קוד הגישה שגוי או שפג תוקפו. ניתן לבקש קוד חדש או לשאול ישירות בצ'אט.",
+            error: "קוד הגישה שגוי או שפג תוקפו. אנא בדקו את 4 הספרות שנשלחו למייל ונסו שוב.",
           });
         }
 
@@ -958,7 +983,10 @@ async function startServer() {
           return res.status(400).json({ success: false, error: "יש להזין קוד אימות בן 4 ספרות" });
         }
 
-        const isMaster = MASTER_ACCESS_CODES.has(inputCode) || MASTER_TICKET_CODES.has(inputCode);
+        const isMaster = Boolean(
+          (process.env.ADMIN_MASTER_CODE && process.env.ADMIN_MASTER_CODE.trim() === inputCode) ||
+          MASTER_ACCESS_CODES.has(inputCode)
+        );
         const pendingMatch = pendingAccessCodes.get(inputCode) || (cleanEmail ? pendingAccessCodes.get(cleanEmail) : null);
         const isOtpMatch = pendingMatch && pendingMatch.code === inputCode && Date.now() <= pendingMatch.expiresAt;
 
@@ -2143,7 +2171,7 @@ ${formData?.customPainPoints || "N/A"}
     }
 
     const pendingTicketOtps = new Map<string, PendingTicketOtp>();
-    const MASTER_TICKET_CODES = new Set(["7788", "9903", "1234", "8899"]);
+    const MASTER_TICKET_CODES = new Set<string>();
 
     function maskEmail(email?: string): string {
       if (!email || !email.includes("@")) return "מייל איש הקשר הרשום";
@@ -2313,9 +2341,12 @@ ${formData?.customPainPoints || "N/A"}
           }
 
           // Verify OTP code
-          const isMaster = MASTER_TICKET_CODES.has(code);
+          const isMaster = Boolean(
+            (process.env.ADMIN_MASTER_CODE && process.env.ADMIN_MASTER_CODE.trim() === code) ||
+            MASTER_TICKET_CODES.has(code)
+          );
           const pendingMatch = pendingTicketOtps.get(code) || pendingTicketOtps.get(`ticket_${ticket.TicketID}`) || (targetEmail ? pendingTicketOtps.get(targetEmail) : null);
-          const isMatch = isMaster || (pendingMatch && (pendingMatch.code === code || isMaster) && Date.now() <= pendingMatch.expiresAt);
+          const isMatch = isMaster || (pendingMatch && pendingMatch.code === code && Date.now() <= pendingMatch.expiresAt);
 
           if (!isMatch) {
             return res.status(401).json({
@@ -2396,9 +2427,12 @@ ${formData?.customPainPoints || "N/A"}
             });
           }
 
-          const isMaster = MASTER_TICKET_CODES.has(code);
+          const isMaster = Boolean(
+            (process.env.ADMIN_MASTER_CODE && process.env.ADMIN_MASTER_CODE.trim() === code) ||
+            MASTER_TICKET_CODES.has(code)
+          );
           const pendingMatch = pendingTicketOtps.get(code) || pendingTicketOtps.get(cleanEmail);
-          const isMatch = isMaster || (pendingMatch && (pendingMatch.code === code || isMaster) && Date.now() <= pendingMatch.expiresAt);
+          const isMatch = isMaster || (pendingMatch && pendingMatch.code === code && Date.now() <= pendingMatch.expiresAt);
 
           if (!isMatch) {
             return res.status(401).json({
@@ -2535,7 +2569,11 @@ ${formData?.customPainPoints || "N/A"}
         // Verification Gate: must have a valid session token, verified email, or master token
         const cleanToken = String(sessionToken || req.headers["authorization"] || "").replace(/^Bearer\s+/i, "").trim();
         const sessionRecord = cleanToken ? verifiedSessions.get(cleanToken) : null;
-        const isMaster = MASTER_ACCESS_CODES.has(cleanToken) || MASTER_TICKET_CODES.has(cleanToken) || cleanToken.startsWith("cf_session_");
+        const isMaster = Boolean(
+          (process.env.ADMIN_MASTER_CODE && process.env.ADMIN_MASTER_CODE.trim() === cleanToken) ||
+          MASTER_ACCESS_CODES.has(cleanToken) ||
+          cleanToken.startsWith("cf_session_")
+        );
 
         if (!sessionRecord && !isMaster && !verifiedEmail) {
           return res.status(401).json({
@@ -3010,9 +3048,12 @@ ${!isAteraCustomer ? `
           const cleanOtp = String(otpCode || "").trim();
           const cleanTicket = String(ticketNumber || "").replace(/[^0-9]/g, "");
 
-          const isMaster = MASTER_TICKET_CODES.has(cleanOtp);
+          const isMaster = Boolean(
+            (process.env.ADMIN_MASTER_CODE && process.env.ADMIN_MASTER_CODE.trim() === cleanOtp) ||
+            MASTER_TICKET_CODES.has(cleanOtp)
+          );
           const storedEntry = pendingTicketOtps.get(cleanOtp) || pendingTicketOtps.get(cleanEmail);
-          const isMatch = storedEntry && (storedEntry.code === cleanOtp || cleanOtp === "1234") && Date.now() <= storedEntry.expiresAt;
+          const isMatch = storedEntry && storedEntry.code === cleanOtp && Date.now() <= storedEntry.expiresAt;
 
           if (!isMaster && !isMatch) {
             return {
@@ -3169,7 +3210,10 @@ ${!isAteraCustomer ? `
           const cleanEmail = String(email || authenticatedEmail || "").trim().toLowerCase();
           const cleanOtp = String(otpCode || "").trim().toUpperCase();
 
-          const isMaster = MASTER_ACCESS_CODES.has(cleanOtp) || MASTER_TICKET_CODES.has(cleanOtp) || cleanOtp === "1234";
+          const isMaster = Boolean(
+            (process.env.ADMIN_MASTER_CODE && process.env.ADMIN_MASTER_CODE.trim() === cleanOtp) ||
+            MASTER_ACCESS_CODES.has(cleanOtp)
+          );
           const pendingMatch = pendingAccessCodes.get(cleanOtp) || (cleanEmail ? pendingAccessCodes.get(cleanEmail) : null);
           const isOtpMatch = pendingMatch && (pendingMatch.code === cleanOtp) && Date.now() <= pendingMatch.expiresAt;
 
