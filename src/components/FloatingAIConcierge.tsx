@@ -202,22 +202,19 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
     }
   }, [countdown]);
 
-  // Focus appropriate input when window opens or step changes
+  // Focus appropriate input only when window opens or when step changes
   useEffect(() => {
     if (isOpen && !isVerified) {
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         if (authStep === 'email') {
-          if (!authFirstName.trim()) {
-            firstNameInputRef.current?.focus();
-          } else {
-            emailInputRef.current?.focus();
-          }
+          firstNameInputRef.current?.focus();
         } else if (authStep === 'otp') {
           otpInputRef.current?.focus();
         }
       }, 250);
+      return () => clearTimeout(timer);
     }
-  }, [isOpen, isVerified, authStep, authFirstName]);
+  }, [isOpen, isVerified, authStep]);
 
   // Mobile/Tablet background scroll lock & ESC key listener
   useEffect(() => {
