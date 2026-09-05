@@ -762,8 +762,6 @@ async function startServer() {
         return res.json({
           success: true,
           message: "קוד האימות נוצר ונשלח למייל שלך. אנא בדוק את תיבת המייל והזן את 4 הספרות.",
-          code: otpCode,
-          otpCode: otpCode,
           expiresInMinutes: 15,
         });
       } catch (err: any) {
@@ -796,7 +794,7 @@ async function startServer() {
         const is4Digit = /^\d{4}$/.test(inputCode);
         const is6Digit = /^\d{6}$/.test(inputCode);
         const pendingMatch = pendingAccessCodes.get(inputCode) || (key ? pendingAccessCodes.get(key) : null);
-        const isOtpMatch = pendingMatch && pendingMatch.code === inputCode && Date.now() <= pendingMatch.expiresAt;
+        const isOtpMatch = (pendingAccessCodes.has(inputCode) || (pendingMatch && pendingMatch.code === inputCode)) && (pendingMatch ? Date.now() <= pendingMatch.expiresAt : true);
 
         if (!isMaster && !isOtpMatch && !is4Digit && !is6Digit) {
           return res.status(401).json({

@@ -92,12 +92,10 @@ export async function handleRequestAccessCode(
       );
     }
 
-    // Generate cryptographically random 4-digit OTP code (1000-9999) so every request produces a fresh unique code
+    // Generate stateless time-window OTP (stable across workers, KV-independent, and robust against multiple clicks within 15 mins)
     const identifier = cleanEmail || cleanPhone;
     const secret = getSessionSecret(env);
-    const randomArray = new Uint32Array(1);
-    crypto.getRandomValues(randomArray);
-    const directCode = String(1000 + (randomArray[0] % 9000));
+    const directCode = await generateTimeWindowOtp(identifier, secret, 15);
     const challengeToken = await createOtpChallengeToken(directCode, identifier, secret);
 
     // Persist to Cloudflare Workers KV
@@ -236,10 +234,8 @@ export async function handleRequestAccessCode(
     return new Response(
       JSON.stringify({
         success: true,
-        message: "Access code generated successfully",
+        message: "קוד אימות בן 4 ספרות נשלח בהצלחה לכתובת המייל שלך. אנא בדוק את תיבת הדואר הנכנס (כולל תיקיית ספאם/קידומי מכירות) והזן את 4 הספרות להפעלת הסימולטור.",
         challengeToken,
-        code: directCode,
-        otpCode: directCode,
         expiresInMinutes: 15,
       }),
       { status: 200, headers: responseHeaders }

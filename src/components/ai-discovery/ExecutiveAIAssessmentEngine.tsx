@@ -121,7 +121,6 @@ export const ExecutiveAIAssessmentEngine: React.FC<ExecutiveAIAssessmentEnginePr
   const [codeRequested, setCodeRequested] = useState(false);
   const [gateError, setGateError] = useState<string | null>(null);
   const [gateSuccessMsg, setGateSuccessMsg] = useState<string | null>(null);
-  const [suggestedOtp, setSuggestedOtp] = useState<string | null>(null);
   const [challengeToken, setChallengeToken] = useState<string | null>(null);
 
   // Main Simulator mode & view state
@@ -211,32 +210,16 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
         setCodeRequested(true);
 
         const targetDestination = gateEmail.trim() || gatePhone.trim();
-        const generatedCode = (data.code || data.otpCode || '').toString().trim();
-
-        if (generatedCode && generatedCode.length === 4) {
-          setSuggestedOtp(generatedCode);
-          setAccessCodeInput(generatedCode);
-          const digits = generatedCode.split('');
-          setOtpDigits(digits);
-
-          setGateSuccessMsg(
-            isHe
-              ? `קוד סודי בן 4 ספרות (${generatedCode}) הופק בהצלחה ונשלח אל ${targetDestination}. הקוד הוזן אוטומטית במסך - לחץ על כפתור האימות לפתיחה מיידית!`
-              : `A 4-digit passcode (${generatedCode}) was generated and sent to ${targetDestination}. Auto-filled below - click verify to unlock!`
-          );
-        } else {
-          setSuggestedOtp(null);
-          setAccessCodeInput('');
-          setOtpDigits(['', '', '', '']);
-          setGateSuccessMsg(
-            isHe
-              ? `קוד אימות בן 4 ספרות נשלח כעת בהצלחה אל ${targetDestination}. אנא בדוק את תיבת הדואר (כולל ספאם/קידומי מכירות) והזן את 4 הספרות:`
-              : `A 4-digit verification passcode was sent to ${targetDestination}. Please check your inbox and enter the 4 digits below to unlock:`
-          );
-          setTimeout(() => {
-            otpInputRefs[0]?.current?.focus();
-          }, 150);
-        }
+        setAccessCodeInput('');
+        setOtpDigits(['', '', '', '']);
+        setGateSuccessMsg(
+          isHe
+            ? `קוד אימות בן 4 ספרות נשלח כעת בהצלחה אל ${targetDestination}. אנא בדוק את תיבת הדואר הנכנס (כולל ספאם/קידומי מכירות) והקלד את 4 הספרות בתיבות למטה:`
+            : `A 4-digit verification code was sent to ${targetDestination}. Please check your inbox (including spam) and enter the 4 digits below:`
+        );
+        setTimeout(() => {
+          otpInputRefs[0]?.current?.focus();
+        }, 150);
 
         // Direct browser dispatch to guarantee Guy receives the lead immediately
         sendLeadNotificationViaFormSubmit({
@@ -284,8 +267,18 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
   };
 
   const handleDigitKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace' && !otpDigits[index] && index > 0) {
+    if (e.key === 'Backspace') {
+      if (!otpDigits[index] && index > 0) {
+        otpInputRefs[index - 1].current?.focus();
+        const newDigits = [...otpDigits];
+        newDigits[index - 1] = '';
+        setOtpDigits(newDigits);
+        setAccessCodeInput(newDigits.join(''));
+      }
+    } else if (e.key === 'ArrowLeft' && index > 0) {
       otpInputRefs[index - 1].current?.focus();
+    } else if (e.key === 'ArrowRight' && index < 3) {
+      otpInputRefs[index + 1].current?.focus();
     }
   };
 
@@ -294,7 +287,7 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
     const pasted = e.clipboardData.getData('text').trim().replace(/\D/g, '');
     if (!pasted) return;
     const digits = pasted.slice(0, 4).split('');
-    const newDigits = [...otpDigits];
+    const newDigits = ['', '', '', ''];
     digits.forEach((d, i) => {
       if (i < 4) newDigits[i] = d;
     });
@@ -314,7 +307,8 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
     if (isVerifyingCode) return;
     setGateError(null);
 
-    const code = (overrideCode || accessCodeInput || otpDigits.join('')).trim().toUpperCase();
+    const rawCode = overrideCode || (!showVipInput ? otpDigits.join('') : accessCodeInput);
+    const code = String(rawCode || '').trim().toUpperCase();
     if (!code) {
       setGateError(isHe ? 'נא להזין את 4 ספרות קוד האימות' : 'Please enter the 4-digit access code');
       return;
@@ -907,26 +901,6 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
 
                 {!showVipInput ? (
                   <div className="space-y-3">
-                    {suggestedOtp && (
-                      <div className="flex items-center justify-between p-2.5 rounded-xl bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs">
-                        <div className="flex items-center gap-2">
-                          <KeyRound className="w-3.5 h-3.5 text-cyan-400" />
-                          <span>{isHe ? `קוד סודי: ${suggestedOtp}` : `Passcode: ${suggestedOtp}`}</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAccessCodeInput(suggestedOtp);
-                            setOtpDigits(suggestedOtp.split(''));
-                            handleVerifyAccessCode(suggestedOtp);
-                          }}
-                          className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-[11px] cursor-pointer shadow-sm"
-                        >
-                          {isHe ? 'הזן ואמת כעת' : 'Fill & Verify'}
-                        </button>
-                      </div>
-                    )}
-
                     <p className="text-[11px] sm:text-xs text-slate-400">
                       {isHe
                         ? 'הזן את 4 ספרות קוד האימות שנשלח למייל. בהקלדת 4 הספרות המערכת תאמת ותפתח את הסימולטור מיידית:'

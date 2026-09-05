@@ -586,8 +586,6 @@ async function startServer() {
         return res.json({
           success: true,
           message: "\u05E7\u05D5\u05D3 \u05D4\u05D0\u05D9\u05DE\u05D5\u05EA \u05E0\u05D5\u05E6\u05E8 \u05D5\u05E0\u05E9\u05DC\u05D7 \u05DC\u05DE\u05D9\u05D9\u05DC \u05E9\u05DC\u05DA. \u05D0\u05E0\u05D0 \u05D1\u05D3\u05D5\u05E7 \u05D0\u05EA \u05EA\u05D9\u05D1\u05EA \u05D4\u05DE\u05D9\u05D9\u05DC \u05D5\u05D4\u05D6\u05DF \u05D0\u05EA 4 \u05D4\u05E1\u05E4\u05E8\u05D5\u05EA.",
-          code: otpCode,
-          otpCode,
           expiresInMinutes: 15
         });
       } catch (err) {
@@ -612,7 +610,7 @@ async function startServer() {
         const is4Digit = /^\d{4}$/.test(inputCode);
         const is6Digit = /^\d{6}$/.test(inputCode);
         const pendingMatch = pendingAccessCodes.get(inputCode) || (key ? pendingAccessCodes.get(key) : null);
-        const isOtpMatch = pendingMatch && pendingMatch.code === inputCode && Date.now() <= pendingMatch.expiresAt;
+        const isOtpMatch = (pendingAccessCodes.has(inputCode) || pendingMatch && pendingMatch.code === inputCode) && (pendingMatch ? Date.now() <= pendingMatch.expiresAt : true);
         if (!isMaster && !isOtpMatch && !is4Digit && !is6Digit) {
           return res.status(401).json({
             success: false,
