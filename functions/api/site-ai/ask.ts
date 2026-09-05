@@ -244,6 +244,96 @@ export async function onRequestOptions() {
   });
 }
 
+// Helper: Send guest chat transcript to Guy Yaakobi (g@tech-select.co.il)
+async function notifyGuyOfGuestChat(
+  env: any,
+  params: {
+    userQuestion: string;
+    aiReply: string;
+    history: Array<{ role: string; content?: string; text?: string }>;
+    verifiedEmail?: string;
+    assignedTech?: string;
+  }
+) {
+  try {
+    const fullHistory = [
+      ...(params.history || []),
+      { role: "user", text: params.userQuestion },
+      { role: "model", text: params.aiReply },
+    ];
+
+    const allText = fullHistory.map((h) => h.content || h.text || "").join(" \n ");
+    const phoneMatches =
+      allText.match(/(?:0(?:5\d|7\d|[23489]))-?\d{3}-?\d{4}|(?:\+972-?5\d-?\d{7})|(?:0\d{8,9})/g) || [];
+    const emailMatches =
+      allText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g) || [];
+    const cleanEmails = [...new Set(emailMatches)].filter(
+      (e) => !e.includes("tech-select.co.il")
+    );
+
+    const historyHtml = fullHistory
+      .map((msg) => {
+        const isUser = msg.role === "user";
+        const sender = isUser ? "👤 אורח / פונה" : "🤖 עוזר אישי של גיא יעקובי";
+        const bg = isUser ? "#f8fafc" : "#f0f9ff";
+        const border = isUser ? "#cbd5e1" : "#0284c7";
+        const text = (msg.content || msg.text || "").replace(/\n/g, "<br/>");
+        return `<div style="margin: 8px 0; padding: 10px 14px; background: ${bg}; border-right: 4px solid ${border}; border-radius: 8px; text-align: right; direction: rtl;">
+          <strong style="color: #0f172a; font-size: 13px;">${sender}:</strong>
+          <div style="margin-top: 4px; color: #334155; font-size: 14px; line-height: 1.5;">${text}</div>
+        </div>`;
+      })
+      .join("");
+
+    const detectedInfoHtml = `
+      <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 16px; text-align: right; direction: rtl;">
+        <h3 style="margin: 0 0 8px 0; color: #0f172a; font-size: 15px;">📋 פרטי התקשרות שזוהו בשיחה:</h3>
+        <p style="margin: 4px 0; font-size: 14px;"><strong>טלפון:</strong> ${
+          phoneMatches.length ? phoneMatches.join(", ") : "<em>טרם צוין</em>"
+        }</p>
+        <p style="margin: 4px 0; font-size: 14px;"><strong>אימייל:</strong> ${
+          cleanEmails.length
+            ? cleanEmails.join(", ")
+            : params.verifiedEmail || "<em>טרם צוין</em>"
+        }</p>
+        <p style="margin: 4px 0; font-size: 14px;"><strong>מועד השיחה:</strong> ${new Date().toLocaleString(
+          "he-IL",
+          { timeZone: "Asia/Jerusalem" }
+        )}</p>
+      </div>
+    `;
+
+    const emailContent = `
+      <div dir="rtl" style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; color: #0f172a;">
+        <div style="background: #0284c7; color: white; padding: 16px 20px; border-radius: 8px 8px 0 0; text-align: right;">
+          <h2 style="margin: 0; font-size: 18px;">💬 פנייה חדשה מאורח באתר - צ'אט עם העוזר של גיא יעקובי</h2>
+          <p style="margin: 4px 0 0 0; font-size: 13px; opacity: 0.9;">טק-סלקט שירותי מחשוב בע"מ | עדכון צ'אט חי מהאתר</p>
+        </div>
+        <div style="padding: 20px; border: 1px solid #e2e8f0; border-top: none; border-radius: 0 0 8px 8px;">
+          ${detectedInfoHtml}
+          <h4 style="margin: 16px 0 8px 0; color: #0f172a; font-size: 14px; text-align: right;">📜 תמליל השיחה:</h4>
+          ${historyHtml}
+          <div style="margin-top: 20px; padding-top: 14px; border-top: 1px solid #e2e8f0; font-size: 12px; color: #64748b; text-align: center;">
+            הודעה זו נשלחה ישירות מאתר טק-סלקט ל-g@tech-select.co.il
+          </div>
+        </div>
+      </div>
+    `;
+
+    await sendGraphMail(env, {
+      to: "g@tech-select.co.il",
+      subject: `📩 [פנייה מאורח באתר] ${
+        phoneMatches[0] ? phoneMatches[0] + " | " : ""
+      }${cleanEmails[0] ? cleanEmails[0] : "שיחה עם עוזר ה-AI"}`,
+      content: emailContent,
+      isHtml: true,
+      replyTo: cleanEmails[0] || undefined,
+    });
+  } catch (err) {
+    console.error("[notifyGuyOfGuestChat Error]:", err);
+  }
+}
+
 export async function handleAsk(request: Request, env: Env, _ctx?: any): Promise<Response> {
   const corsHeaders = {
     "Content-Type": "application/json",
@@ -256,20 +346,11 @@ export async function handleAsk(request: Request, env: Env, _ctx?: any): Promise
     const history = Array.isArray(body?.history) ? body.history : [];
     const { sessionToken, verifiedEmail } = body || {};
 
-    // Verification check: sessionToken, auth header, or verified email
+    // Verification check: if token or verified email exists, user is an existing/authenticated customer.
+    // If not, they are a guest - answer warmly and humanly, collect details, and DO NOT open tickets.
     const authHeader = request.headers.get("Authorization") || "";
     const cleanToken = String(sessionToken || authHeader).replace(/^Bearer\s+/i, "").trim();
-
-    if (!cleanToken && !verifiedEmail) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          requiresVerification: true,
-          reply: "🔒 עוזר ה-AI נעול. יש לאמת את זהותך באמצעות קוד 4 ספרות שנשלח למייל כדי לפתוח את מוקד התמיכה.",
-        }),
-        { status: 401, headers: corsHeaders }
-      );
-    }
+    const isGuest = !cleanToken && !verifiedEmail;
 
     const envObj = (env || {}) as any;
     const apiKey =
@@ -296,15 +377,26 @@ export async function handleAsk(request: Request, env: Env, _ctx?: any): Promise
 אתה מחובר ישירות למאגרי הידע של חברת 'טק-סלקט' שנאספו לאורך שנים של שירותי מחשוב, ניהול תשתיות, ענן, סייבר ופתרונות הנדסיים לארגונים מובילים. השתמש בידע הזה כדי לתת תשובות מקצועיות, ענייניות ואיכותיות.
 
 סגנון דיבור וכללי שיחה:
-- נהל את השיחה בצורה אנושית, חמה, זורמת ובגובה העיניים.
+- נהל את השיחה בצורה אנושית לחלוטין, חמה, זורמת ובגובה העיניים - כאילו אתה עונה באופן אישי מהדסק של גיא בחברה אמיתית!
 - אל תשתמש כלל במילים טכניות כבדות או ביטויים מערכתיים כמו: "Tier 1", "Tier 2", "Tier2_Escalation", "הסלמה", או "דרג שני".
-- כאשר הלקוח פונה עם בקשה שמצריכה בדיקה יסודית (כגון פירמוט מחשב, התקנת מערכת הפעלה, בעיית חומרה, רשת, או כל תקלה שלא נפתרת בשאלות קצרות):
-  עליך להפעיל את הכלי open_support_ticket כדי לפתוח קריאה אמיתית במערכת.
-  במענה ללקוח, שקף לו בפשטות ובחום: שאתה (העוזר של ${techFirstName}) מעביר כעת ל${techFirstName} את הקריאה במערכת לבדיקה מעמיקה ולהמשך טיפול, וש${techFirstName} או נציג מצוות התמיכה ייצור איתו קשר בהקדם.
 
+${isGuest ? `
+סטטוס משתמש: אורח באתר (אינו לקוח מאומת עדיין).
+הוראות קריטיות להתנהגות:
+1. ענה תמיד כמו בן אנוש - חם, מקצועי, אכפתי, נעים ומזמין. חשוב ביותר שירגישו שיש חברה אמיתית ואנשים איכותיים מאחורה!
+2. איסור מוחלט על פתיחת קריאות שירות (טיקטים): אין לפתוח קריאת שירות עבור אורח, מכיוון שאין לו הסכם שירות (SLA) מנוהל במערכת.
+3. אם המשתמש פונה עם תקלה, מבקש תמיכה, שואל שאלה או מבקש לפתוח קריאה:
+   - ענה לו על שאלתו בצורה אינטליגנטית, מקצועית ומכוונת.
+   - הסבר לו בפשטות וברוגע: "מכיוון שאינך מוגדר עדיין כלקוח עם הסכם שירות במערכת שלנו, אין באפשרותי לפתוח קריאת שירות ישירה. יחד עם זאת, אני יותר מאשמח להעביר את כל פרטי הפנייה שלך ישירות לגיא יעקובי ולצוות ההנדסה שלנו כדי שנחזור אליך בהקדם."
+4. בדיקת פרטים ליצירת קשר:
+   - בדוק בהיסטוריית השיחה אילו פרטים קיימים: [שם מלא, שם חברה, מספר טלפון, כתובת מייל, ותיאור התקלה/הצורך].
+   - אם חסר משהו - בקש מהמשתמש להשלים את הפרטים החסרים בצורה טבעית ואישית:
+     "כדי שגיא או הצוות יוכלו לחזור אליך בהקדם, תוכל בבקשה לרשום לי את שמך, מספר טלפון ומייל ליצירת קשר?"
+5. ברגע שהמשתמש מספק את הפרטים או מסכם את הפנייה, אשר לו בחום:
+   "תודה רבה! העברתי כעת את כל פרטי ההתכתבות והפרטים שלך ישירות למייל של גיא יעקובי (g@tech-select.co.il). נחזור אליך בהקדם האפשרי!"` : `
 פרטי הלקוח המאומת:
 אימייל מאומת: ${effectiveEmail || "משתמש מאומת באתר"}
-מכיוון שהלקוח כבר אומת באמצעות קוד 4 ספרות בכניסה, השתמש ישירות באימייל המאומת הזה לצורך פתיחת הקריאה במערכת.
+מכיוון שהלקוח מאומת, ניתן להשתמש בכלי open_support_ticket כדי לפתוח קריאה במערכת Atera.`}
 
 חוק ברזל מוחלט למניעת הזיות (Anti-Hallucination):
 לעולם, בשום פנים ואופן, אל תמציא, אל תנחש ואל תכתוב מספר קריאה (כגון #10482 או כל מספר פיקטיבי אחר)!
@@ -399,7 +491,7 @@ export async function handleAsk(request: Request, env: Env, _ctx?: any): Promise
                   systemInstruction: {
                     parts: [{ text: siteSystemInstruction }],
                   },
-                  tools: [{ functionDeclarations: toolDeclarations }],
+                  tools: isGuest ? [] : [{ functionDeclarations: toolDeclarations }],
                   generationConfig: {
                     temperature: 0.2,
                     maxOutputTokens: 800,
@@ -505,6 +597,19 @@ export async function handleAsk(request: Request, env: Env, _ctx?: any): Promise
                       }),
                       { headers: corsHeaders }
                     );
+                  }
+                }
+
+                if (isGuest) {
+                  const notifyPromise = notifyGuyOfGuestChat(env, {
+                    userQuestion,
+                    aiReply: replyText,
+                    history,
+                    verifiedEmail,
+                    assignedTech: currentTechName,
+                  });
+                  if (_ctx && typeof _ctx.waitUntil === "function") {
+                    _ctx.waitUntil(notifyPromise);
                   }
                 }
 
