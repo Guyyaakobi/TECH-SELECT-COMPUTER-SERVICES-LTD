@@ -151,6 +151,9 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
       if (res.ok && data.success) {
         if (data.challengeToken) {
           setChallengeToken(data.challengeToken);
+          try {
+            sessionStorage.setItem('tech_select_ai_challenge', data.challengeToken);
+          } catch {}
         }
         setCodeRequested(true);
         setGateSuccessMsg(
@@ -238,6 +241,7 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
   // Handle Verify Access Code
   const handleVerifyAccessCode = async (overrideCode?: string, e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (isVerifyingCode) return;
     setGateError(null);
 
     const code = (overrideCode || accessCodeInput || otpDigits.join('')).trim().toUpperCase();
@@ -245,6 +249,8 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
       setGateError(isHe ? 'נא להזין את 4 ספרות קוד האימות' : 'Please enter the 4-digit access code');
       return;
     }
+
+    const effectiveToken = challengeToken || (typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('tech_select_ai_challenge') : '') || '';
 
     setIsVerifyingCode(true);
 
@@ -254,7 +260,7 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           code,
-          challengeToken,
+          challengeToken: effectiveToken || undefined,
           email: gateEmail.trim(),
           phone: gatePhone.trim(),
           companyName: gateCompanyName.trim(),

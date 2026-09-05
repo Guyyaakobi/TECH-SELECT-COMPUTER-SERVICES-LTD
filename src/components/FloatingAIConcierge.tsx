@@ -114,6 +114,7 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
     verified: boolean;
     loading: boolean;
     error: string;
+    challengeToken?: string;
   }>(() => {
     try {
       const saved = sessionStorage.getItem('tech_select_ceo_sim_verified');
@@ -153,6 +154,7 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
   const [authEmail, setAuthEmail] = useState('');
   const [authName, setAuthName] = useState('');
   const [authOtp, setAuthOtp] = useState('');
+  const [authChallengeToken, setAuthChallengeToken] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState('');
   const [maskedEmail, setMaskedEmail] = useState('');
@@ -462,7 +464,13 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
         throw new Error(data.error || (isHe ? 'שגיאה בשליחת קוד אימות' : 'Failed to send verification code'));
       }
 
-      setCeoSimGate((prev) => ({ ...prev, loading: false, otpSent: true, error: '' }));
+      setCeoSimGate((prev) => ({
+        ...prev,
+        loading: false,
+        otpSent: true,
+        challengeToken: data.challengeToken || undefined,
+        error: '',
+      }));
 
       const gateMsgId = 'ceo-gate-' + Date.now();
       const promptText = isHe
@@ -501,6 +509,7 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
         body: JSON.stringify({
           email: targetEmail,
           code,
+          challengeToken: ceoSimGate.challengeToken || undefined,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -608,6 +617,9 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
       if (!res.ok || !data.success) {
         throw new Error(data.error || (isHe ? 'שגיאה בשליחת קוד אימות' : 'Failed to send verification code'));
       }
+      if (data.challengeToken) {
+        setAuthChallengeToken(data.challengeToken);
+      }
       setMaskedEmail(data.maskedEmail || cleanEmail);
       setAuthStep('otp');
       setCountdown(60);
@@ -635,6 +647,7 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
         body: JSON.stringify({
           email: authEmail.trim().toLowerCase(),
           code: targetCode,
+          challengeToken: authChallengeToken || undefined,
           fullName: authName.trim() || undefined,
         }),
       });

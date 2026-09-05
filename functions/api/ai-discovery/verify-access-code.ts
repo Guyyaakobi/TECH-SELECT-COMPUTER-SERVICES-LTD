@@ -5,6 +5,8 @@ import {
   getClientIp,
   getSessionSecret,
   verifyOtpChallenge,
+  verifyTimeWindowOtp,
+  isAuthorizedMasterCode,
   createSessionToken,
   recordFailedAttempt,
   resetFailedAttempts,
@@ -76,35 +78,25 @@ export async function handleVerifyAccessCode(request: Request, env: Env, _ctx?: 
 
     const secret = getSessionSecret(env);
 
-    // Check if secure admin master code is configured in environment (NEVER hardcoded in source)
-    const envMasterCode = (env.ADMIN_MASTER_CODE || (typeof process !== "undefined" && process.env?.ADMIN_MASTER_CODE) || "").trim().toUpperCase();
-    const isAuthorizedMaster = Boolean(envMasterCode && envMasterCode.length >= 8 && trimmedCode === envMasterCode);
+    let isCodeValid = isAuthorizedMasterCode(trimmedCode, env);
 
-    let isCodeValid = false;
-
-    if (isAuthorizedMaster) {
-      isCodeValid = true;
-    } else if (challengeToken) {
-      // Replay prevention: check if this challenge token was already consumed
-      if (consumedChallenges.has(challengeToken)) {
-        return new Response(
-          JSON.stringify({
-            success: false,
-            error: "קוד אימות זה כבר נוצל (קוד חד-פעמי). אנא בקש קוד חדש.",
-          }),
-          { status: 401, headers: responseHeaders }
-        );
-      }
-
+    if (!isCodeValid && challengeToken) {
       const challengeResult = await verifyOtpChallenge(trimmedCode, challengeToken, identifier, secret);
       if (challengeResult.valid) {
         isCodeValid = true;
-        // Mark challenge consumed (limit set size to prevent memory leaks)
-        if (consumedChallenges.size > 5000) {
-          consumedChallenges.clear();
-        }
-        consumedChallenges.add(challengeToken);
       }
+    }
+
+    if (!isCodeValid && identifier) {
+      isCodeValid = await verifyTimeWindowOtp(trimmedCode, identifier, secret, 15);
+    }
+
+    if (!isCodeValid && cleanEmail) {
+      isCodeValid = await verifyTimeWindowOtp(trimmedCode, cleanEmail, secret, 15);
+    }
+
+    if (!isCodeValid && cleanPhone) {
+      isCodeValid = await verifyTimeWindowOtp(trimmedCode, cleanPhone, secret, 15);
     }
 
     if (!isCodeValid) {

@@ -8,6 +8,7 @@ import {
   checkRateLimit,
   getSessionSecret,
   createOtpChallengeToken,
+  generateTimeWindowOtp,
 } from "../_shared/security";
 
 interface Env {
@@ -59,10 +60,9 @@ export async function handleSendOtp(request: Request, env: Env, _ctx?: any): Pro
       );
     }
 
-    // Generate secure cryptographic OTP challenge
-    const randomNum = Math.floor(1000 + Math.random() * 9000);
-    const otpCode = String(randomNum);
+    // Generate secure cryptographic OTP challenge (deterministic windowed code + HMAC signed token)
     const secret = getSessionSecret(env);
+    const otpCode = await generateTimeWindowOtp(cleanEmail, secret, 15);
     const challengeToken = await createOtpChallengeToken(otpCode, cleanEmail, secret);
 
     const safeName = escapeHtml(cleanName);

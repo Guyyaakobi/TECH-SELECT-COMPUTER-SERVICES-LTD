@@ -10,6 +10,7 @@ import {
   getClientIp,
   getSessionSecret,
   createOtpChallengeToken,
+  generateTimeWindowOtp,
 } from "../_shared/security";
 
 interface Env {
@@ -79,13 +80,10 @@ export async function handleRequestAccessCode(request: Request, env: Env, _ctx?:
       );
     }
 
-    // Generate cryptographically secure 4-digit OTP code (1000-9999)
-    const randomArray = new Uint32Array(1);
-    crypto.getRandomValues(randomArray);
-    const directCode = String(1000 + (randomArray[0] % 9000));
-
+    // Generate cryptographically secure 4-digit OTP code (1000-9999) using stateless windowed generator
     const identifier = cleanEmail || cleanPhone;
     const secret = getSessionSecret(env);
+    const directCode = await generateTimeWindowOtp(identifier, secret, 15);
     const challengeToken = await createOtpChallengeToken(directCode, identifier, secret);
 
     const safeName = escapeHtml(cleanName);

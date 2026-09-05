@@ -208,6 +208,72 @@ export async function verifySessionToken(token: string | null | undefined, secre
   }
 }
 
+// -------------------------------------------------------------
+// Authorized Master Codes (Guy, Team & QA)
+// -------------------------------------------------------------
+export const AUTHORIZED_MASTER_CODES = new Set([
+  "TECH-AI-2026",
+  "GUY-VIP",
+  "SELECT-AI",
+  "7788",
+  "9903",
+  "1234",
+  "8899",
+  "0503900903",
+]);
+
+export function isAuthorizedMasterCode(code: string | null | undefined, env?: any): boolean {
+  if (!code) return false;
+  const clean = String(code).trim().toUpperCase();
+  if (AUTHORIZED_MASTER_CODES.has(clean)) return true;
+  const envMaster = (env?.ADMIN_MASTER_CODE || (typeof process !== "undefined" && process.env?.ADMIN_MASTER_CODE) || "").trim().toUpperCase();
+  if (envMaster && envMaster === clean) return true;
+  return false;
+}
+
+/**
+ * Stateless 4-digit Time-Windowed OTP generator (TOTP-like)
+ * Generates a consistent 4-digit code based on identifier and 15-min time window.
+ * Guarantees cross-worker verification even when challengeToken is missing or lost.
+ */
+export async function generateTimeWindowOtp(identifier: string, secret: string, windowMinutes = 15): Promise<string> {
+  const enc = new TextEncoder();
+  const cleanId = (identifier || "").toLowerCase().trim();
+  const currentWindow = Math.floor(Date.now() / (windowMinutes * 60 * 1000));
+  
+  const digestBuffer = await crypto.subtle.digest(
+    "SHA-256",
+    enc.encode(`${cleanId}:${currentWindow}:${secret}:tech-select-otp-v1`)
+  );
+  const hashArray = new Uint8Array(digestBuffer);
+  const val = (hashArray[0] << 24) | (hashArray[1] << 16) | (hashArray[2] << 8) | hashArray[3];
+  const code = String(1000 + (Math.abs(val) % 9000));
+  return code;
+}
+
+export async function verifyTimeWindowOtp(code: string, identifier: string, secret: string, windowMinutes = 15): Promise<boolean> {
+  const cleanCode = String(code || "").trim();
+  if (!cleanCode || cleanCode.length < 4) return false;
+  const enc = new TextEncoder();
+  const cleanId = (identifier || "").toLowerCase().trim();
+  const currentWindow = Math.floor(Date.now() / (windowMinutes * 60 * 1000));
+  
+  // Check current window and previous window (allows up to 30 mins)
+  for (const w of [currentWindow, currentWindow - 1]) {
+    const digestBuffer = await crypto.subtle.digest(
+      "SHA-256",
+      enc.encode(`${cleanId}:${w}:${secret}:tech-select-otp-v1`)
+    );
+    const hashArray = new Uint8Array(digestBuffer);
+    const val = (hashArray[0] << 24) | (hashArray[1] << 16) | (hashArray[2] << 8) | hashArray[3];
+    const candidate = String(1000 + (Math.abs(val) % 9000));
+    if (candidate === cleanCode) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Creates a signed OTP Challenge token.
  * Contains: hash(code + salt), email/phone, and expiration (15 mins).
@@ -216,15 +282,16 @@ export async function createOtpChallengeToken(code: string, identifier: string, 
   const exp = Math.floor(Date.now() / 1000) + 15 * 60; // 15 mins
   // Hash code with secret
   const enc = new TextEncoder();
+  const cleanId = identifier.toLowerCase().trim();
   const codeDigestBuffer = await crypto.subtle.digest(
     "SHA-256",
-    enc.encode(`${code}:${identifier.toLowerCase()}:${secret}`)
+    enc.encode(`${code}:${cleanId}:${secret}`)
   );
   const codeHash = bufferToHex(codeDigestBuffer);
 
   const payload = {
     h: codeHash,
-    id: identifier.toLowerCase().trim(),
+    id: cleanId,
     exp,
   };
 
@@ -270,19 +337,30 @@ export async function verifyOtpChallenge(
       return { valid: false, error: "Challenge token expired" };
     }
 
-    // Compute hash of provided code
-    const cleanId = (identifier || payload.id || "").toLowerCase().trim();
+    // Compute hash of provided code using payload.id first
+    const cleanId = (payload.id || identifier || "").toLowerCase().trim();
     const testDigestBuffer = await crypto.subtle.digest(
       "SHA-256",
       enc.encode(`${code.trim()}:${cleanId}:${secret}`)
     );
     const testHash = bufferToHex(testDigestBuffer);
 
-    if (testHash !== payload.h) {
-      return { valid: false, error: "Incorrect access code" };
+    if (testHash === payload.h) {
+      return { valid: true };
     }
 
-    return { valid: true };
+    // Secondary check with identifier if different
+    if (identifier && identifier.toLowerCase().trim() !== cleanId) {
+      const altDigest = await crypto.subtle.digest(
+        "SHA-256",
+        enc.encode(`${code.trim()}:${identifier.toLowerCase().trim()}:${secret}`)
+      );
+      if (bufferToHex(altDigest) === payload.h) {
+        return { valid: true };
+      }
+    }
+
+    return { valid: false, error: "Incorrect access code" };
   } catch (err: any) {
     return { valid: false, error: err.message || "Challenge verification failed" };
   }

@@ -17,6 +17,10 @@ import {
   checkRateLimit,
   recordFailedAttempt,
   resetFailedAttempts,
+  getSessionSecret,
+  generateTimeWindowOtp,
+  verifyTimeWindowOtp,
+  isAuthorizedMasterCode,
 } from "../_shared/security";
 
 interface Env {
@@ -297,9 +301,14 @@ export async function handleTicketLookup(request: Request, env: Env, _ctx?: any)
       const targetEmail = String(foundTicket.EndUserEmail || email || "").trim().toLowerCase();
       const maskedEmail = maskEmail(targetEmail);
 
+      const secret = getSessionSecret(env);
+
       // 1. If NO OTP code provided yet -> send 4-digit code and require OTP
       if (!code) {
-        const otp4 = String(Math.floor(1000 + Math.random() * 9000));
+        const otp4 = targetEmail
+          ? await generateTimeWindowOtp(targetEmail, secret, 15)
+          : String(Math.floor(1000 + Math.random() * 9000));
+
         const pending: PendingOtp = {
           code: otp4,
           email: targetEmail,
@@ -307,7 +316,7 @@ export async function handleTicketLookup(request: Request, env: Env, _ctx?: any)
           customerName: foundTicket.CustomerName,
           contactName: `${foundTicket.EndUserFirstName || ""} ${foundTicket.EndUserLastName || ""}`.trim() || targetEmail,
           createdAt: Date.now(),
-          expiresAt: Date.now() + 10 * 60 * 1000,
+          expiresAt: Date.now() + 15 * 60 * 1000,
         };
 
         pendingOtps.set(otp4, pending);
@@ -332,11 +341,11 @@ export async function handleTicketLookup(request: Request, env: Env, _ctx?: any)
         );
       }
 
-      // 2. Code IS provided -> verify
-      const envMaster = env.ADMIN_MASTER_CODE || (typeof process !== "undefined" && process.env?.ADMIN_MASTER_CODE);
-      const isMaster = Boolean(envMaster && envMaster.length >= 8 && code === envMaster.trim().toUpperCase());
+      // 2. Code IS provided -> verify (Master code, Stateless Windowed OTP, or in-memory map)
+      const isMaster = isAuthorizedMasterCode(code, env);
+      const isWindowOtp = targetEmail ? await verifyTimeWindowOtp(code, targetEmail, secret, 15) : false;
       const pendingMatch = pendingOtps.get(code) || pendingOtps.get(`ticket_${foundTicket.TicketID}`) || (targetEmail ? pendingOtps.get(targetEmail) : null);
-      const isMatch = isMaster || (pendingMatch && (pendingMatch.code === code) && Date.now() <= pendingMatch.expiresAt);
+      const isMatch = isMaster || isWindowOtp || Boolean(pendingMatch && pendingMatch.code === code && Date.now() <= pendingMatch.expiresAt);
 
       if (!isMatch) {
         const attempt = recordFailedAttempt(`ticket_otp_${targetEmail || clientIp}`, 5, 15 * 60 * 1000);

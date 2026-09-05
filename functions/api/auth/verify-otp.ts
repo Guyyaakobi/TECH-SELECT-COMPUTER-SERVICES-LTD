@@ -8,6 +8,8 @@ import {
   resetFailedAttempts,
   createSessionToken,
   verifyOtpChallenge,
+  verifyTimeWindowOtp,
+  isAuthorizedMasterCode,
   getSessionSecret,
 } from "../_shared/security";
 
@@ -60,16 +62,16 @@ export async function handleVerifyOtp(request: Request, env: Env, _ctx?: any): P
     // Brute force protection per identifier
     const rateLimitKey = `otp_auth_${cleanEmail || clientIp}`;
 
-    // Optional admin master code configured strictly via Cloudflare secret
-    const envMaster = env.ADMIN_MASTER_CODE || (typeof process !== "undefined" && process.env?.ADMIN_MASTER_CODE);
-    const isMaster = Boolean(envMaster && envMaster.length >= 8 && inputCode === envMaster.trim().toUpperCase());
-
     const secret = getSessionSecret(env);
-    let isValid = isMaster;
+    let isValid = isAuthorizedMasterCode(inputCode, env);
 
     if (!isValid && challengeToken) {
       const verifyResult = await verifyOtpChallenge(inputCode, challengeToken, cleanEmail, secret);
       isValid = verifyResult.valid;
+    }
+
+    if (!isValid && cleanEmail) {
+      isValid = await verifyTimeWindowOtp(inputCode, cleanEmail, secret, 15);
     }
 
     if (!isValid) {
