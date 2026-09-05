@@ -4,7 +4,7 @@ import {
   Send, RefreshCw, Copy, Check, Building2, User, Mail,
   Phone, HelpCircle, Lightbulb, MessageSquare, FileText,
   CheckCircle2, Users, Lock, KeyRound, AlertCircle, ShieldAlert,
-  ChevronRight, ExternalLink
+  ChevronRight, ExternalLink, LogOut, RotateCcw
 } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 import { useTheme } from '../../context/ThemeContext';
@@ -26,11 +26,21 @@ export const ExecutiveAIAssessmentEngine: React.FC<ExecutiveAIAssessmentEnginePr
   const { isHe } = useLanguage();
   const { isDark } = useTheme();
 
-  // Authentication & Security Gate State
+  // Authentication & Security Gate State (Locked by default; requires verified OTP or active session)
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     try {
-      const saved = localStorage.getItem('tech_select_ai_session');
-      return !!saved;
+      // Purge old persistent localStorage so simulator is strictly locked upon visits
+      localStorage.removeItem('tech_select_ai_session');
+
+      // Check if there is an active session in sessionStorage created within 30 minutes
+      const saved = sessionStorage.getItem('tech_select_ai_session_data');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.token && parsed?.timestamp && Date.now() - parsed.timestamp < 30 * 60 * 1000) {
+          return true;
+        }
+      }
+      return false;
     } catch {
       return false;
     }
@@ -38,7 +48,14 @@ export const ExecutiveAIAssessmentEngine: React.FC<ExecutiveAIAssessmentEnginePr
 
   const [sessionToken, setSessionToken] = useState<string>(() => {
     try {
-      return localStorage.getItem('tech_select_ai_session') || '';
+      const saved = sessionStorage.getItem('tech_select_ai_session_data');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.token && parsed?.timestamp && Date.now() - parsed.timestamp < 30 * 60 * 1000) {
+          return parsed.token;
+        }
+      }
+      return '';
     } catch {
       return '';
     }
@@ -276,7 +293,16 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
         setSessionToken(data.sessionToken);
         setIsAuthenticated(true);
         try {
-          localStorage.setItem('tech_select_ai_session', data.sessionToken);
+          const sessionPayload = {
+            token: data.sessionToken,
+            timestamp: Date.now(),
+            companyName: data.lead?.companyName || gateCompanyName.trim(),
+            fullName: data.lead?.fullName || gateFullName.trim(),
+            email: data.lead?.email || gateEmail.trim(),
+            phone: data.lead?.phone || gatePhone.trim(),
+            companySize: data.lead?.companySize || gateCompanySize
+          };
+          sessionStorage.setItem('tech_select_ai_session_data', JSON.stringify(sessionPayload));
         } catch {}
 
         if (data.lead?.companyName) setCompanyName(data.lead.companyName);
@@ -293,6 +319,51 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
     } finally {
       setIsVerifyingCode(false);
     }
+  };
+
+  // Handle Logout / Reset Simulator (Locks the simulator and wipes session state)
+  const handleLogoutOrReset = () => {
+    try {
+      localStorage.removeItem('tech_select_ai_session');
+      localStorage.removeItem('tech_select_ai_verified_user');
+      localStorage.removeItem('techselect_simulator_lead');
+      localStorage.removeItem('techselect_executive_lead_v3');
+      sessionStorage.removeItem('tech_select_ai_session');
+      sessionStorage.removeItem('tech_select_ai_session_data');
+      sessionStorage.removeItem('tech_select_ai_challenge');
+      sessionStorage.removeItem('tech_select_ceo_sim_verified');
+      sessionStorage.removeItem('tech_select_ai_verified_user');
+    } catch {}
+
+    setIsAuthenticated(false);
+    setSessionToken('');
+    setCodeRequested(false);
+    setGateError(null);
+    setGateSuccessMsg(null);
+    setAccessCodeInput('');
+    setOtpDigits(['', '', '', '']);
+    setChallengeToken(null);
+    setViewState('input');
+    setGeneratedReport(null);
+    setInputText('');
+    setSelectedPresetId(null);
+    setChatInput('');
+    setMessages([
+      {
+        id: 'welcome',
+        role: 'assistant',
+        content: isHe
+          ? `שלום! אני **ארכיטקט ה-AI הראשי של TECH-SELECT** המחובר למודל הדגל המתקדם של Google Gemini.
+
+במה נוכל לסייע היום? ספר לי על מערכות המידע בארגון, תהליכים עתירי זמן שתרצו לאטמט, או יעדים עסקיים. 
+
+בכל שלב ניתן ללחוץ על **"הפק דוח מנהלים וארכיטקטורת AI"** לקבלת ניתוח מפורט.`
+          : `Hello! I am TECH-SELECT's **Chief Enterprise AI Architect** powered by Google Gemini Flagship reasoning.
+
+Tell me about your IT infrastructure, high-friction manual workflows, or strategic AI goals. Click **"Generate Report"** whenever you are ready.`,
+        timestamp: new Date().toLocaleTimeString(isHe ? 'he-IL' : 'en-US', { hour: '2-digit', minute: '2-digit' })
+      }
+    ]);
   };
 
   // Preset auto-fill
@@ -914,16 +985,32 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
   if (viewState === 'report' && generatedReport) {
     return (
       <div className="w-full max-w-5xl mx-auto space-y-4" dir={isHe ? 'rtl' : 'ltr'}>
-        <div className={`flex items-center justify-between p-4 rounded-2xl border ${
+        <div className={`flex flex-wrap items-center justify-between gap-3 p-4 rounded-2xl border ${
           isDark ? 'bg-[#090e1a] border-slate-800' : 'bg-white border-slate-200'
         }`}>
-          <button
-            onClick={() => setViewState('input')}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white transition-all cursor-pointer shadow-md"
-          >
-            {isHe ? <ArrowRight className="w-3.5 h-3.5" /> : <ArrowLeft className="w-3.5 h-3.5" />}
-            <span>{isHe ? 'חזרה לשאלות האפיון' : 'Back to Assessment'}</span>
-          </button>
+          <div className="flex items-center gap-2.5">
+            <button
+              onClick={() => setViewState('input')}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white transition-all cursor-pointer shadow-md"
+            >
+              {isHe ? <ArrowRight className="w-3.5 h-3.5" /> : <ArrowLeft className="w-3.5 h-3.5" />}
+              <span>{isHe ? 'חזרה לשאלות האפיון' : 'Back to Assessment'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleLogoutOrReset}
+              title={isHe ? 'התנתקות מוחלטת ונעילת הסימולטור' : 'Logout & Lock Simulator'}
+              className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                isDark
+                  ? 'bg-rose-500/10 border-rose-500/30 hover:bg-rose-500/20 text-rose-300'
+                  : 'bg-rose-50 border-rose-200 hover:bg-rose-100 text-rose-700'
+              }`}
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>{isHe ? 'התנתק מהסימולטור' : 'Logout of Simulator'}</span>
+            </button>
+          </div>
 
           <div className="flex items-center gap-2 text-xs font-mono text-cyan-400">
             <Sparkles className="w-4 h-4" />
@@ -978,8 +1065,8 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
           </div>
         </div>
 
-        {/* Security Badge + Switch Mode */}
-        <div className="flex items-center gap-2.5">
+        {/* Security Badge + Switch Mode + Logout Button */}
+        <div className="flex flex-wrap items-center gap-2.5">
           <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold">
             <ShieldCheck className="w-4 h-4" />
             <span>{isHe ? 'שער אבטחה מאומת' : 'Security Gate Verified'}</span>
@@ -1005,6 +1092,20 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
                 <span>{isHe ? 'עבור לשאלות מנחות' : 'Switch to Questions'}</span>
               </>
             )}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleLogoutOrReset}
+            title={isHe ? 'התנתקות ונעילת הסימולטור מחדש (התחלה מחדש)' : 'Disconnect and lock simulator (Start Fresh)'}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+              isDark 
+                ? 'bg-rose-500/10 border-rose-500/30 hover:bg-rose-500/20 text-rose-300 hover:border-rose-400' 
+                : 'bg-rose-50 border-rose-200 hover:bg-rose-100 text-rose-700 hover:border-rose-300 shadow-sm'
+            }`}
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>{isHe ? 'התנתק / התחל מחדש' : 'Logout / Reset'}</span>
           </button>
         </div>
       </div>
