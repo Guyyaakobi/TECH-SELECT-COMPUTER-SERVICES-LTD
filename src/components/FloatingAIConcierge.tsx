@@ -50,13 +50,15 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
   const { lang, isHe } = useLanguage();
   const { isDark } = useTheme();
 
-  // Assistant Open State
+  // Assistant Open State (Always closed initially until user clicks)
   const [isOpen, setIsOpen] = useState(false);
 
-  // Auto-open chat window after 3 seconds from opening the website
+  // Bubble Visibility: Hidden on initial site load, rolls in from left to right after 3 seconds
+  const [isBubbleVisible, setIsBubbleVisible] = useState(false);
+
   useEffect(() => {
     const timer = setTimeout(() => {
-      setIsOpen(true);
+      setIsBubbleVisible(true);
     }, 3000);
 
     return () => clearTimeout(timer);
@@ -818,10 +820,10 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
   return (
     <>
       {/* 1. The Floating Pill Trigger (Gemini Capsule) */}
-      {!isOpen && (
+      {!isOpen && isBubbleVisible && (
         <div
           id="floating-ai-concierge-trigger"
-          className={`fixed bottom-6 ${isHe ? 'right-6' : 'left-6'} z-[9990] print:hidden max-w-[calc(100vw-3rem)]`}
+          className={`fixed bottom-6 ${isHe ? 'right-6' : 'left-6'} z-[9990] print:hidden max-w-[calc(100vw-3rem)] animate-roll-in-from-left pointer-events-auto`}
         >
           <div
             onClick={handleOpenConcierge}

@@ -2097,9 +2097,15 @@ ${formData?.customPainPoints || "N/A"}
         const cleanToken = String(sessionToken || req.headers["authorization"] || "").replace(/^Bearer\s+/i, "").trim();
         const sessionRecord = cleanToken ? verifiedSessions.get(cleanToken) : null;
         const isMaster = MASTER_ACCESS_CODES.has(cleanToken) || MASTER_TICKET_CODES.has(cleanToken) || cleanToken.startsWith("cf_session_");
-        const isGuest = !sessionRecord && !isMaster && !verifiedEmail;
+        if (!sessionRecord && !isMaster && !verifiedEmail) {
+          return res.status(401).json({
+            success: false,
+            requiresVerification: true,
+            reply: '\u{1F512} \u05E2\u05D5\u05D6\u05E8 \u05D4-AI \u05E0\u05E2\u05D5\u05DC. \u05D9\u05E9 \u05DC\u05D4\u05D6\u05D3\u05D4\u05D5\u05EA \u05D1\u05D0\u05DE\u05E6\u05E2\u05D5\u05EA \u05DB\u05EA\u05D5\u05D1\u05EA \u05D3\u05D5\u05D0"\u05DC \u05DC\u05E7\u05D1\u05DC\u05EA \u05E7\u05D5\u05D3 \u05D0\u05D9\u05DE\u05D5\u05EA \u05DB\u05D3\u05D9 \u05DC\u05E4\u05EA\u05D5\u05D7 \u05D0\u05EA \u05DE\u05D5\u05E7\u05D3 \u05D4\u05E9\u05D9\u05E8\u05D5\u05EA.'
+          });
+        }
         const authenticatedEmail = sessionRecord?.email || String(verifiedEmail || "").trim();
-        const authenticatedName = sessionRecord?.fullName || (isGuest ? "\u05D0\u05D5\u05E8\u05D7 \u05D1\u05D0\u05EA\u05E8" : "\u05DE\u05E9\u05EA\u05DE\u05E9 \u05DE\u05D0\u05D5\u05DE\u05EA");
+        const authenticatedName = sessionRecord?.fullName || "\u05DE\u05E9\u05EA\u05DE\u05E9";
         const currentTechName = typeof assignedTech === "string" && assignedTech.trim() ? assignedTech.trim() : "\u05D2\u05D9\u05D0 \u05D9\u05E2\u05E7\u05D5\u05D1\u05D9";
         const techFirstName = currentTechName.split(" ")[0] || currentTechName;
         let ateraContact = null;
@@ -2110,6 +2116,7 @@ ${formData?.customPainPoints || "N/A"}
           }
         }
         const isAteraCustomer = Boolean(ateraContact);
+        const isGuest = !isAteraCustomer;
         const siteSystemInstruction = `\u05D0\u05EA\u05D4 \u05D4\u05E2\u05D5\u05D6\u05E8 \u05D4\u05D5\u05D5\u05D9\u05E8\u05D8\u05D5\u05D0\u05DC\u05D9 \u05E9\u05DC **${currentTechName}** (\u05DE\u05D9\u05D9\u05E1\u05D3 \u05D5\u05DE\u05E0\u05DB"\u05DC \u05D8\u05E7-\u05E1\u05DC\u05E7\u05D8 Tech-Select).
 
 \u05D4\u05D6\u05D4\u05D5\u05EA \u05E9\u05DC\u05DA \u05D5\u05D7\u05D9\u05D1\u05D5\u05E8 \u05DC\u05DE\u05D0\u05D2\u05E8\u05D9 \u05D4\u05D9\u05D3\u05E2:

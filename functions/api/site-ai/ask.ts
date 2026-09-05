@@ -346,13 +346,62 @@ export async function handleAsk(request: Request, env: Env, _ctx?: any): Promise
     const history = Array.isArray(body?.history) ? body.history : [];
     const { sessionToken, verifiedEmail } = body || {};
 
-    // Verification check: if token or verified email exists, user is an existing/authenticated customer.
-    // If not, they are a guest - answer warmly and humanly, collect details, and DO NOT open tickets.
+    // Verification check: must have sessionToken, Authorization header, or verifiedEmail
     const authHeader = request.headers.get("Authorization") || "";
     const cleanToken = String(sessionToken || authHeader).replace(/^Bearer\s+/i, "").trim();
-    const isGuest = !cleanToken && !verifiedEmail;
+
+    if (!cleanToken && !verifiedEmail) {
+      return new Response(
+        JSON.stringify({
+          success: false,
+          requiresVerification: true,
+          reply: "🔒 עוזר ה-AI נעול. יש להזדהות באמצעות כתובת דוא\"ל לקבלת קוד אימות כדי לשוחח עם העוזר.",
+        }),
+        { status: 401, headers: corsHeaders }
+      );
+    }
 
     const envObj = (env || {}) as any;
+    const ateraApiKey =
+      envObj.ATERA_API_KEY ||
+      envObj.AT_KEY ||
+      (typeof process !== "undefined" && (process?.env?.ATERA_API_KEY || process?.env?.AT_KEY)) ||
+      "";
+    const cleanAteraKey = ateraApiKey.replace(/^Bearer\s+/i, "").trim();
+    const bearerAtera = ateraApiKey.startsWith("Bearer ") ? ateraApiKey : `Bearer ${cleanAteraKey}`;
+
+    const effectiveEmail = String(verifiedEmail || "").trim().toLowerCase();
+    let isAteraCustomer = false;
+    let ateraContact: any = null;
+
+    if (effectiveEmail && cleanAteraKey) {
+      try {
+        const contactRes = await fetch(
+          `https://app.atera.com/api/v3/contacts?email=${encodeURIComponent(effectiveEmail)}`,
+          {
+            method: "GET",
+            headers: {
+              "Authorization": bearerAtera,
+              "X-API-KEY": cleanAteraKey,
+              "Accept": "application/json",
+            },
+          }
+        );
+        if (contactRes.ok) {
+          const contactsData: any = await contactRes.json().catch(() => null);
+          const contactItems = Array.isArray(contactsData)
+            ? contactsData
+            : (Array.isArray(contactsData?.items) ? contactsData.items : []);
+          ateraContact = contactItems.find((c: any) => String(c?.Email || c?.email || "").trim().toLowerCase() === effectiveEmail) || (contactItems.length === 1 ? contactItems[0] : null);
+          isAteraCustomer = Boolean(ateraContact);
+        }
+      } catch (err) {
+        console.warn("[ask.ts] Atera contact check error:", err);
+      }
+    }
+
+    const isGuest = !isAteraCustomer;
+
     const apiKey =
       envObj.GEMINI_API_KEY ||
       envObj.GOOGLE_GENAI_API_KEY ||
@@ -367,7 +416,6 @@ export async function handleAsk(request: Request, env: Env, _ctx?: any): Promise
         : "גיא יעקובי";
 
     const techFirstName = currentTechName.split(" ")[0] || currentTechName;
-    const effectiveEmail = String(verifiedEmail || "").trim();
 
     const siteSystemInstruction = `אתה העוזר הווירטואלי של **${currentTechName}** (מייסד ומנכ"ל TECH-SELECT טק-סלקט שירותי מחשוב בע"מ).
 

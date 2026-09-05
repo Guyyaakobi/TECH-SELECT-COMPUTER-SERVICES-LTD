@@ -2527,11 +2527,16 @@ ${formData?.customPainPoints || "N/A"}
         const sessionRecord = cleanToken ? verifiedSessions.get(cleanToken) : null;
         const isMaster = MASTER_ACCESS_CODES.has(cleanToken) || MASTER_TICKET_CODES.has(cleanToken) || cleanToken.startsWith("cf_session_");
 
-        // Verification check: if session/email exists, client is verified. If not, treat as guest!
-        const isGuest = !sessionRecord && !isMaster && !verifiedEmail;
+        if (!sessionRecord && !isMaster && !verifiedEmail) {
+          return res.status(401).json({
+            success: false,
+            requiresVerification: true,
+            reply: "🔒 עוזר ה-AI נעול. יש להזדהות באמצעות כתובת דוא\"ל לקבלת קוד אימות כדי לפתוח את מוקד השירות.",
+          });
+        }
 
         const authenticatedEmail = sessionRecord?.email || String(verifiedEmail || "").trim();
-        const authenticatedName = sessionRecord?.fullName || (isGuest ? "אורח באתר" : "משתמש מאומת");
+        const authenticatedName = sessionRecord?.fullName || "משתמש";
 
         const currentTechName = (typeof assignedTech === "string" && assignedTech.trim())
           ? assignedTech.trim()
@@ -2545,6 +2550,7 @@ ${formData?.customPainPoints || "N/A"}
           } catch {}
         }
         const isAteraCustomer = Boolean(ateraContact);
+        const isGuest = !isAteraCustomer;
 
         // =========================================================================
         // Tech-Select - Official AI Support Assistant System Instructions & Tools
