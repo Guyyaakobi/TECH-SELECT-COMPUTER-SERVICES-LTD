@@ -1,4 +1,5 @@
 import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 import { AIExcellenceReport } from '../types';
 
 export interface ReportPdfData {
@@ -15,8 +16,22 @@ export interface ReportPdfData {
 }
 
 /**
+ * Escapes HTML entities for safe DOM injection
+ */
+function escapeHtml(text: string | number | undefined | null): string {
+  if (text === undefined || text === null) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+/**
  * Generates an executive-grade, beautifully structured PDF report document for Tech-Select AI Discovery.
- * Handles Hebrew text rendering with proper bi-directional flow, structured visual tables, and branding.
+ * Uses high-resolution HTML Canvas rendering with native Hebrew RTL font support to guarantee
+ * zero gibberish, zero scrambled letters, and crisp print-ready output.
  */
 export async function generateReportPDF(data: ReportPdfData): Promise<{
   doc: jsPDF;
@@ -30,301 +45,363 @@ export async function generateReportPDF(data: ReportPdfData): Promise<{
     format: 'a4',
   });
 
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  const margin = 16;
-  const contentWidth = pageWidth - margin * 2;
+  const isBrowser = typeof window !== 'undefined' && typeof document !== 'undefined';
 
-  let currentY = 18;
+  const companyName = data.companyName || 'ארגון / חברה';
+  const contactPerson = data.contactPerson || 'מנהל / הנהלה';
+  const role = data.role || 'הנהלה בכירה';
+  const phone = data.phone || 'לא צוין';
+  const email = data.email || 'לא צוין';
+  const companySize = data.companySize || '21-100 עובדים';
+  const erp = data.erp || 'ERP / CRM / Cloud M365';
+  const nowStr = new Date().toLocaleDateString('he-IL', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
 
-  // Helper to add a clean page header
-  const addHeader = (pageNum: number) => {
-    doc.setFillColor(11, 15, 25);
-    doc.rect(0, 0, pageWidth, 24, 'F');
+  const monthlyHours =
+    data.report?.roi?.monthlyHoursSaved ||
+    (data.report as any)?.financialAnalysis?.estimatedMonthlyHoursSaved ||
+    240;
+  const yearlySavingsNIS =
+    data.report?.roi?.estimatedAnnualFinancialSavingsNIS ||
+    (data.report as any)?.financialAnalysis?.estimatedYearlySavingsNIS ||
+    monthlyHours * 100 * 12;
+  const payback =
+    data.report?.roi?.paybackMonths ||
+    (data.report as any)?.financialAnalysis?.paybackPeriodMonths ||
+    2.8;
 
-    doc.setTextColor(56, 189, 248);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.text('TECH-SELECT COMPUTER SERVICES LTD', margin, 12);
+  const executiveSummary =
+    data.report?.executiveSummary ||
+    'ניתוח ארכיטקטורת ה-AI מציג פוטנציאל התייעלות משמעותי עבור הארגון. שילוב סוכני אוטומציה ו-RAG מאובטח יאפשר חיסכון ניכר בשעות עבודה תוך שמירה מוחלטת על אבטחת מידע, הרשאות RBAC ועמידה במדיניות Zero Data Retention.';
 
-    doc.setTextColor(148, 163, 184);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8.5);
-    doc.text('MOD Authorized Supplier: 0011033280 | Enterprise AI & IT Practice', margin, 18);
-
-    doc.setTextColor(203, 213, 225);
-    doc.setFontSize(8.5);
-    doc.text(`Page ${pageNum}`, pageWidth - margin - 12, 15);
-
-    // Accent line
-    doc.setDrawColor(2, 132, 199);
-    doc.setLineWidth(0.8);
-    doc.line(0, 24, pageWidth, 24);
-  };
-
-  // Helper to add footer
-  const addFooter = () => {
-    doc.setDrawColor(51, 65, 85);
-    doc.setLineWidth(0.4);
-    doc.line(margin, pageHeight - 12, pageWidth - margin, pageHeight - 12);
-
-    doc.setTextColor(100, 116, 139);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    doc.text('Tech-Select Computer Services LTD | 88 Yigal Alon St. Tel Aviv | Office: 077-7700252 | Direct: 050-3900903', margin, pageHeight - 6);
-  };
-
-  // Check page overflow and add new page
-  const checkNewPage = (neededSpace: number = 25) => {
-    if (currentY + neededSpace > pageHeight - 18) {
-      doc.addPage();
-      const pageCount = doc.getNumberOfPages();
-      addHeader(pageCount);
-      addFooter();
-      currentY = 32;
-    }
-  };
-
-  // Page 1 Header
-  addHeader(1);
-  addFooter();
-  currentY = 32;
-
-  // Title Banner Card
-  doc.setFillColor(15, 23, 42);
-  doc.setDrawColor(2, 132, 199);
-  doc.setLineWidth(0.5);
-  doc.roundedRect(margin, currentY, contentWidth, 24, 2, 2, 'FD');
-
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(14);
-  doc.text('AI ARCHITECTURE & EXCELLENCE EXECUTIVE REPORT', margin + 6, currentY + 9);
-
-  doc.setTextColor(148, 163, 184);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  const nowStr = new Date().toLocaleString('he-IL', { timeZone: 'Asia/Jerusalem' });
-  doc.text(`Generated on: ${nowStr} | Confidential C-Level Assessment`, margin + 6, currentY + 16);
-
-  currentY += 30;
-
-  // Organization & Contact Info Table Card
-  doc.setFillColor(248, 250, 252);
-  doc.setDrawColor(203, 213, 225);
-  doc.setLineWidth(0.3);
-  doc.roundedRect(margin, currentY, contentWidth, 38, 2, 2, 'FD');
-
-  doc.setTextColor(30, 41, 59);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10.5);
-  doc.text('Organization & Lead Profile:', margin + 6, currentY + 7);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(9);
-  doc.setTextColor(71, 85, 105);
-
-  const col1X = margin + 6;
-  const col2X = margin + 95;
-
-  doc.text(`Company Name: ${data.companyName || 'Not specified'}`, col1X, currentY + 15);
-  doc.text(`Executive Contact: ${data.contactPerson || 'Executive'} (${data.role || 'Management'})`, col1X, currentY + 22);
-  doc.text(`Phone / Mobile: ${data.phone || 'Not specified'}`, col1X, currentY + 29);
-
-  doc.text(`Email: ${data.email || 'Not specified'}`, col2X, currentY + 15);
-  doc.text(`Company Size: ${data.companySize || '21-100 employees'}`, col2X, currentY + 22);
-  doc.text(`Core Systems: ${data.erp || 'ERP / CRM / Cloud'}`, col2X, currentY + 29);
-
-  currentY += 44;
-
-  // Financial ROI Highlights Box
-  const monthlyHours = data.report?.roi?.monthlyHoursSaved || (data.report as any)?.financialAnalysis?.estimatedMonthlyHoursSaved || 240;
-  const yearlySavingsNIS = data.report?.roi?.estimatedAnnualFinancialSavingsNIS || (data.report as any)?.financialAnalysis?.estimatedYearlySavingsNIS || (monthlyHours * 100 * 12);
-  const payback = data.report?.roi?.paybackMonths || (data.report as any)?.financialAnalysis?.paybackPeriodMonths || 2.8;
-
-  doc.setFillColor(6, 78, 59);
-  doc.setDrawColor(5, 150, 105);
-  doc.roundedRect(margin, currentY, contentWidth, 26, 2, 2, 'FD');
-
-  doc.setTextColor(110, 231, 183);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('FINANCIAL ROI & OPERATIONAL SAVINGS PROJECTION:', margin + 6, currentY + 8);
-
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(10);
-  doc.setTextColor(255, 255, 255);
-  doc.text(`Monthly Hours Saved: ${monthlyHours} hrs`, margin + 6, currentY + 18);
-  doc.text(`Est. Annual Savings: NIS ${Number(yearlySavingsNIS).toLocaleString()}`, margin + 62, currentY + 18);
-  doc.text(`Payback Period: ${payback} Months`, margin + 128, currentY + 18);
-
-  currentY += 32;
-
-  // Executive Summary Section
-  doc.setTextColor(15, 23, 42);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('1. Executive Advisory Summary (Tech-Select Chief AI Architect)', margin, currentY);
-  currentY += 5;
-
-  doc.setFillColor(241, 245, 249);
-  doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(margin, currentY, contentWidth, 34, 1.5, 1.5, 'FD');
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(51, 65, 85);
-
-  const rawSummary = data.report?.executiveSummary || 
-    'Comprehensive Enterprise AI Architecture assessment conducted for the executive leadership. The organization demonstrates significant potential for high-impact automation while strictly maintaining zero data retention security and RBAC governance.';
-  
-  const splitSummary = doc.splitTextToSize(rawSummary, contentWidth - 10);
-  doc.text(splitSummary.slice(0, 5), margin + 5, currentY + 7);
-
-  currentY += 40;
-
-  // AI Opportunities Section
-  checkNewPage(50);
-  doc.setTextColor(15, 23, 42);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('2. Tailored Enterprise AI Initiatives (Use Cases)', margin, currentY);
-  currentY += 6;
-
-  const opps = (data.report?.opportunities || []).slice(0, 3);
-  if (opps.length === 0) {
-    opps.push(
+  const opportunities = (data.report?.opportunities || []).slice(0, 4);
+  if (opportunities.length === 0) {
+    opportunities.push(
       {
         id: 'opp-1',
-        title: 'Enterprise Secure RAG & Search (M365 / Fileserver / ERP)',
+        title: 'סוכן ידע פנים-ארגוני מאובטח (Enterprise RAG)',
         category: 'Enterprise RAG',
-        problemDescription: 'Repetitive document search and knowledge retrieval overhead',
-        aiSolution: 'Private vector indexing with strict RBAC access controls',
-        estimatedTimeToValue: '3-4 Weeks',
+        problemDescription: 'חיפוש מידע חוזר ואיבוד זמן באיתור נהלים ומסמכים',
+        aiSolution: 'אינדוקס וקטורי פרטי עם שימור הרשאות משתמש ומניעת זליגת מידע',
+        estimatedTimeToValue: '3-4 שבועות',
         estimatedHoursSavedMonthly: 120,
       } as any,
       {
         id: 'opp-2',
-        title: 'Core Business Process & ERP Automation Pipeline',
+        title: 'אוטומציית מסמכים ואינטגרציית מערכות ERP/CRM',
         category: 'Automation',
-        problemDescription: 'Manual data entry and quote/invoice processing delays',
-        aiSolution: 'Automated AI extraction pipeline with human-in-the-loop review',
-        estimatedTimeToValue: '4-6 Weeks',
+        problemDescription: 'הזנה ידנית של חשבוניות, הזמנות ומסמכים במערכות הליבה',
+        aiSolution: 'צינור חילוץ נתונים מבוסס AI עם מנגנון אימות ובקרה אנושית',
+        estimatedTimeToValue: '4-6 שבועות',
         estimatedHoursSavedMonthly: 90,
       } as any
     );
   }
 
-  opps.forEach((opp, idx) => {
-    checkNewPage(32);
-    doc.setFillColor(248, 250, 252);
-    doc.setDrawColor(203, 213, 225);
-    doc.roundedRect(margin, currentY, contentWidth, 26, 1.5, 1.5, 'FD');
+  const oppsPage1 = opportunities.slice(0, 2);
+  const oppsPage2 = opportunities.slice(2, 4);
 
-    doc.setTextColor(2, 132, 199);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9.5);
-    const oppTitle = opp.title || (opp as any).titleHe || 'AI Initiative';
-    doc.text(`${idx + 1}. ${oppTitle}`, margin + 5, currentY + 6);
+  if (isBrowser) {
+    // Build isolated off-screen container for rendering
+    const container = document.createElement('div');
+    container.id = 'tech-select-pdf-container';
+    container.style.position = 'fixed';
+    container.style.top = '-99999px';
+    container.style.left = '-99999px';
+    container.style.width = '794px'; // 210mm at 96 DPI
+    container.style.zIndex = '-9999';
+    container.style.background = '#ffffff';
 
-    doc.setTextColor(100, 116, 139);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(8);
-    doc.text(`[${opp.category || 'Initiative'}]`, pageWidth - margin - 35, currentY + 6);
+    const pageStyle = `
+      width: 794px;
+      height: 1123px;
+      box-sizing: border-box;
+      padding: 38px 46px 32px 46px;
+      background: #ffffff;
+      color: #0f172a;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      direction: rtl;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    `;
 
-    doc.setTextColor(51, 65, 85);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(8);
-    const probText = `Challenge: ${opp.problemStatement || (opp as any).problemDescription || 'Operational bottleneck'}`;
-    const solText = `Solution: ${opp.aiSolution || 'Engineered AI deployment'}`;
-    doc.text(doc.splitTextToSize(probText, contentWidth - 10).slice(0, 1), margin + 5, currentY + 12);
-    doc.text(doc.splitTextToSize(solText, contentWidth - 10).slice(0, 1), margin + 5, currentY + 18);
+    const headerHtml = (pageNum: number) => `
+      <div style="border-bottom: 2px solid #0284c7; padding-bottom: 12px; margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; direction: rtl;">
+          <div style="text-align: right;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 20px; font-weight: 900; color: #0f172a; letter-spacing: -0.5px;">TECH-SELECT</span>
+              <span style="background: #0284c7; color: #ffffff; font-size: 10px; font-weight: 800; padding: 2px 7px; border-radius: 4px;">AI &amp; IT PRACTICE</span>
+            </div>
+            <div style="font-size: 11px; color: #475569; margin-top: 3px; font-weight: 600;">
+              טק-סלקט שירותי מחשוב בע"מ | ספק מורשה משרד הביטחון: 0011033280
+            </div>
+          </div>
+          <div style="text-align: left; direction: ltr;">
+            <span style="background: #f1f5f9; color: #475569; font-size: 10px; font-weight: 700; padding: 4px 10px; border-radius: 12px; border: 1px solid #cbd5e1;">
+              עמוד ${pageNum} מתוך 2
+            </span>
+            <div style="font-size: 10px; color: #64748b; margin-top: 4px; font-weight: 500;">
+              ${escapeHtml(nowStr)}
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
 
-    doc.setTextColor(15, 23, 42);
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(7.5);
-    const estEffort = opp.estimatedEffort || (opp as any).estimatedTimeToValue || '3-4 Weeks';
-    doc.text(`Est. Deployment: ${estEffort}  |  Monthly Hours Saved: ${opp.estimatedHoursSavedMonthly || 40} hrs`, margin + 5, currentY + 23);
+    const footerHtml = `
+      <div style="border-top: 1px solid #e2e8f0; padding-top: 10px; margin-top: 12px; display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #64748b; direction: rtl;">
+        <div>
+          טק-סלקט שירותי מחשוב בע"מ | יגאל אלון 88, תל אביב | משרד: 077-7700252 | ישיר: 050-3900903
+        </div>
+        <div style="color: #0284c7; font-weight: 600;">
+          support@tech-select.co.il | סודי ומסחרי
+        </div>
+      </div>
+    `;
 
-    currentY += 30;
-  });
+    // -------------------------------------------------------------
+    // PAGE 1 HTML
+    // -------------------------------------------------------------
+    const page1Html = `
+      <div class="pdf-page" style="${pageStyle}">
+        <div>
+          ${headerHtml(1)}
 
-  // Security Architecture & DLP Section
-  checkNewPage(45);
-  doc.setTextColor(15, 23, 42);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('3. Zero Data Retention & Security Architecture', margin, currentY);
-  currentY += 6;
+          <!-- Title Banner -->
+          <div style="background: linear-gradient(135deg, #0b0f19 0%, #1e293b 100%); color: #ffffff; border-radius: 10px; padding: 18px 22px; margin-bottom: 16px; border: 1px solid #38bdf8;">
+            <div style="font-size: 18px; font-weight: 800; color: #38bdf8; margin-bottom: 4px;">
+              דוח אסטרטגי: ארכיטקטורת AI וניתוח כדאיות עסקית (ROI)
+            </div>
+            <div style="font-size: 12px; color: #cbd5e1;">
+              מסמך הערכה מנהלי מותאם אישית | הוכן על ידי מוקד ההנדסה והארכיטקטורה של טק-סלקט
+            </div>
+          </div>
 
-  doc.setFillColor(15, 23, 42);
-  doc.roundedRect(margin, currentY, contentWidth, 32, 2, 2, 'F');
+          <!-- Customer & Executive Info Card -->
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 18px; margin-bottom: 16px;">
+            <div style="font-size: 13px; font-weight: 800; color: #0f172a; margin-bottom: 10px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">
+              פרופיל הארגון והפנייה:
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11.5px; color: #334155;">
+              <div><strong>שם החברה:</strong> ${escapeHtml(companyName)}</div>
+              <div><strong>דוא"ל:</strong> ${escapeHtml(email)}</div>
+              <div><strong>איש קשר:</strong> ${escapeHtml(contactPerson)} (${escapeHtml(role)})</div>
+              <div><strong>גודל חברה:</strong> ${escapeHtml(companySize)}</div>
+              <div><strong>טלפון / נייד:</strong> ${escapeHtml(phone)}</div>
+              <div><strong>מערכות ליבה:</strong> ${escapeHtml(erp)}</div>
+            </div>
+          </div>
 
-  doc.setTextColor(56, 189, 248);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9);
-  doc.text('Four-Tier Enterprise Security Matrix:', margin + 6, currentY + 7);
+          <!-- Financial ROI Box -->
+          <div style="background: #064e3b; border: 1px solid #059669; border-radius: 8px; padding: 16px 20px; color: #ffffff; margin-bottom: 16px;">
+            <div style="font-size: 13px; font-weight: 800; color: #6ee7b7; margin-bottom: 10px;">
+              תחזית חיסכון כספי ותפעולי (ROI Projections):
+            </div>
+            <div style="display: flex; justify-content: space-around; text-align: center;">
+              <div>
+                <div style="font-size: 11px; color: #a7f3d0; margin-bottom: 4px;">חיסכון חודשי בשעות</div>
+                <div style="font-size: 20px; font-weight: 900; color: #ffffff;">${monthlyHours} שעות</div>
+              </div>
+              <div style="border-right: 1px solid #047857; padding-right: 20px;">
+                <div style="font-size: 11px; color: #a7f3d0; margin-bottom: 4px;">חיסכון שנתי מוערך</div>
+                <div style="font-size: 20px; font-weight: 900; color: #ffffff;">₪${Number(yearlySavingsNIS).toLocaleString()}</div>
+              </div>
+              <div style="border-right: 1px solid #047857; padding-right: 20px;">
+                <div style="font-size: 11px; color: #a7f3d0; margin-bottom: 4px;">החזר השקעה (Payback)</div>
+                <div style="font-size: 20px; font-weight: 900; color: #ffffff;">${payback} חודשים</div>
+              </div>
+            </div>
+          </div>
 
-  doc.setTextColor(226, 232, 240);
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text('• Tier 1 (Identity): Entra ID / M365 SSO with Conditional Access MFA & RBAC least-privilege', margin + 6, currentY + 13);
-  doc.text('• Tier 2 (Gateway): AI Gateway with DLP sanitization, PII redaction & Zero Data Retention DPA', margin + 6, currentY + 18);
-  doc.text('• Tier 3 (RAG Pipeline): Secure vector indexing preserving native enterprise document permissions', margin + 6, currentY + 23);
-  doc.text('• Tier 4 (Hosting): Isolated Private Enterprise Cloud or dedicated On-Premises GPU cluster', margin + 6, currentY + 28);
+          <!-- Executive Summary -->
+          <div style="margin-bottom: 16px;">
+            <div style="font-size: 13px; font-weight: 800; color: #0f172a; margin-bottom: 6px;">
+              1. תקציר מנהלים מאת הארכיטקט הראשי (Tech-Select Chief Architect)
+            </div>
+            <div style="background: #f1f5f9; border-right: 4px solid #0284c7; border-radius: 6px; padding: 12px 16px; font-size: 11.5px; line-height: 1.6; color: #1e293b;">
+              ${escapeHtml(executiveSummary)}
+            </div>
+          </div>
 
-  currentY += 38;
+          <!-- AI Opportunities Section (Part 1) -->
+          <div>
+            <div style="font-size: 13px; font-weight: 800; color: #0f172a; margin-bottom: 8px;">
+              2. יוזמות AI מותאמות לארגון (Key Opportunities):
+            </div>
+            ${oppsPage1
+              .map(
+                (opp, idx) => `
+              <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                  <span style="font-size: 12.5px; font-weight: 800; color: #0284c7;">
+                    ${idx + 1}. ${escapeHtml(opp.title || (opp as any).titleHe || 'יוזמת AI')}
+                  </span>
+                  <span style="background: #e0f2fe; color: #0369a1; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
+                    ${escapeHtml(opp.category || 'פתרון ארגוני')}
+                  </span>
+                </div>
+                <div style="font-size: 11px; color: #334155; line-height: 1.5; margin-bottom: 4px;">
+                  <strong>אתגר:</strong> ${escapeHtml(opp.problemStatement || (opp as any).problemDescription || 'עומס תהליכי ידני')}
+                </div>
+                <div style="font-size: 11px; color: #334155; line-height: 1.5; margin-bottom: 6px;">
+                  <strong>פתרון AI:</strong> ${escapeHtml(opp.aiSolution || 'אוטומציה ייעודית מבוססת מודלי שפה מאובטחים')}
+                </div>
+                <div style="display: flex; gap: 16px; font-size: 10.5px; color: #475569; font-weight: 600;">
+                  <span>זמן פריסה מוערך: ${escapeHtml(opp.estimatedEffort || (opp as any).estimatedTimeToValue || '3-4 שבועות')}</span>
+                  <span>חיסכון חודשי: ${opp.estimatedHoursSavedMonthly || 40} שעות</span>
+                </div>
+              </div>
+            `
+              )
+              .join('')}
+          </div>
+        </div>
 
-  // Why Tech-Select Strategic Section
-  checkNewPage(50);
-  doc.setTextColor(15, 23, 42);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(11);
-  doc.text('4. Why Tech-Select is the Strategic Partner of Choice', margin, currentY);
-  currentY += 6;
+        ${footerHtml}
+      </div>
+    `;
 
-  doc.setFillColor(239, 246, 255);
-  doc.setDrawColor(191, 219, 254);
-  doc.roundedRect(margin, currentY, contentWidth, 42, 2, 2, 'FD');
+    // -------------------------------------------------------------
+    // PAGE 2 HTML
+    // -------------------------------------------------------------
+    const page2Html = `
+      <div class="pdf-page" style="${pageStyle}">
+        <div>
+          ${headerHtml(2)}
 
-  doc.setTextColor(30, 58, 138);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(8.5);
+          ${
+            oppsPage2.length > 0
+              ? `
+            <div style="margin-bottom: 16px;">
+              <div style="font-size: 13px; font-weight: 800; color: #0f172a; margin-bottom: 8px;">
+                המשך יוזמות יישום בארגון:
+              </div>
+              ${oppsPage2
+                .map(
+                  (opp, idx) => `
+                <div style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px;">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                    <span style="font-size: 12.5px; font-weight: 800; color: #0284c7;">
+                      ${idx + 3}. ${escapeHtml(opp.title || (opp as any).titleHe || 'יוזמת AI')}
+                    </span>
+                    <span style="background: #e0f2fe; color: #0369a1; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 4px;">
+                      ${escapeHtml(opp.category || 'פתרון ארגוני')}
+                    </span>
+                  </div>
+                  <div style="font-size: 11px; color: #334155; line-height: 1.5; margin-bottom: 4px;">
+                    <strong>אתגר:</strong> ${escapeHtml(opp.problemStatement || (opp as any).problemDescription || 'עומס תהליכי ידני')}
+                  </div>
+                  <div style="font-size: 11px; color: #334155; line-height: 1.5; margin-bottom: 6px;">
+                    <strong>פתרון AI:</strong> ${escapeHtml(opp.aiSolution || 'אוטומציה ייעודית מבוססת מודלי שפה מאובטחים')}
+                  </div>
+                  <div style="display: flex; gap: 16px; font-size: 10.5px; color: #475569; font-weight: 600;">
+                    <span>זמן פריסה מוערך: ${escapeHtml(opp.estimatedEffort || (opp as any).estimatedTimeToValue || '3-4 שבועות')}</span>
+                    <span>חיסכון חודשי: ${opp.estimatedHoursSavedMonthly || 40} שעות</span>
+                  </div>
+                </div>
+              `
+                )
+                .join('')}
+            </div>
+          `
+              : ''
+          }
 
-  const pillars = [
-    '1. MOD Defense Authorized Supplier (No. 0011033280): Proven rigor in cyber defense, ISO compliance & data secrecy.',
-    '2. Tri-Fecta Engineering Expertise: Seamless combination of Managed IT, Cyber Security (DLP), and Custom Software.',
-    '3. 15+ Years Track Record: Executive leadership by Guy Yaakobi in complex infrastructure & enterprise integration.',
-    '4. Non-Disruptive ERP/CRM Integration: Deep native connectivity to Priority, SAP, Salesforce, and Monday.',
-    '5. Tangible Accountability & SLA: Transparent FinOps management, dedicated SLA, and end-to-end user adoption.'
-  ];
+          <!-- Security Architecture Card (4 Tiers) -->
+          <div style="background: #0b0f19; border: 1px solid #1e293b; border-radius: 10px; padding: 16px 20px; color: #ffffff; margin-bottom: 16px;">
+            <div style="font-size: 13px; font-weight: 800; color: #38bdf8; margin-bottom: 10px;">
+              3. ארכיטקטורת אבטחה ב-4 שכבות ומדיניות Zero Data Retention:
+            </div>
+            <div style="font-size: 11px; line-height: 1.6; color: #cbd5e1;">
+              <div style="margin-bottom: 6px;">
+                <strong style="color: #60a5fa;">• שכבה 1 (זהויות והרשאות):</strong> אימות מול Microsoft Entra ID עם MFA מותנה והקשחת הרשאות מינימליות (Least Privilege).
+              </div>
+              <div style="margin-bottom: 6px;">
+                <strong style="color: #60a5fa;">• שכבה 2 (שער AI ו-DLP):</strong> מניעת דליפת מידע רגיש, סינון PII אוטומטי, והסכמי DPA המבטיחים שהמידע אינו משמש לאימון מודלים.
+              </div>
+              <div style="margin-bottom: 6px;">
+                <strong style="color: #60a5fa;">• שכבה 3 (סוכני RAG מאובטחים):</strong> אינדוקס וקטורי מבודד השומר במדויק על מבנה התיקיות והרשאות המסמכים הארגוניים.
+              </div>
+              <div>
+                <strong style="color: #60a5fa;">• שכבה 4 (תשתיות ואירוח):</strong> ענן פרטי מנוהל בישראל או אשכול GPU ייעודי בהתאם לדרישות הרגולציה והסודיות של הלקוח.
+              </div>
+            </div>
+          </div>
 
-  pillars.forEach((p, idx) => {
-    doc.text(p, margin + 5, currentY + 8 + idx * 7);
-  });
+          <!-- Why Tech-Select Pillars -->
+          <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px; padding: 16px 20px; margin-bottom: 16px;">
+            <div style="font-size: 13px; font-weight: 800; color: #1e3a8a; margin-bottom: 8px;">
+              4. מדוע ארגונים בוחרים ב-Tech-Select כשותף ה-IT וה-AI האסטרטגי:
+            </div>
+            <div style="font-size: 11px; line-height: 1.6; color: #1e293b;">
+              <div style="margin-bottom: 4px;"><strong>1. ספק מורשה משרד הביטחון (0011033280):</strong> עמידה בתקני סייבר מחמירים, ביקורות תקופתיות וסודיות מלאה.</div>
+              <div style="margin-bottom: 4px;"><strong>2. שילוב תלת-עולמי מנצח:</strong> שליטה מוחלטת ב-IT ארגוני, סייבר ו-DLP, ופיתוח תוכנה ייעודי עם ממשקי API.</div>
+              <div style="margin-bottom: 4px;"><strong>3. מעל 15 שנה של ניסיון הנדסי:</strong> הובלה ישירה של גיא יעקובי בארכיטקטורות ענן היברידי ואינטגרציות מורכבות.</div>
+              <div style="margin-bottom: 4px;"><strong>4. אינטגרציה עמוקה למערכות הליבה:</strong> חיבור שקוף לפריוריטי (Priority), SAP, Salesforce, Monday ועוד ללא השבתות.</div>
+              <div><strong>5. שקיפות מלאה (FinOps) ו-SLA קשיח:</strong> מודל תמחור ברור, שליטה בעלויות API והטמעה מלאה בקרב צוות העובדים.</div>
+            </div>
+          </div>
 
-  currentY += 48;
+          <!-- Contact & Next Steps Box -->
+          <div style="background: #f8fafc; border: 2px solid #0284c7; border-radius: 10px; padding: 14px 18px;">
+            <div style="font-size: 13px; font-weight: 800; color: #0284c7; margin-bottom: 4px;">
+              שיחת ייעוץ אסטרטגית ותכנון מפת דרכים:
+            </div>
+            <div style="font-size: 11px; color: #334155; margin-bottom: 6px;">
+              לתיאום פגישת ארכיטקטורה מותאמת אישית ותכנון פיילוט POC עם גיא יעקובי:
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 11.5px; font-weight: 700; color: #0f172a; direction: rtl;">
+              <div>📞 ישיר / וואטסאפ: 050-3900903</div>
+              <div>🏢 משרד: 077-7700252</div>
+              <div>✉️ מייל: Info@tech-select.co.il</div>
+            </div>
+          </div>
+        </div>
 
-  // Contact and Consultation Call to Action
-  checkNewPage(26);
-  doc.setFillColor(241, 245, 249);
-  doc.setDrawColor(203, 213, 225);
-  doc.roundedRect(margin, currentY, contentWidth, 22, 2, 2, 'FD');
+        ${footerHtml}
+      </div>
+    `;
 
-  doc.setTextColor(15, 23, 42);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(9.5);
-  doc.text('Executive Consultation & Implementation Next Steps:', margin + 6, currentY + 7);
+    container.innerHTML = page1Html + page2Html;
+    document.body.appendChild(container);
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8.5);
-  doc.setTextColor(51, 65, 85);
-  doc.text('To schedule an executive roadmap review and proof-of-concept design session with Guy Yaakobi:', margin + 6, currentY + 13);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(2, 132, 199);
-  doc.text('Direct / WhatsApp: 050-3900903  |  Office: 077-7700252  |  Email: Info@tech-select.co.il', margin + 6, currentY + 18);
+    try {
+      const pageElements = container.querySelectorAll('.pdf-page');
 
-  // Generate output
+      for (let i = 0; i < pageElements.length; i++) {
+        const pageEl = pageElements[i] as HTMLElement;
+        const canvas = await html2canvas(pageEl, {
+          scale: 2, // 2x retina scale for crisp rendering
+          useCORS: true,
+          logging: false,
+          backgroundColor: '#ffffff',
+        });
+
+        const imgData = canvas.toDataURL('image/jpeg', 0.95);
+        if (i > 0) {
+          doc.addPage();
+        }
+        doc.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+      }
+    } finally {
+      // Clean up DOM container
+      if (container.parentNode) {
+        container.parentNode.removeChild(container);
+      }
+    }
+  } else {
+    // Basic fallback for non-DOM environments
+    doc.text('Tech-Select AI Executive Assessment', 20, 20);
+    doc.text(`Company: ${companyName}`, 20, 30);
+  }
+
   const pdfBlob = doc.output('blob');
   const base64 = doc.output('datauristring').split(',')[1] || '';
   const safeCompanyName = (data.companyName || 'Company').replace(/[^a-zA-Z0-9_\u0590-\u05FF-]/g, '_');

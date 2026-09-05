@@ -2564,24 +2564,28 @@ ${formData?.customPainPoints || "N/A"}
 - נהל את השיחה בצורה אנושית לחלוטין, חמה, זורמת ובגובה העיניים - כאילו אתה עונה באופן אישי מהדסק של גיא בחברה אמיתית!
 - אל תשתמש כלל במילים טכניות כבדות או ביטויים מערכתיים כמו: "Tier 1", "Tier 2", "Tier2_Escalation", "הסלמה", או "דרג שני".
 
-${isGuest || !isAteraCustomer ? `
-סטטוס משתמש: אורח באתר (אינו לקוח מנוהל מאומת עדיין).
-הוראות קריטיות להתנהגות:
-1. ענה תמיד כמו בן אנוש - חם, מקצועי, אכפתי, נעים ומזמין. חשוב ביותר שירגישו שיש חברה אמיתית ואנשים איכותיים מאחורה!
-2. איסור מוחלט על פתיחת קריאות שירות (טיקטים): אין לפתוח קריאת שירות עבור אורח, מכיוון שאין לו הסכם שירות (SLA) מנוהל במערכת.
-3. אם המשתמש פונה עם תקלה, מבקש תמיכה, שואל שאלה או מבקש לפתוח קריאה:
-   - ענה לו על שאלתו בצורה אינטליגנטית, מקצועית ומכוונת.
-   - הסבר לו בפשטות וברוגע: "מכיוון שאינך מוגדר עדיין כלקוח עם הסכם שירות במערכת שלנו, אין באפשרותי לפתוח קריאת שירות ישירה. יחד עם זאת, אני יותר מאשמח להעביר את כל פרטי הפנייה שלך ישירות לגיא יעקובי ולצוות ההנדסה שלנו כדי שנחזור אליך בהקדם."
-4. בדיקת פרטים ליצירת קשר:
-   - בדוק בהיסטוריית השיחה אילו פרטים קיימים: [שם מלא, שם חברה, מספר טלפון, כתובת מייל, ותיאור התקלה/הצורך].
-   - אם חסר משהו - בקש מהמשתמש להשלים את הפרטים החסרים בצורה טבעית ואישית:
-     "כדי שגיא או הצוות יוכלו לחזור אליך בהקדם, תוכל בבקשה לרשום לי את שמך, מספר טלפון ומייל ליצירת קשר?"
-5. ברגע שהמשתמש מספק את הפרטים או מסכם את הפנייה, אשר לו בחום:
-   "תודה רבה! העברתי כעת את כל פרטי ההתכתבות והפרטים שלך ישירות למייל של גיא יעקובי (g@tech-select.co.il). נחזור אליך בהקדם האפשרי!"` : `
+${!isAteraCustomer ? `
+סטטוס משתמש: אינו לקוח רשום באטרה (אורח חדש).
+הנחיה: אתה העוזר של ${currentTechName} (${techFirstName}).
+אם המשתמש שואל שאלה או מעלה תקלה טכנית:
+עזור לו באדיבות, במקצועיות ובחום!
+במידה והצלחת לסייע או שהתקלה נפתרה (טיפול מוצלח):
+חובה לתעד את הטיפול המוצלח במערכת Atera! הפעל את open_support_ticket עם resolution_status: "Resolved" ו-time_spent_minutes: 15.
+` : `
 פרטי הלקוח המאומת:
 אימייל מאומת: ${authenticatedEmail}
 חברה: ${ateraContact?.CustomerName || 'טק-סלקט'}
-לקוח קיים ומאומת - ניתן לפתוח קריאות שירות במידת הצורך.`}
+לקוח קיים ומאומת - יש לתעד כל טיפול מוצלח או לפתוח קריאה להמשך טיפול במידת הצורך.`}
+
+כלל ברזל קריטי - פתיחת קריאה לאחר טיפול מוצלח (Resolved):
+בכל פעם שטיפול בתקלה בצ'אט מסתיים בהצלחה (למשל: סיפקת פתרון והמשתמש מרוצה/אישר, המשתמש כתב "תודה", "הסתדר", "עובד", "נפתר", "מעולה", או שהסברת פתרון טכני מוצלח שפתר את הבעיה) - חובה מוחלטת להפעיל מיד את הכלי open_support_ticket עם:
+- resolution_status: "Resolved"
+- time_spent_minutes: 15
+- company_name: שם החברה או "טק-סלקט / לקוח"
+- email: כתובת המייל של המשתמש (${authenticatedEmail || "support@tech-select.co.il"})
+- issue_description: תיאור התקלה והפתרון שסופק בהצלחה ע"י העוזר
+מיד עם קבלת מספר הקריאה האמיתי (כגון 3832), השב למשתמש בחום:
+"שמחתי לעזור! תיעדתי את פתרון התקלה במערכת השירות שלנו כקריאה סגורה (קריאה #XXXXX) עם 15 דקות טיפול. לכל שאלה נוספת, ${currentTechName} וצוות טק-סלקט עומדים לרשותך תמיד במייל: support@tech-select.co.il."
 
 סימולטור מנכ"לים (CEO Simulator):
 כאשר משתמש מבקש להיכנס או להפעיל את סימולטור המנכ"לים (לדוגמה: "סימולטור מנכ"לים", "CEO Simulator", "סימולטור מנהלים", "סימולטור השבתה"):
@@ -3349,6 +3353,9 @@ ${isGuest || !isAteraCustomer ? `
                         source: "gemini_tool",
                         functionCalled: fnName,
                         functionResult: toolResult,
+                        ticketId: toolResult?.ticket_number,
+                        createdTicketId: toolResult?.ticket_number,
+                        ticketCreated: Boolean(toolResult?.ticket_number),
                       });
                     }
                   } catch (secondErr) {
@@ -3389,6 +3396,9 @@ ${isGuest || !isAteraCustomer ? `
                     source: "function_direct",
                     functionCalled: fnName,
                     functionResult: toolResult,
+                    ticketId: toolResult?.ticket_number,
+                    createdTicketId: toolResult?.ticket_number,
+                    ticketCreated: Boolean(toolResult?.ticket_number),
                     canLaunchSimulator: Boolean(toolResult?.canLaunchSimulator),
                   });
                 }
@@ -3396,7 +3406,38 @@ ${isGuest || !isAteraCustomer ? `
                 // If no tool was called, model replied with natural text
                 let textReply = result?.text?.trim() || "";
                 if (textReply && textReply.length > 0) {
-                  // Safety Interception: If Gemini mentioned opening a ticket or generated a ticket reference
+                  // Safety Interception 1: Check for successful resolution in chat
+                  const isResolutionIndicated =
+                    /תודה|עזר|הסתדר|עובד|נפתר|הצליח|נפתרה|מעולה|מצוין|אחלה|סבבה|פתרת|עזרת|יופי/i.test(question) ||
+                    /שמחתי לעזור|נפתרה בהצלחה|התקלה נפתרה|הטיפול הושלם|הפתרון הושלם|שמח שהסתדר|שמח שזה עובד|קריאה נסגרה/i.test(textReply);
+
+                  if (isResolutionIndicated) {
+                    console.log("[SITE AI] Successful resolution detected! Opening and closing ticket in Atera...");
+                    const ateraResult: any = await executeOpenSupportTicket(
+                      ateraContact?.CustomerName || "טק-סלקט / לקוח",
+                      authenticatedEmail || "support@tech-select.co.il",
+                      `טיפול מוצלח וסגירת פנייה ע"י AI בצ'אט: ${question}`,
+                      "Resolved",
+                      15
+                    );
+
+                    if (ateraResult?.ticket_number) {
+                      const resolutionNotice = `\n\n✅ תיעדתי את פתרון התקלה במערכת השירות כקריאה סגורה: קריאה #${ateraResult.ticket_number} (משך טיפול: 15 דקות). לכל שאלה נוספת, ${currentTechName} וצוות טק-סלקט עומדים לרשותך תמיד!`;
+                      if (!textReply.includes(String(ateraResult.ticket_number))) {
+                        textReply += resolutionNotice;
+                      }
+                      return res.json({
+                        success: true,
+                        reply: textReply,
+                        ticketId: ateraResult.ticket_number,
+                        createdTicketId: ateraResult.ticket_number,
+                        ticketCreated: true,
+                        source: "gemini_successful_resolution_ticket",
+                      });
+                    }
+                  }
+
+                  // Safety Interception 2: If Gemini mentioned opening a ticket or generated a ticket reference
                   const mentionsTicket =
                     textReply.includes("פתחתי כעת את הקריאה") ||
                     textReply.includes("מערכת Atera") ||
@@ -3407,7 +3448,7 @@ ${isGuest || !isAteraCustomer ? `
                   if (mentionsTicket) {
                     console.log("[SITE AI] Intercepted text mentioning ticket creation. Opening real ticket in Atera...");
                     const ateraResult: any = await executeOpenSupportTicket(
-                      "לקוח טק-סלקט",
+                      ateraContact?.CustomerName || "לקוח טק-סלקט",
                       authenticatedEmail || "support@tech-select.co.il",
                       question,
                       "Tier2_Escalation",
@@ -3420,6 +3461,8 @@ ${isGuest || !isAteraCustomer ? `
                         success: true,
                         reply: cleanReply,
                         ticketId: ateraResult.ticket_number,
+                        createdTicketId: ateraResult.ticket_number,
+                        ticketCreated: true,
                         source: "gemini_atera_intercepted",
                       });
                     }

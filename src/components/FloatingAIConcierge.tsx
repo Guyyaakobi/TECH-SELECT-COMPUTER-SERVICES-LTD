@@ -777,10 +777,20 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
         : 'Tech-Select IT & Cloud Services – How else may I assist you today?');
 
       // Check if reply indicates ticket creation or verification
-      let detectedTicketId: string | number | undefined;
-      const ticketMatch = replyText.match(/(?:קריאה|טיקט|#)\s*#?([0-9]{4,7})/i);
-      if (ticketMatch && (replyText.includes('נפתחה בהצלחה') || replyText.includes('מספר הקריאה'))) {
-        detectedTicketId = ticketMatch[1];
+      let detectedTicketId: string | number | undefined = data?.ticketId || data?.createdTicketId;
+      if (!detectedTicketId) {
+        const ticketMatch = replyText.match(/(?:קריאה|טיקט|#)\s*#?([0-9]{4,7})/i);
+        if (ticketMatch && (
+          replyText.includes('נפתחה') ||
+          replyText.includes('קריאה') ||
+          replyText.includes('מספר') ||
+          replyText.includes('נסגרה') ||
+          replyText.includes('תיעדתי') ||
+          replyText.includes('נפתר') ||
+          replyText.includes('#')
+        )) {
+          detectedTicketId = ticketMatch[1];
+        }
       }
 
       const aiMsgId = 'ai-' + Date.now();
@@ -1292,15 +1302,21 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
                       {/* Rich Ticket Created Card (Rendered naturally in stream) */}
                       {msg.type === 'ticket_created' && msg.createdTicketId && (
                         <div className="mt-3 p-3.5 sm:p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
-                          <div className="flex items-center gap-1.5 font-bold text-xs sm:text-sm text-emerald-500">
-                            <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5" />
-                            <span>{isHe ? 'מספר קריאה במערכת המוקד:' : 'Ticket Number:'}</span>
+                          <div className="flex items-center gap-1.5 font-bold text-xs sm:text-sm text-emerald-400">
+                            <CheckCircle2 className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-400" />
+                            <span>
+                              {msg.text.includes('נסגר') || msg.text.includes('נפתר') || msg.text.includes('שמחתי לעזור')
+                                ? (isHe ? 'קריאה תועדה ונסגרה בהצלחה במערכת:' : 'Resolved Ticket Recorded:')
+                                : (isHe ? 'מספר קריאה במערכת המוקד:' : 'Ticket Number:')}
+                            </span>
                           </div>
                           <div className="text-xl sm:text-2xl font-mono font-black text-white mt-1 tracking-wider">
                             #{msg.createdTicketId}
                           </div>
                           <div className="text-[11px] sm:text-xs text-slate-300 mt-1">
-                            {isHe ? 'אישור נשלח למייל. המהנדסים שלנו כבר מעודכנים ופועלים לטיפול בה.' : 'Confirmation sent to email. Support team notified.'}
+                            {msg.text.includes('נסגר') || msg.text.includes('נפתר') || msg.text.includes('שמחתי לעזור')
+                              ? (isHe ? 'טיפול מוצלח וסגירת התקלה נשמרו במערכת השירות Atera (משך טיפול: 15 דקות).' : 'Resolution recorded in Atera (15 mins).')
+                              : (isHe ? 'אישור נשלח למייל. המהנדסים שלנו כבר מעודכנים ופועלים לטיפול בה.' : 'Confirmation sent to email. Support team notified.')}
                           </div>
                         </div>
                       )}
