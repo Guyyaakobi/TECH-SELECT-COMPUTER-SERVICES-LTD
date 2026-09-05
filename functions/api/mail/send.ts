@@ -31,7 +31,19 @@ export async function onRequestOptions(contextOrRequest: any): Promise<Response>
   });
 }
 
-export async function handleSendMail(request: Request, env: Env): Promise<Response> {
+export async function handleSendMail(
+  requestOrContext: any,
+  envParam?: Env,
+  ctxParam?: any
+): Promise<Response> {
+  const request: Request = requestOrContext?.request || requestOrContext;
+  const env: Env =
+    envParam ||
+    requestOrContext?.env ||
+    (typeof process !== "undefined" ? (process.env as any) : {}) ||
+    {};
+  const _ctx = ctxParam || requestOrContext?.ctx;
+
   const corsHeaders = getCorsHeaders(request, "POST, OPTIONS");
   const secHeaders = getSecurityHeaders();
   const responseHeaders = { ...corsHeaders, ...secHeaders, "Content-Type": "application/json" };
@@ -124,6 +136,8 @@ export async function handleSendMail(request: Request, env: Env): Promise<Respon
   }
 }
 
-export async function onRequestPost(context: any): Promise<Response> {
-  return handleSendMail(context.request, context.env);
+export async function onRequestPost(requestOrContext: any, envParam?: any, ctxParam?: any): Promise<Response> {
+  const req = requestOrContext?.request || requestOrContext;
+  const env = envParam || requestOrContext?.env || {};
+  return handleSendMail(req, env, ctxParam || requestOrContext?.ctx);
 }

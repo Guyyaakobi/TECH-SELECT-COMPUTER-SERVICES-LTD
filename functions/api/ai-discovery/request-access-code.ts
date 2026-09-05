@@ -30,7 +30,19 @@ export async function onRequestOptions(contextOrRequest: any): Promise<Response>
 }
 
 // Native Cloudflare Worker Handler: (request, env, ctx)
-export async function handleRequestAccessCode(request: Request, env: Env, _ctx?: any): Promise<Response> {
+export async function handleRequestAccessCode(
+  requestOrContext: any,
+  envParam?: Env,
+  ctxParam?: any
+): Promise<Response> {
+  const request: Request = requestOrContext?.request || requestOrContext;
+  const env: Env =
+    envParam ||
+    requestOrContext?.env ||
+    (typeof process !== "undefined" ? (process.env as any) : {}) ||
+    {};
+  const _ctx = ctxParam || requestOrContext?.ctx;
+
   const corsHeaders = getCorsHeaders(request, "POST, OPTIONS");
   const secHeaders = getSecurityHeaders();
   const responseHeaders = { ...corsHeaders, ...secHeaders, "Content-Type": "application/json" };
@@ -87,6 +99,49 @@ export async function handleRequestAccessCode(request: Request, env: Env, _ctx?:
     crypto.getRandomValues(randomArray);
     const directCode = String(1000 + (randomArray[0] % 9000));
     const challengeToken = await createOtpChallengeToken(directCode, identifier, secret);
+
+    // Persist to Cloudflare Workers KV
+    const kv = env.OTP_KV || env.KV || env.AUTH_KV || env.TECH_SELECT_KV;
+    if (kv && typeof kv.put === "function") {
+      try {
+        const kvPayload = JSON.stringify({
+          code: directCode,
+          email: cleanEmail,
+          phone: cleanPhone,
+          identifier,
+          fullName: cleanName,
+          companyName: cleanCompany,
+          createdAt: Date.now(),
+          expiresAt: Date.now() + 15 * 60 * 1000,
+          challengeToken,
+        });
+        if (identifier) await kv.put(`otp_${identifier}`, kvPayload, { expirationTtl: 900 });
+        if (cleanEmail && cleanEmail !== identifier) await kv.put(`otp_${cleanEmail}`, kvPayload, { expirationTtl: 900 });
+        await kv.put(`otp_code_${directCode}`, kvPayload, { expirationTtl: 900 });
+      } catch (kvErr) {
+        console.warn("[request-access-code] KV write warning:", kvErr);
+      }
+    }
+
+    // In-memory fallback
+    try {
+      const gStore = (globalThis as any).__techSelectOtpMap || new Map<string, any>();
+      (globalThis as any).__techSelectOtpMap = gStore;
+      const memPayload = {
+        code: directCode,
+        email: cleanEmail,
+        phone: cleanPhone,
+        identifier,
+        fullName: cleanName,
+        companyName: cleanCompany,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 15 * 60 * 1000,
+        challengeToken,
+      };
+      if (identifier) gStore.set(`otp_${identifier}`, memPayload);
+      if (cleanEmail) gStore.set(`otp_${cleanEmail}`, memPayload);
+      gStore.set(`otp_code_${directCode}`, memPayload);
+    } catch {}
 
     const safeName = escapeHtml(cleanName);
     const safeCompany = escapeHtml(cleanCompany);

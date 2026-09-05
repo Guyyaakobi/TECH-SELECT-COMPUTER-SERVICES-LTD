@@ -14,5 +14,45 @@
     "binding": "ASSETS",
     "not_found_handling": "single-page-application",
     "run_worker_first": true
+  },
+  "kv_namespaces": [
+    {
+      "binding": "OTP_KV",
+      "id": "tech_select_otp_kv",
+      "preview_id": "tech_select_otp_kv_preview"
+    },
+    {
+      "binding": "KV",
+      "id": "tech_select_kv",
+      "preview_id": "tech_select_kv_preview"
+    }
+  ],
+  "env": {
+    "production": {
+      "kv_namespaces": [
+        {
+          "binding": "OTP_KV",
+          "id": "tech_select_otp_kv",
+          "preview_id": "tech_select_otp_kv_preview"
+        },
+        {
+          "binding": "KV",
+          "id": "tech_select_kv",
+          "preview_id": "tech_select_kv_preview"
+        }
+      ]
+    },
+    "preview": {
+      "kv_namespaces": [
+        {
+          "binding": "OTP_KV",
+          "id": "tech_select_otp_kv_preview"
+        },
+        {
+          "binding": "KV",
+          "id": "tech_select_kv_preview"
+        }
+      ]
+    }
   }
 }

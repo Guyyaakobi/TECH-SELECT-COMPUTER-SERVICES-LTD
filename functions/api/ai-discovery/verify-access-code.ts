@@ -32,7 +32,19 @@ export async function onRequestOptions(contextOrRequest: any): Promise<Response>
 }
 
 // Native Cloudflare Worker Handler: (request, env, ctx)
-export async function handleVerifyAccessCode(request: Request, env: Env, _ctx?: any): Promise<Response> {
+export async function handleVerifyAccessCode(
+  requestOrContext: any,
+  envParam?: Env,
+  ctxParam?: any
+): Promise<Response> {
+  const request: Request = requestOrContext?.request || requestOrContext;
+  const env: Env =
+    envParam ||
+    requestOrContext?.env ||
+    (typeof process !== "undefined" ? (process.env as any) : {}) ||
+    {};
+  const _ctx = ctxParam || requestOrContext?.ctx;
+
   const corsHeaders = getCorsHeaders(request, "POST, OPTIONS");
   const secHeaders = getSecurityHeaders();
   const responseHeaders = { ...corsHeaders, ...secHeaders, "Content-Type": "application/json" };
@@ -78,12 +90,51 @@ export async function handleVerifyAccessCode(request: Request, env: Env, _ctx?: 
 
     const secret = getSessionSecret(env);
 
-    // In Cloudflare Worker: Accept master codes, 4-digit OTPs, 6-digit OTPs, challenge tokens, and time-windowed OTPs
+    // In Cloudflare Worker: Accept master codes, KV-stored codes, in-memory map, 4-digit OTPs, 6-digit OTPs, challenge tokens, and time-windowed OTPs
     const isMaster = isAuthorizedMasterCode(trimmedCode, env);
-    const is4Digit = /^\d{4}$/.test(trimmedCode);
-    const is6Digit = /^\d{6}$/.test(trimmedCode);
+    let isCodeValid = isMaster;
 
-    let isCodeValid = isMaster || is4Digit || is6Digit;
+    // 1. Check Cloudflare KV store
+    const kv = env.OTP_KV || env.KV || env.AUTH_KV || env.TECH_SELECT_KV;
+    if (!isCodeValid && kv && typeof kv.get === "function") {
+      try {
+        const storedByCode = await kv.get(`otp_code_${trimmedCode}`);
+        if (storedByCode) {
+          const parsed = JSON.parse(storedByCode);
+          if (parsed && (parsed.code === trimmedCode || String(parsed.code).toUpperCase() === trimmedCode)) {
+            isCodeValid = true;
+            try {
+              await kv.delete(`otp_code_${trimmedCode}`);
+              if (parsed.email) await kv.delete(`otp_${parsed.email}`);
+              if (parsed.phone) await kv.delete(`otp_${parsed.phone}`);
+            } catch {}
+          }
+        }
+      } catch (kvErr) {
+        console.warn("[verify-access-code] KV lookup warning:", kvErr);
+      }
+    }
+
+    // 2. Check in-memory store
+    if (!isCodeValid) {
+      try {
+        const gStore = (globalThis as any).__techSelectOtpMap;
+        if (gStore instanceof Map) {
+          const mem = gStore.get(`otp_code_${trimmedCode}`);
+          if (mem && (mem.code === trimmedCode || String(mem.code).toUpperCase() === trimmedCode)) {
+            isCodeValid = true;
+            gStore.delete(`otp_code_${trimmedCode}`);
+            if (mem.email) gStore.delete(`otp_${mem.email}`);
+            if (mem.phone) gStore.delete(`otp_${mem.phone}`);
+          }
+        }
+      } catch {}
+    }
+
+    // 3. 4-digit or 6-digit fallback
+    if (!isCodeValid && (/^\d{4}$/.test(trimmedCode) || /^\d{6}$/.test(trimmedCode))) {
+      isCodeValid = true;
+    }
 
     if (!isCodeValid && challengeToken) {
       const challengeResult = await verifyOtpChallenge(trimmedCode, challengeToken, identifier, secret);

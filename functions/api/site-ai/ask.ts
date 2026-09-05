@@ -340,7 +340,19 @@ async function notifyGuyOfGuestChat(
   }
 }
 
-export async function handleAsk(request: Request, env: Env, _ctx?: any): Promise<Response> {
+export async function handleAsk(
+  requestOrContext: any,
+  envParam?: Env,
+  ctxParam?: any
+): Promise<Response> {
+  const request: Request = requestOrContext?.request || requestOrContext;
+  const env: Env =
+    envParam ||
+    requestOrContext?.env ||
+    (typeof process !== "undefined" ? (process.env as any) : {}) ||
+    {};
+  const _ctx = ctxParam || requestOrContext?.ctx || requestOrContext;
+
   const corsHeaders = getCorsHeaders(request, "POST, OPTIONS");
   const secHeaders = getSecurityHeaders();
   const responseHeaders = { ...corsHeaders, ...secHeaders, "Content-Type": "application/json" };
@@ -759,7 +771,9 @@ ${isGuest ? `
   }
 }
 
-export async function onRequestPost(context: any) {
-  return handleAsk(context.request, context.env, context);
+export async function onRequestPost(requestOrContext: any, envParam?: any, ctxParam?: any): Promise<Response> {
+  const req = requestOrContext?.request || requestOrContext;
+  const env = envParam || requestOrContext?.env || {};
+  return handleAsk(req, env, ctxParam || requestOrContext?.ctx || requestOrContext);
 }
 

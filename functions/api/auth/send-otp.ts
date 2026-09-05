@@ -16,6 +16,10 @@ interface Env {
   CLIENT_ID?: string;
   CLIENT_SECRET?: string;
   SESSION_SECRET?: string;
+  OTP_KV?: any;
+  KV?: any;
+  AUTH_KV?: any;
+  TECH_SELECT_KV?: any;
   [key: string]: any;
 }
 
@@ -23,28 +27,44 @@ export async function onRequestOptions(contextOrRequest: any): Promise<Response>
   const request = contextOrRequest?.request || contextOrRequest;
   return new Response(null, {
     status: 204,
-    headers: getCorsHeaders(request, "POST, OPTIONS"),
+    headers: getCorsHeaders(request, "POST, GET, OPTIONS"),
   });
 }
 
-// Native Cloudflare Worker Handler: (request, env, ctx)
-export async function handleSendOtp(request: Request, env: Env, _ctx?: any): Promise<Response> {
-  const corsHeaders = getCorsHeaders(request, "POST, OPTIONS");
+// Dual Cloudflare Worker (request, env, ctx) & Pages Functions (context) Handler
+export async function handleSendOtp(
+  requestOrContext: any,
+  envParam?: Env,
+  ctxParam?: any
+): Promise<Response> {
+  const request: Request = requestOrContext?.request || requestOrContext;
+  const env: Env =
+    envParam ||
+    requestOrContext?.env ||
+    (typeof process !== "undefined" ? (process.env as any) : {}) ||
+    {};
+  const _ctx = ctxParam || requestOrContext?.ctx;
+
+  const corsHeaders = getCorsHeaders(request, "POST, GET, OPTIONS");
   const secHeaders = getSecurityHeaders();
   const responseHeaders = { ...corsHeaders, ...secHeaders, "Content-Type": "application/json" };
 
   try {
     const clientIp = getClientIp(request);
 
-    // Rate Limiting: Max 5 OTP requests per 10 minutes per IP
-    if (!checkRateLimit(`send_otp_${clientIp}`, 5, 10 * 60 * 1000)) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: "יותר מדי בקשות לקוד אימות. אנא המתן מספר דקות לפני ניסיון נוסף.",
-        }),
-        { status: 429, headers: responseHeaders }
-      );
+    // Rate Limiting: Max 10 OTP requests per 10 minutes per IP
+    try {
+      if (!checkRateLimit(`send_otp_${clientIp}`, 10, 10 * 60 * 1000)) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: "יותר מדי בקשות לקוד אימות. אנא המתן מספר דקות לפני ניסיון נוסף.",
+          }),
+          { status: 429, headers: responseHeaders }
+        );
+      }
+    } catch {
+      // Non-blocking rate limiter fallback
     }
 
     const body: any = await request.json().catch(() => ({}));
@@ -66,6 +86,43 @@ export async function handleSendOtp(request: Request, env: Env, _ctx?: any): Pro
     crypto.getRandomValues(randomArray);
     const otpCode = String(1000 + (randomArray[0] % 9000));
     const challengeToken = await createOtpChallengeToken(otpCode, cleanEmail, secret);
+
+    // 1. Store OTP into Cloudflare KV Storage if available (Production KV Binding)
+    const kv = env.OTP_KV || env.KV || env.AUTH_KV || env.TECH_SELECT_KV;
+    if (kv && typeof kv.put === "function") {
+      try {
+        const kvPayload = JSON.stringify({
+          code: otpCode,
+          email: cleanEmail,
+          fullName: cleanName,
+          action: actionDesc,
+          createdAt: Date.now(),
+          expiresAt: Date.now() + 15 * 60 * 1000,
+          challengeToken,
+        });
+        await kv.put(`otp_${cleanEmail}`, kvPayload, { expirationTtl: 900 });
+        await kv.put(`otp_code_${otpCode}`, kvPayload, { expirationTtl: 900 });
+        console.log(`[send-otp] Persisted OTP to Cloudflare KV for ${cleanEmail}`);
+      } catch (kvErr) {
+        console.warn("[send-otp] KV write warning:", kvErr);
+      }
+    }
+
+    // 2. Also record in in-memory map for single-worker-isolate/test consistency
+    try {
+      const gStore = (globalThis as any).__techSelectOtpMap || new Map<string, any>();
+      (globalThis as any).__techSelectOtpMap = gStore;
+      const memPayload = {
+        code: otpCode,
+        email: cleanEmail,
+        fullName: cleanName,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 15 * 60 * 1000,
+        challengeToken,
+      };
+      gStore.set(`otp_${cleanEmail}`, memPayload);
+      gStore.set(`otp_code_${otpCode}`, memPayload);
+    } catch {}
 
     const safeName = escapeHtml(cleanName);
     const safeAction = escapeHtml(actionDesc);
@@ -150,6 +207,22 @@ export async function handleSendOtp(request: Request, env: Env, _ctx?: any): Pro
   }
 }
 
-export async function onRequestPost(context: { request: Request; env: Env; ctx?: any }): Promise<Response> {
-  return handleSendOtp(context.request, context.env, context.ctx);
+export async function onRequestPost(
+  requestOrContext: any,
+  envParam?: Env,
+  ctxParam?: any
+): Promise<Response> {
+  const req = requestOrContext?.request || requestOrContext;
+  const env = envParam || requestOrContext?.env || {};
+  return handleSendOtp(req, env, ctxParam || requestOrContext?.ctx);
+}
+
+export async function onRequestGet(
+  requestOrContext: any,
+  envParam?: Env,
+  ctxParam?: any
+): Promise<Response> {
+  const req = requestOrContext?.request || requestOrContext;
+  const env = envParam || requestOrContext?.env || {};
+  return handleSendOtp(req, env, ctxParam || requestOrContext?.ctx);
 }
