@@ -60,9 +60,11 @@ export async function handleSendOtp(request: Request, env: Env, _ctx?: any): Pro
       );
     }
 
-    // Generate secure cryptographic OTP challenge (deterministic windowed code + HMAC signed token)
+    // Generate secure cryptographic random OTP challenge (fresh random code + HMAC signed token)
     const secret = getSessionSecret(env);
-    const otpCode = await generateTimeWindowOtp(cleanEmail, secret, 15);
+    const randomArray = new Uint32Array(1);
+    crypto.getRandomValues(randomArray);
+    const otpCode = String(1000 + (randomArray[0] % 9000));
     const challengeToken = await createOtpChallengeToken(otpCode, cleanEmail, secret);
 
     const safeName = escapeHtml(cleanName);

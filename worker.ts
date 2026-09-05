@@ -13,7 +13,7 @@
  * - All other requests -> env.ASSETS.fetch(request) for static assets / SPA
  */
 
-import * as diagnosticHandler from "./functions/api/ai-discovery/diagnostic.js";
+import * as diagnosticHandler from "./functions/api/ai-discovery/diagnostic";
 import * as chatHandler from "./functions/api/ai-discovery/chat";
 import * as reportHandler from "./functions/api/ai-discovery/generate-tailored-report";
 import * as requestAccessHandler from "./functions/api/ai-discovery/request-access-code";

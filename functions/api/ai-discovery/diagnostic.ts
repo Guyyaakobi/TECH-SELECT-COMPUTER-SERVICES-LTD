@@ -56,6 +56,8 @@ export async function handleDiagnosticGet(request: Request, env: Env): Promise<R
   );
 }
 
+export const handleDiagnostic = handleDiagnosticGet;
+
 export async function handleDiagnosticPost(request: Request, env: Env): Promise<Response> {
   const corsHeaders = getCorsHeaders(request, "POST, GET, OPTIONS");
   const secHeaders = getSecurityHeaders();

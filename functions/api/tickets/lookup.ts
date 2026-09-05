@@ -305,9 +305,9 @@ export async function handleTicketLookup(request: Request, env: Env, _ctx?: any)
 
       // 1. If NO OTP code provided yet -> send 4-digit code and require OTP
       if (!code) {
-        const otp4 = targetEmail
-          ? await generateTimeWindowOtp(targetEmail, secret, 15)
-          : String(Math.floor(1000 + Math.random() * 9000));
+        const randomArray = new Uint32Array(1);
+        crypto.getRandomValues(randomArray);
+        const otp4 = String(1000 + (randomArray[0] % 9000));
 
         const pending: PendingOtp = {
           code: otp4,
