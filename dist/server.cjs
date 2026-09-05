@@ -810,7 +810,7 @@ async function startServer() {
             latencyMs: Date.now() - startTime
           });
         }
-        const candidateModels = requestedModel ? [requestedModel] : ["gemini-3.1-flash-lite", "gemini-flash-latest", "gemini-3.6-flash", "gemini-3.8-flash"];
+        const candidateModels = requestedModel ? [requestedModel, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash"] : ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash"];
         const modelsToTry = candidateModels.filter((m) => !isModelCoolingDown(m));
         const finalCandidateList = modelsToTry.length > 0 ? modelsToTry : candidateModels;
         const attempts = [];
@@ -923,6 +923,14 @@ ${companyContext ? JSON.stringify(companyContext, null, 2) : "\u05D8\u05E8\u05DD
 `;
         const formattedContents = formatGeminiContents(messages);
         let replyText = "";
+        let usedChatModel = "";
+        const requestedChatModel = req.body?.model;
+        const candidateModels = requestedChatModel ? [requestedChatModel, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash"] : [
+          "gemini-2.0-flash",
+          "gemini-1.5-flash",
+          "gemini-1.5-pro",
+          "gemini-2.5-flash"
+        ];
         if (process.env.GEMINI_API_KEY) {
           const tryGenerateWithTimeout = async (modelName, timeoutMs = 4500) => {
             const ai = getGeminiClient();
@@ -940,12 +948,6 @@ ${companyContext ? JSON.stringify(companyContext, null, 2) : "\u05D8\u05E8\u05DD
             );
             return Promise.race([callPromise, timeoutPromise]);
           };
-          const candidateModels = [
-            "gemini-3.1-flash-lite",
-            "gemini-flash-latest",
-            "gemini-3.6-flash",
-            "gemini-3.8-flash"
-          ];
           const activeModels = candidateModels.filter((m) => !isModelCoolingDown(m));
           const modelsToTry = activeModels.length > 0 ? activeModels : candidateModels;
           for (const model of modelsToTry) {
@@ -954,6 +956,7 @@ ${companyContext ? JSON.stringify(companyContext, null, 2) : "\u05D8\u05E8\u05DD
               const result = await tryGenerateWithTimeout(model, 18e3);
               if (result?.text && result.text.trim().length > 0) {
                 replyText = result.text.trim();
+                usedChatModel = model;
                 console.log(`[Gemini SUCCESS on ${model}]: returned ${replyText.length} characters`);
                 break;
               }
@@ -1062,7 +1065,8 @@ ${companyContext ? JSON.stringify(companyContext, null, 2) : "\u05D8\u05E8\u05DD
         })();
         return res.json({
           success: true,
-          reply: replyText
+          reply: replyText,
+          modelUsed: usedChatModel || candidateModels[0]
         });
       } catch (err) {
         console.error("[GEMINI CHAT ERROR]", err);
@@ -1369,10 +1373,10 @@ ${clientInputText || JSON.stringify(formData || {}, null, 2)}
 }
 `;
           const reportModels = [
-            "gemini-3.1-flash-lite",
-            "gemini-flash-latest",
-            "gemini-3.6-flash",
-            "gemini-3.8-flash"
+            "gemini-2.0-flash",
+            "gemini-1.5-flash",
+            "gemini-1.5-pro",
+            "gemini-2.5-flash"
           ];
           const activeModels = reportModels.filter((m) => !isModelCoolingDown(m));
           const modelsToTry = activeModels.length > 0 ? activeModels : reportModels;
@@ -2733,10 +2737,10 @@ ${!isAteraCustomer ? `
               Array.isArray(history) && history.length > 0 ? [...history.slice(-6), { role: "user", content: userQuestion }] : [{ role: "user", content: userQuestion }]
             );
             const candidateModels = [
-              "gemini-3.1-flash-lite",
-              "gemini-flash-latest",
-              "gemini-3.6-flash",
-              "gemini-3.8-flash"
+              "gemini-2.0-flash",
+              "gemini-1.5-flash",
+              "gemini-1.5-pro",
+              "gemini-2.5-flash"
             ];
             const activeModels = candidateModels.filter((m) => !isModelCoolingDown(m));
             const modelsToTry = activeModels.length > 0 ? activeModels : candidateModels;

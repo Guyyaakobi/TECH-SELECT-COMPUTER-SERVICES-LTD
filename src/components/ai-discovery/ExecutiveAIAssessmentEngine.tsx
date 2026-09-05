@@ -360,11 +360,12 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
 
       if (res.ok) {
         const data = await res.json();
-        if (data?.reply) {
+        const replyText = data?.reply || data?.response || data?.text;
+        if (replyText) {
           const aiMsg: AIConsultationMessage = {
             id: `ai_${Date.now()}`,
             role: 'assistant',
-            content: data.reply,
+            content: replyText,
             timestamp: new Date().toLocaleTimeString(isHe ? 'he-IL' : 'en-US', { hour: '2-digit', minute: '2-digit' })
           };
           setMessages([...updated, aiMsg]);

@@ -56,7 +56,12 @@ export async function handleDiagnosticGet(request: Request, env: Env): Promise<R
   );
 }
 
-export const handleDiagnostic = handleDiagnosticGet;
+export async function handleDiagnostic(request: Request, env: Env): Promise<Response> {
+  if (request.method === "POST") {
+    return handleDiagnosticPost(request, env);
+  }
+  return handleDiagnosticGet(request, env);
+}
 
 export async function handleDiagnosticPost(request: Request, env: Env): Promise<Response> {
   const corsHeaders = getCorsHeaders(request, "POST, GET, OPTIONS");
@@ -86,8 +91,8 @@ export async function handleDiagnosticPost(request: Request, env: Env): Promise<
     const apiKey = getGeminiApiKey(env);
     const testPrompt = String(prompt || "Hello Gemini, please respond with a short confirmation message in Hebrew.").slice(0, 1000);
     const candidateModels = requestedModel
-      ? [requestedModel]
-      : ["gemini-3.1-flash-lite", "gemini-3.8-flash", "gemini-flash-latest", "gemini-3.6-flash"];
+      ? [requestedModel, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash"]
+      : ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash"];
 
     if (!apiKey) {
       return new Response(
@@ -99,7 +104,7 @@ export async function handleDiagnosticPost(request: Request, env: Env): Promise<
       );
     }
 
-    let successfulResponse = null;
+    let successfulResponse: any = null;
     let successfulModel = "";
 
     for (const model of candidateModels) {
@@ -109,7 +114,7 @@ export async function handleDiagnosticPost(request: Request, env: Env): Promise<
           contents: [{ role: "user", parts: [{ text: testPrompt }] }],
           generationConfig: {
             temperature: 0.7,
-            maxOutputTokens: 500,
+            maxOutputTokens: 1000,
           },
         };
 
@@ -132,12 +137,17 @@ export async function handleDiagnosticPost(request: Request, env: Env): Promise<
     }
 
     if (successfulResponse) {
+      const generatedText = successfulResponse?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+      const latencyMs = Date.now() - startTime;
       return new Response(
         JSON.stringify({
           success: true,
           model: successfulModel,
-          response: successfulResponse?.candidates?.[0]?.content?.parts?.[0]?.text,
-          latencyMs: Date.now() - startTime,
+          modelUsed: successfulModel,
+          response: generatedText,
+          reply: generatedText,
+          latencyMs,
+          totalLatencyMs: latencyMs,
         }),
         { status: 200, headers: responseHeaders }
       );

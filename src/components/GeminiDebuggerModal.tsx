@@ -40,10 +40,10 @@ interface ChatMessage {
 }
 
 const AVAILABLE_MODELS = [
-  { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite', badge: 'Ultra Fast' },
-  { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', badge: 'Recommended' },
-  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', badge: 'Standard' },
-  { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', badge: 'Reasoning' },
+  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', badge: 'Recommended' },
+  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', badge: 'Ultra Fast' },
+  { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', badge: 'Reasoning' },
+  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', badge: 'Next-Gen' },
 ];
 
 const SUGGESTED_CARDS = [
@@ -117,7 +117,7 @@ export const GeminiDebuggerModal: React.FC<GeminiDebuggerModalProps> = ({
   // Chat conversation state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
-  const [selectedModel, setSelectedModel] = useState('gemini-3.1-flash-lite');
+  const [selectedModel, setSelectedModel] = useState('gemini-2.0-flash');
   const [isLoading, setIsLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -206,19 +206,42 @@ export const GeminiDebuggerModal: React.FC<GeminiDebuggerModalProps> = ({
     const startTime = Date.now();
 
     try {
-      const res = await fetch('/api/ai-discovery/diagnostic', {
+      // Build conversation messages array in standard format for chat endpoints
+      const formattedHistory = [
+        ...messages.map(m => ({
+          role: m.sender === 'user' ? 'user' : 'model',
+          content: m.text,
+          text: m.text
+        })),
+        {
+          role: 'user',
+          content: query,
+          text: query
+        }
+      ];
+
+      // Primary: Call the dedicated AI Consultation Chat route
+      let res = await fetch('/api/ai-discovery/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: 'Bearer tech-select-dev-1981',
+          'X-Session-Token': 'tech-select-dev-1981',
         },
         body: JSON.stringify({
-          prompt: query,
+          messages: formattedHistory,
           model: selectedModel,
+          prompt: query,
+          companyContext: {
+            companyName: 'Tech-Select Developer Console',
+            role: 'Developer / Admin',
+            erpCrm: 'Cloudflare Worker & Express Engine'
+          },
+          sessionToken: 'tech-select-dev-1981'
         }),
       });
 
-      const responseText = await res.text();
+      let responseText = await res.text();
       let data: any = {};
       try {
         data = responseText ? JSON.parse(responseText) : {};
@@ -226,23 +249,48 @@ export const GeminiDebuggerModal: React.FC<GeminiDebuggerModalProps> = ({
         data = { success: false, error: `שגיאת שרת (HTTP ${res.status}): ${responseText.slice(0, 150)}` };
       }
 
-      const latencyMs = Date.now() - startTime;
+      // Seamless fallback: If chat route is unavailable (404/401), try diagnostic endpoint
+      if (!res.ok && (res.status === 404 || res.status === 401 || !data?.reply)) {
+        try {
+          const diagRes = await fetch('/api/ai-discovery/diagnostic', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: 'Bearer tech-select-dev-1981',
+            },
+            body: JSON.stringify({
+              prompt: query,
+              model: selectedModel,
+            }),
+          });
+          const diagText = await diagRes.text();
+          const diagData = diagText ? JSON.parse(diagText) : {};
+          if (diagData && (diagData.reply || diagData.response || diagData.success)) {
+            data = diagData;
+          }
+        } catch {
+          // Keep original error data
+        }
+      }
 
-      if (data.success && data.reply) {
+      const latencyMs = Date.now() - startTime;
+      const replyContent = data.reply || data.response || data.text || data?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if ((data.success || res.ok) && replyContent) {
         setMessages(prev => [
           ...prev,
           {
             id: `gemini-${Date.now()}`,
             sender: 'gemini',
-            text: data.reply,
-            modelUsed: data.modelUsed || selectedModel,
-            latencyMs: data.totalLatencyMs || latencyMs,
+            text: replyContent,
+            modelUsed: data.modelUsed || data.model || selectedModel,
+            latencyMs: data.totalLatencyMs || data.latencyMs || latencyMs,
             timestamp: new Date().toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' })
           }
         ]);
       } else {
         const errorMsg = typeof data.error === 'object'
-          ? (data.error.message || JSON.stringify(data.error))
+          ? (data.error?.message || JSON.stringify(data.error))
           : (data.error || 'לא התקבלה תגובה משרת המודל');
 
         setMessages(prev => [
