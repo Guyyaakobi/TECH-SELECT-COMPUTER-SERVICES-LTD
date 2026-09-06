@@ -1,6 +1,7 @@
 import express from "express";
 import path from "path";
 import crypto from "crypto";
+import { spawn } from "child_process";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 
@@ -18,6 +19,29 @@ function getGeminiClient(): GoogleGenAI {
 
 // Rate-limit / Quota cooldown tracker to avoid repeating 429 errors
 const modelCooldownMap = new Map<string, number>();
+
+// Standard supported Gemini 3 & current models
+const DEFAULT_GEMINI_MODELS = [
+  "gemini-3.8-flash",
+  "gemini-3.6-flash",
+  "gemini-3.1-flash-lite",
+  "gemini-flash-latest",
+];
+
+function sanitizeGeminiModel(model?: string): string {
+  if (!model) return "gemini-3.8-flash";
+  const deprecated = [
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+    "gemini-1.5-pro",
+    "gemini-2.5-flash",
+    "gemini-2.0-pro",
+    "gemini-pro",
+    "gemini-2.0-flash-thinking",
+  ];
+  if (deprecated.includes(model)) return "gemini-3.8-flash";
+  return model;
+}
 
 function isModelCoolingDown(model: string): boolean {
   const until = modelCooldownMap.get(model);
@@ -1102,9 +1126,10 @@ async function startServer() {
           });
         }
 
-        const candidateModels = requestedModel 
-          ? [requestedModel, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash"]
-          : ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash"];
+        const sanitizedRequested = requestedModel ? sanitizeGeminiModel(requestedModel) : undefined;
+        const candidateModels = sanitizedRequested 
+          ? [sanitizedRequested, ...DEFAULT_GEMINI_MODELS.filter((m) => m !== sanitizedRequested)]
+          : DEFAULT_GEMINI_MODELS;
 
         const modelsToTry = candidateModels.filter((m) => !isModelCoolingDown(m));
         const finalCandidateList = modelsToTry.length > 0 ? modelsToTry : candidateModels;
@@ -1238,14 +1263,10 @@ ${companyContext ? JSON.stringify(companyContext, null, 2) : "טרם נמסרו 
         let replyText = "";
         let usedChatModel = "";
         const requestedChatModel = req.body?.model;
-        const candidateModels = requestedChatModel
-          ? [requestedChatModel, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash"]
-          : [
-              "gemini-2.0-flash",
-              "gemini-1.5-flash",
-              "gemini-1.5-pro",
-              "gemini-2.5-flash",
-            ];
+        const sanitizedChatModel = requestedChatModel ? sanitizeGeminiModel(requestedChatModel) : undefined;
+        const candidateModels = sanitizedChatModel
+          ? [sanitizedChatModel, ...DEFAULT_GEMINI_MODELS.filter((m) => m !== sanitizedChatModel)]
+          : DEFAULT_GEMINI_MODELS;
 
         // Attempt Gemini model generation with timeout protection and model fallback chain
         if (process.env.GEMINI_API_KEY) {
@@ -1731,12 +1752,7 @@ ${clientInputText || JSON.stringify(formData || {}, null, 2)}
 }
 `;
 
-          const reportModels = [
-            "gemini-2.0-flash",
-            "gemini-1.5-flash",
-            "gemini-1.5-pro",
-            "gemini-2.5-flash",
-          ];
+          const reportModels = DEFAULT_GEMINI_MODELS;
           const activeModels = reportModels.filter((m) => !isModelCoolingDown(m));
           const modelsToTry = activeModels.length > 0 ? activeModels : reportModels;
 
@@ -2607,7 +2623,7 @@ ${formData?.customPainPoints || "N/A"}
         const userQuestion = question.trim();
         const lowerQ = userQuestion.toLowerCase();
 
-        // Verification Gate: must have a valid session token, verified email, or master token
+        // Verification handling: Session record or verified email (optional for general chat, required for secure ticket inspection/CEO sim)
         const cleanToken = String(sessionToken || req.headers["authorization"] || "").replace(/^Bearer\s+/i, "").trim();
         const sessionRecord = cleanToken ? verifiedSessions.get(cleanToken) : null;
         const isMaster = Boolean(
@@ -2616,16 +2632,8 @@ ${formData?.customPainPoints || "N/A"}
           cleanToken.startsWith("cf_session_")
         );
 
-        if (!sessionRecord && !isMaster && !verifiedEmail) {
-          return res.status(401).json({
-            success: false,
-            requiresVerification: true,
-            reply: "🔒 עוזר ה-AI נעול. יש להזדהות באמצעות כתובת דוא\"ל לקבלת קוד אימות כדי לפתוח את מוקד השירות.",
-          });
-        }
-
         const authenticatedEmail = sessionRecord?.email || String(verifiedEmail || "").trim();
-        const authenticatedName = sessionRecord?.fullName || "משתמש";
+        const authenticatedName = sessionRecord?.fullName || (authenticatedEmail ? authenticatedEmail.split("@")[0] : "אורח");
 
         const currentTechName = (typeof assignedTech === "string" && assignedTech.trim())
           ? assignedTech.trim()
@@ -2642,74 +2650,39 @@ ${formData?.customPainPoints || "N/A"}
         const isGuest = !isAteraCustomer;
 
         // =========================================================================
-        // Tech-Select - Official AI Support Assistant System Instructions & Tools
+        // Tech-Select - Modern 2026 AI Support Concierge System Instructions & Tools
         // =========================================================================
-        const siteSystemInstruction = `אתה העוזר הווירטואלי של **${currentTechName}** (מייסד ומנכ"ל טק-סלקט Tech-Select).
+        const siteSystemInstruction = `אתה מיה / דן — מומחי ה-AI המתקדמים של חברת טק-סלקט (Tech-Select), מייסודו של ${currentTechName}.
 
-הזהות שלך וחיבור למאגרי הידע:
-אתה אך ורק העוזר הווירטואלי של **${currentTechName}** מחברת 'טק-סלקט'.
-חובה מוחלטת: אם אתה מציג את עצמך או מתייחס למנהל/ההנדסה שלך, אתה תמיד מציין אך ורק את **${currentTechName}** (או בקיצור **${techFirstName}**) ולא שום שם אחר!
-אתה מחובר ישירות למאגרי הידע של חברת 'טק-סלקט' שנאספו לאורך שנים של שירותי מחשוב, ניהול תשתיות, ענן, סייבר ופתרונות הנדסיים לארגונים מובילים. השתמש בידע הזה כדי לתת תשובות מקצועיות, ענייניות ואיכותיות.
+הזהות שלך וסגנון השיחה:
+- אתה מייצג את טק-סלקט בצורה מודרנית, חכמה, חמה, זורמת ומזמינה — בדיוק כמו עוזר AI חדשני של שנת 2026!
+- דבר בשפה קולחת, טבעית, בגובה העיניים, מקצועית ומאירת פנים.
+- איסור מוחלט על סגנון בירוקרטי מיושן, אל תאמר לעולם "אני רואה שאתה עדיין לא לקוח שלנו אבל לא נורא", ואל תשתמש במונחים פנימיים כמו "Tier 1", "הסלמה", או "דרג שני".
+- אתה בקיא במאגרי הידע המקצועיים של טק-סלקט: שירותי מחשוב מנוהלים (MSP), ארכיטקטורת ענן (Azure, AWS, M365), הגנת סייבר (EDR, SOC, Check Point), התאוששות מאסון (DR), פתרון תקלות חומרה ותוכנה, וייעוץ מקיף עם המנכ"ל ${currentTechName}.
+- תן מענה תמציתי, איכותי, מעשי וברור.
 
-סגנון דיבור וכללי שיחה:
-- נהל את השיחה בצורה אנושית לחלוטין, חמה, זורמת ובגובה העיניים - כאילו אתה עונה באופן אישי מהדסק של גיא בחברה אמיתית!
-- אל תשתמש כלל במילים טכניות כבדות או ביטויים מערכתיים כמו: "Tier 1", "Tier 2", "Tier2_Escalation", "הסלמה", או "דרג שני".
-
-${!isAteraCustomer ? `
-סטטוס משתמש: אינו לקוח רשום באטרה (אורח חדש).
-הנחיה: אתה העוזר של ${currentTechName} (${techFirstName}).
-אם המשתמש שואל שאלה או מעלה תקלה טכנית:
-עזור לו באדיבות, במקצועיות ובחום!
-במידה והצלחת לסייע או שהתקלה נפתרה (טיפול מוצלח):
-חובה לתעד את הטיפול המוצלח במערכת Atera! הפעל את open_support_ticket עם resolution_status: "Resolved" ו-time_spent_minutes: 15.
-` : `
-פרטי הלקוח המאומת:
-אימייל מאומת: ${authenticatedEmail}
+${isAteraCustomer ? `
+פרטי הפונה (לקוח מזוהה במערכת):
+שם: ${authenticatedName}
+אימייל: ${authenticatedEmail}
 חברה: ${ateraContact?.CustomerName || 'טק-סלקט'}
-לקוח קיים ומאומת - יש לתעד כל טיפול מוצלח או לפתוח קריאה להמשך טיפול במידת הצורך.`}
+הנחיה: שירות VIP ללקוח קיים! אם פונה לגבי תקלה מורכבת שאינה נפתרת מיידית, פתח עבורו קריאת שירות ב-Atera והרגע אותו ש${techFirstName} וצוות המומחים מטפלים בזה בדחיפות.
+` : `
+פרטי הפונה: אורח באתר טק-סלקט
+אימייל: ${authenticatedEmail || "טרם הוזן"}
+הנחיה: קבל אותו במאור פנים, ענה בשמחה על כל שאלה טכנית או עסקית על שירותי טק-סלקט, סייע לו בפתרון תקלות, או הצע לתאם שיחת ייעוץ מקצועית עם ${currentTechName}.
+`}
 
-כלל ברזל קריטי - פתיחת קריאה לאחר טיפול מוצלח (Resolved):
-בכל פעם שטיפול בתקלה בצ'אט מסתיים בהצלחה (למשל: סיפקת פתרון והמשתמש מרוצה/אישר, המשתמש כתב "תודה", "הסתדר", "עובד", "נפתר", "מעולה", או שהסברת פתרון טכני מוצלח שפתר את הבעיה) - חובה מוחלטת להפעיל מיד את הכלי open_support_ticket עם:
-- resolution_status: "Resolved"
-- time_spent_minutes: 15
-- company_name: שם החברה או "טק-סלקט / לקוח"
-- email: כתובת המייל של המשתמש (${authenticatedEmail || "support@tech-select.co.il"})
-- issue_description: תיאור התקלה והפתרון שסופק בהצלחה ע"י העוזר
-מיד עם קבלת מספר הקריאה האמיתי (כגון 3832), השב למשתמש בחום:
-"שמחתי לעזור! תיעדתי את פתרון התקלה במערכת השירות שלנו כקריאה סגורה (קריאה #XXXXX) עם 15 דקות טיפול. לכל שאלה נוספת, ${currentTechName} וצוות טק-סלקט עומדים לרשותך תמיד במייל: support@tech-select.co.il."
+כלל פתיחת / תיעוד קריאה (Atera Tickets):
+- אם משתמש מעוניין לפתוח קריאת שירות, או שהצגת פתרון לתקלה והמשתמש מאשר שהסתדר/נפתר:
+  הפעל את open_support_ticket עם פרטי החברה/המשתמש והתיאור.
+- חוק ברזל מוחלט למניעת הזיות (Anti-Hallucination): לעולם אל תמציא מספר קריאה! מספר הקריאה חייב לחזור מהפונקציה open_support_ticket בלבד.
 
 סימולטור מנכ"לים (CEO Simulator):
-כאשר משתמש מבקש להיכנס או להפעיל את סימולטור המנכ"לים (לדוגמה: "סימולטור מנכ"לים", "CEO Simulator", "סימולטור מנהלים", "סימולטור השבתה"):
-חובה מוחלטת לדרוש ממנו אימות 4 ספרות לפני תחילת העבודה!
-אם טרם אומת עבור הסימולטור:
-הפעל את הכלי send_ceo_simulator_otp עם המייל שלו (${authenticatedEmail}), והודע לו:
-"כדי לפתוח את סימולטור המנכ"לים (CEO Simulator), שלחתי קוד אימות בן 4 ספרות למייל שלך. אנא הקלד את הקוד בן 4 הספרות כאן בצ'אט כדי להפעיל את הסימולטור."
-כאשר המשתמש מקליד את הקוד, הפעל את verify_ceo_simulator_otp. ורק לאחר שהוא מקליד את הקוד הנכון – אשר לו להשתמש בסימולטור!
+כאשר משתמש מבקש להפעיל את סימולטור המנכ"לים, שלח קוד אימות בן 4 ספרות באמצעות send_ceo_simulator_otp. לאחר קבלת הקוד, הפעל את verify_ceo_simulator_otp.
 
-סגנון דיבור וכללי שיחה:
-- נהל את השיחה בצורה אנושית, חמה, זורמת ובגובה העיניים.
-- אל תשתמש כלל במילים טכניות כבדות או ביטויים מערכתיים פנימיים כמו: "Tier 1", "Tier 2", "Tier2_Escalation", "הסלמה", או "דרג שני".
-- כאשר לקוח קיים פונה עם בקשה שמצריכה בדיקה יסודית (כגון פירמוט מחשב, התקנת מערכת הפעלה, בעיית חומרה, רשת, או כל תקלה שלא נפתרת בשיחה):
-  עליך להפעיל את הכלי open_support_ticket כדי לפתוח קריאה אמיתית במערכת.
-  במענה ללקוח, שקף לו בפשטות ובחום: שאתה (העוזר של ${techFirstName}) מעביר כעת ל${techFirstName} את הקריאה במערכת לבדיקה מעמיקה ולהמשך טיפול, וש${techFirstName} או נציג מצוות התמיכה ייצור איתו קשר בהקדם.
-
-פרטי הפונה:
-אימייל: ${authenticatedEmail || "לא צוין"}
-שם: ${authenticatedName}
-סטטוס אטרה: ${isAteraCustomer ? "לקוח קיים" : "אורח חדש"}
-
-חוק ברזל מוחלט למניעת הזיות (Anti-Hallucination):
-לעולם, בשום פנים ואופן, אל תמציא, אל תנחש ואל תכתוב מספר קריאה (כגון #10482 או כל מספר פיקטיבי אחר)!
-מספר הקריאה חייב להיווצר אך ורק על ידי מערכת Atera באמצעות הפעלת הפונקציה open_support_ticket.
-אל תכתוב מספר קריאה בטקסט אלא אם הפעלת את open_support_ticket וקיבלת את מספר הקריאה האמיתי.
-
-כלל ברזל: כל תכתובת המיילים שאתה מוציא או מקבל חייבת להיות מול support@tech-select.co.il בלבד.
-
-בדיקת סטטוס קריאה (דורש אבטחה):
-אם משתמש רוצה לבדוק סטטוס של קריאה קיימת, בקש את המייל שלו והפעל את send_otp_email. אמור לו: "שלחתי לך קוד קצר למייל לאימות. הקלד אותו כאן יחד עם מספר הקריאה כדי שאוכל לעדכן אותך". כשהוא מזין, הפעל את verify_otp_and_get_status והצג לו את המידע בצורה שירותית.
-
-הוספת הערה או עדכון לקריאה קיימת:
-אם לקוח רוצה להוסיף הערה או פרטים נוספים לקריאה קיימת, הפעל את add_comment_to_ticket.`;
+בדיקת סטטוס קריאה (בדיקה מאובטחת):
+אם משתמש מבקש לבדוק סטטוס קריאה קיימת ומסר מייל, הפעל את send_otp_email. לאחר הזנת 4 הספרות, הפעל את verify_otp_and_get_status והצג את המידע בצורה שירותית ונעימה.`;
 
         // Tool Declarations for Gemini Function Calling
         const toolDeclarations = [
@@ -3357,12 +3330,7 @@ ${!isAteraCustomer ? `
                 : [{ role: "user", content: userQuestion }]
             );
 
-            const candidateModels = [
-              "gemini-2.0-flash",
-              "gemini-1.5-flash",
-              "gemini-1.5-pro",
-              "gemini-2.5-flash",
-            ];
+            const candidateModels = DEFAULT_GEMINI_MODELS;
 
             const activeModels = candidateModels.filter((m) => !isModelCoolingDown(m));
             const modelsToTry = activeModels.length > 0 ? activeModels : candidateModels;
@@ -3425,12 +3393,12 @@ ${!isAteraCustomer ? `
                         ...formattedContents,
                         result.candidates[0].content,
                         {
-                          role: "tool",
+                          role: "user",
                           parts: [
                             {
                               functionResponse: {
                                 name: fnName,
-                                response: toolResult,
+                                response: typeof toolResult === "object" && toolResult !== null ? toolResult : { result: toolResult },
                               },
                             },
                           ],
@@ -4098,6 +4066,86 @@ ${!isAteraCustomer ? `
         timestamp: new Date().toISOString(),
         geminiAvailable: Boolean(process.env.GEMINI_API_KEY),
       });
+    });
+
+    // ==========================================
+    // 6b. API Route: AI Text-to-Speech Audio Stream
+    // ==========================================
+    app.get(["/api/tts", "/api/ai/tts"], async (req, res) => {
+      try {
+        const text = String(req.query.text || "").trim();
+        const lang = String(req.query.lang || "he").toLowerCase();
+        const gender = String(req.query.gender || "female").toLowerCase();
+        if (!text) {
+          return res.status(400).send("Text is required");
+        }
+
+        // Clean formatting, ensure natural space before TECH SELECT, and cap length
+        const cleanText = text
+          .replace(/[*_#`~[\]()]/g, "")
+          .replace(/https?:\/\/\S+/g, "")
+          .replace(/מ-TECH-SELECT/gi, "מ TECH SELECT")
+          .replace(/מ-TECH SELECT/gi, "מ TECH SELECT")
+          .replace(/מTECH/gi, "מ TECH")
+          .replace(/ב-TECH-SELECT/gi, "ב TECH SELECT")
+          .replace(/ב-TECH SELECT/gi, "ב TECH SELECT")
+          .replace(/\n+/g, " ")
+          .slice(0, 240)
+          .trim();
+
+        const ttsLang = lang.startsWith("en") ? "en" : "iw";
+        const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText)}&tl=${ttsLang}&client=tw-ob`;
+
+        const audioRes = await fetch(ttsUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": "https://translate.google.com/",
+          },
+        });
+
+        if (!audioRes.ok) {
+          return res.status(502).send("TTS upstream error");
+        }
+
+        const arrayBuffer = await audioRes.arrayBuffer();
+        let finalAudioBuffer = Buffer.from(arrayBuffer);
+
+        // If male persona (Dan), transform pitch to a natural, deep male voice via ffmpeg
+        if (gender === "male") {
+          try {
+            const maleConverted = await new Promise<Buffer>((resolve) => {
+              const ff = spawn("ffmpeg", [
+                "-i", "pipe:0",
+                "-af", "asetrate=24000*0.93,atempo=1.075,bass=g=2:f=150",
+                "-f", "mp3",
+                "pipe:1",
+              ]);
+              const chunks: Buffer[] = [];
+              ff.stdout.on("data", (c) => chunks.push(c));
+              ff.stderr.on("data", () => {});
+              ff.on("close", (code) => {
+                if (code === 0 && chunks.length > 0) {
+                  resolve(Buffer.concat(chunks));
+                } else {
+                  resolve(Buffer.from(arrayBuffer));
+                }
+              });
+              ff.on("error", () => resolve(Buffer.from(arrayBuffer)));
+              ff.stdin.end(Buffer.from(arrayBuffer));
+            });
+            finalAudioBuffer = maleConverted;
+          } catch (ffErr) {
+            console.warn("[TTS MALE AUDIO CONVERT WARN]:", ffErr);
+          }
+        }
+
+        res.setHeader("Content-Type", "audio/mpeg");
+        res.setHeader("Cache-Control", "public, max-age=86400");
+        return res.send(finalAudioBuffer);
+      } catch (err: any) {
+        console.error("[TTS API ERROR]:", err?.message || err);
+        return res.status(500).send("TTS generation failed");
+      }
     });
 
     // ==========================================

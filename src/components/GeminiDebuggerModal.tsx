@@ -40,10 +40,10 @@ interface ChatMessage {
 }
 
 const AVAILABLE_MODELS = [
-  { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash', badge: 'Recommended' },
-  { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash', badge: 'Ultra Fast' },
-  { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro', badge: 'Reasoning' },
-  { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', badge: 'Next-Gen' },
+  { id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', badge: 'Recommended' },
+  { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash', badge: 'Ultra Fast' },
+  { id: 'gemini-3.1-flash-lite', name: 'Gemini 3.1 Flash Lite', badge: 'Lightweight' },
+  { id: 'gemini-flash-latest', name: 'Gemini Flash Latest', badge: 'Latest' },
 ];
 
 const SUGGESTED_CARDS = [
@@ -117,7 +117,7 @@ export const GeminiDebuggerModal: React.FC<GeminiDebuggerModalProps> = ({
   // Chat conversation state
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
-  const [selectedModel, setSelectedModel] = useState('gemini-2.0-flash');
+  const [selectedModel, setSelectedModel] = useState('gemini-3.8-flash');
   const [isLoading, setIsLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 

@@ -1,4 +1,5 @@
 import React from 'react';
+import { ExternalLink } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
 import {
@@ -25,6 +26,7 @@ export interface HardwareManufacturer {
   categoryEn: string;
   categoryColor: string;
   logo: React.ReactNode;
+  websiteUrl: string;
 }
 
 export const HARDWARE_MANUFACTURERS: HardwareManufacturer[] = [
@@ -34,7 +36,8 @@ export const HARDWARE_MANUFACTURERS: HardwareManufacturer[] = [
     categoryHe: 'שרתים, תחנות עבודה ומחשוב עסקי',
     categoryEn: 'PowerEdge Servers & Commercial Fleet',
     categoryColor: 'text-blue-500 bg-blue-500/10 border-blue-500/20',
-    logo: <DellLogo className="w-9 h-9 sm:w-10 sm:h-10 shrink-0" />
+    logo: <DellLogo className="w-9 h-9 sm:w-10 sm:h-10 shrink-0" />,
+    websiteUrl: 'https://www.dell.com'
   },
   {
     id: 'hpe',
@@ -42,7 +45,8 @@ export const HARDWARE_MANUFACTURERS: HardwareManufacturer[] = [
     categoryHe: 'שרתי דאטה-סנטר ו-Blade ארגוניים',
     categoryEn: 'ProLiant Enterprise Data Center Servers',
     categoryColor: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20',
-    logo: <HpeLogo className="w-12 h-7 sm:w-14 sm:h-8 shrink-0" />
+    logo: <HpeLogo className="w-12 h-7 sm:w-14 sm:h-8 shrink-0" />,
+    websiteUrl: 'https://www.hpe.com'
   },
   {
     id: 'aruba',
@@ -50,7 +54,8 @@ export const HARDWARE_MANUFACTURERS: HardwareManufacturer[] = [
     categoryHe: 'מתגי ליבה ו-Wi-Fi 6E ארגוני',
     categoryEn: 'Enterprise Switching & Cloud Wi-Fi',
     categoryColor: 'text-amber-500 bg-amber-500/10 border-amber-500/20',
-    logo: <ArubaLogo className="w-12 h-7 sm:w-14 sm:h-8 shrink-0" />
+    logo: <ArubaLogo className="w-12 h-7 sm:w-14 sm:h-8 shrink-0" />,
+    websiteUrl: 'https://www.arubanetworks.com'
   },
   {
     id: 'asus',
@@ -58,7 +63,8 @@ export const HARDWARE_MANUFACTURERS: HardwareManufacturer[] = [
     categoryHe: 'תחנות עבודה, Mini-PC ולוחות אם',
     categoryEn: 'ProArt Workstations & ExpertCenter Fleet',
     categoryColor: 'text-sky-500 bg-sky-500/10 border-sky-500/20',
-    logo: <AsusLogo className="w-12 h-6 sm:w-14 sm:h-7 shrink-0" />
+    logo: <AsusLogo className="w-12 h-6 sm:w-14 sm:h-7 shrink-0" />,
+    websiteUrl: 'https://www.asus.com'
   },
   {
     id: 'ibm',
@@ -66,7 +72,8 @@ export const HARDWARE_MANUFACTURERS: HardwareManufacturer[] = [
     categoryHe: 'שרתי Power ומערכי אחסון מרכזיים',
     categoryEn: 'Power Systems & Enterprise FlashSystem',
     categoryColor: 'text-blue-600 bg-blue-600/10 border-blue-600/20',
-    logo: <IbmLogo className="w-13 h-7 sm:w-15 sm:h-8 shrink-0" />
+    logo: <IbmLogo className="w-13 h-7 sm:w-15 sm:h-8 shrink-0" />,
+    websiteUrl: 'https://www.ibm.com'
   },
   {
     id: 'lenovo',
@@ -74,7 +81,8 @@ export const HARDWARE_MANUFACTURERS: HardwareManufacturer[] = [
     categoryHe: 'מחשוב נייד, ThinkStation ושרתים',
     categoryEn: 'ThinkPad Laptops & ThinkSystem Servers',
     categoryColor: 'text-red-500 bg-red-500/10 border-red-500/20',
-    logo: <LenovoLogo className="w-13 h-6 sm:w-15 sm:h-7 shrink-0" />
+    logo: <LenovoLogo className="w-13 h-6 sm:w-15 sm:h-7 shrink-0" />,
+    websiteUrl: 'https://www.lenovo.com'
   },
   {
     id: 'qnap',
@@ -82,7 +90,8 @@ export const HARDWARE_MANUFACTURERS: HardwareManufacturer[] = [
     categoryHe: 'מערכי אחסון NAS מהירים ו-NVMe',
     categoryEn: 'High-Performance All-Flash NAS',
     categoryColor: 'text-blue-600 bg-blue-600/10 border-blue-600/20',
-    logo: <QnapLogo className="w-12 h-6 sm:w-14 sm:h-7 shrink-0" />
+    logo: <QnapLogo className="w-12 h-6 sm:w-14 sm:h-7 shrink-0" />,
+    websiteUrl: 'https://www.qnap.com'
   },
   {
     id: 'synology',
@@ -90,7 +99,8 @@ export const HARDWARE_MANUFACTURERS: HardwareManufacturer[] = [
     categoryHe: 'שרתי אחסון, SAN וגיבוי מקומי',
     categoryEn: 'RackStation Storage & Active Backup',
     categoryColor: 'text-slate-600 bg-slate-600/10 border-slate-600/20',
-    logo: <SynologyLogo className="w-13 h-7 sm:w-15 sm:h-8 shrink-0" />
+    logo: <SynologyLogo className="w-13 h-7 sm:w-15 sm:h-8 shrink-0" />,
+    websiteUrl: 'https://www.synology.com'
   },
   {
     id: 'apple',
@@ -98,7 +108,8 @@ export const HARDWARE_MANUFACTURERS: HardwareManufacturer[] = [
     categoryHe: 'MacBook, Mac Studio וסביבות macOS',
     categoryEn: 'MacBook Pro, Mac Studio & macOS Fleet',
     categoryColor: 'text-zinc-500 bg-zinc-500/10 border-zinc-500/20',
-    logo: <AppleLogo className="w-8 h-9 sm:w-9 sm:h-10 shrink-0" />
+    logo: <AppleLogo className="w-8 h-9 sm:w-9 sm:h-10 shrink-0" />,
+    websiteUrl: 'https://www.apple.com'
   },
   {
     id: 'apc',
@@ -106,7 +117,8 @@ export const HARDWARE_MANUFACTURERS: HardwareManufacturer[] = [
     categoryHe: 'אל-פסק Smart-UPS וארונות שרתים',
     categoryEn: 'Smart-UPS, Power Systems & Rack Enclosures',
     categoryColor: 'text-emerald-600 bg-emerald-600/10 border-emerald-600/20',
-    logo: <ApcSchneiderLogo className="w-12 h-7 sm:w-14 sm:h-8 shrink-0" />
+    logo: <ApcSchneiderLogo className="w-12 h-7 sm:w-14 sm:h-8 shrink-0" />,
+    websiteUrl: 'https://www.apc.com'
   },
   {
     id: 'crucial',
@@ -114,7 +126,8 @@ export const HARDWARE_MANUFACTURERS: HardwareManufacturer[] = [
     categoryHe: 'זיכרון RAM מקצועי ודיסקים NVMe',
     categoryEn: 'Enterprise DDR5 RAM & NVMe Gen5 SSDs',
     categoryColor: 'text-blue-500 bg-blue-500/10 border-blue-500/20',
-    logo: <CrucialMicronLogo className="w-13 h-7 sm:w-15 sm:h-8 shrink-0" />
+    logo: <CrucialMicronLogo className="w-13 h-7 sm:w-15 sm:h-8 shrink-0" />,
+    websiteUrl: 'https://www.crucial.com'
   },
   {
     id: 'toshiba',
@@ -122,7 +135,8 @@ export const HARDWARE_MANUFACTURERS: HardwareManufacturer[] = [
     categoryHe: 'דיסקים קשיחים ומערכי אחסון מסיביים',
     categoryEn: 'High-Density Nearline Cloud HDD Storage',
     categoryColor: 'text-red-600 bg-red-600/10 border-red-600/20',
-    logo: <ToshibaLogo className="w-13 h-6 sm:w-15 sm:h-7 shrink-0" />
+    logo: <ToshibaLogo className="w-13 h-6 sm:w-15 sm:h-7 shrink-0" />,
+    websiteUrl: 'https://www.toshiba.com'
   },
   {
     id: 'samsung-mobile',
@@ -130,7 +144,8 @@ export const HARDWARE_MANUFACTURERS: HardwareManufacturer[] = [
     categoryHe: 'סמארטפונים Galaxy מאובטחי Knox',
     categoryEn: 'Secured Galaxy Fleet & Knox Suite',
     categoryColor: 'text-blue-700 bg-blue-700/10 border-blue-700/20',
-    logo: <SamsungLogo className="w-13 h-6 sm:w-15 sm:h-7 shrink-0" />
+    logo: <SamsungLogo className="w-13 h-6 sm:w-15 sm:h-7 shrink-0" />,
+    websiteUrl: 'https://www.samsung.com'
   },
   {
     id: 'cisco-meraki',
@@ -138,7 +153,8 @@ export const HARDWARE_MANUFACTURERS: HardwareManufacturer[] = [
     categoryHe: 'מתגי ענן, נתבים ו-Access Points',
     categoryEn: 'Cloud-Managed Wi-Fi, Switches & SD-WAN',
     categoryColor: 'text-lime-500 bg-lime-500/10 border-lime-500/20',
-    logo: <CiscoMerakiLogo className="w-13 h-7 sm:w-15 sm:h-8 shrink-0" />
+    logo: <CiscoMerakiLogo className="w-13 h-7 sm:w-15 sm:h-8 shrink-0" />,
+    websiteUrl: 'https://meraki.cisco.com'
   }
 ];
 
@@ -167,8 +183,8 @@ export const HardwareManufacturersMarquee: React.FC = () => {
           </div>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1">
             {isHe 
-              ? 'אפיון מדויק, התאמת ציוד למידות הארגון, רכש ישיר ואחריות יצרן רשמית' 
-              : 'Precision hardware sizing, custom enterprise supply and official manufacturer warranty'}
+              ? 'אפיון מדויק, התאמת ציוד למידות הארגון, רכש ישיר ואחריות יצרן רשמית (לחצו למעבר לאתר היצרן)' 
+              : 'Precision hardware sizing, custom enterprise supply and official manufacturer warranty (Click to visit official vendor)'}
           </p>
         </div>
 
@@ -196,18 +212,22 @@ export const HardwareManufacturersMarquee: React.FC = () => {
         }`} />
 
         {/* TRACK 1: Forward Marquee */}
-        <div className="animate-marquee gap-4 sm:gap-5 mb-4">
+        <div className="animate-marquee hover:[animation-play-state:paused] gap-4 sm:gap-5 mb-4 flex">
           {infiniteTrack1.map((item, idx) => (
-            <div
+            <a
               key={`hw-track1-${item.id}-${idx}`}
-              className={`flex items-center gap-4 px-5 py-3.5 sm:px-6 sm:py-4 rounded-xl border transition-all shrink-0 cursor-default select-none shadow-xs hover:scale-[1.02] ${
+              href={item.websiteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`${item.name} - ${isHe ? 'מעבר לאתר הרשמי של היצרן' : 'Visit official website'}`}
+              className={`group flex items-center gap-4 px-5 py-3.5 sm:px-6 sm:py-4 rounded-xl border transition-all shrink-0 cursor-pointer select-none shadow-xs hover:scale-[1.03] active:scale-[0.98] ${
                 isDark 
-                  ? 'bg-[#070a14] border-white/10 hover:border-cyan-500/50 hover:bg-[#0e1730]' 
-                  : 'bg-white border-slate-200/90 hover:border-blue-400 hover:bg-blue-50/50'
+                  ? 'bg-[#070a14] border-white/10 hover:border-cyan-500/60 hover:bg-[#0e1730] hover:shadow-lg hover:shadow-cyan-500/10' 
+                  : 'bg-white border-slate-200/90 hover:border-blue-400 hover:bg-blue-50/50 hover:shadow-md'
               }`}
             >
               {/* Logo SVG in dedicated box */}
-              <div className={`shrink-0 w-12 h-12 sm:w-14 sm:h-14 rounded-xl flex items-center justify-center p-2 text-slate-800 dark:text-slate-200 ${
+              <div className={`shrink-0 w-12 h-12 sm:w-14 sm:h-14 rounded-xl flex items-center justify-center p-2 text-slate-800 dark:text-slate-200 group-hover:scale-105 transition-transform ${
                 isDark ? 'bg-slate-900/90 border border-white/10' : 'bg-slate-50 border border-slate-200/80 shadow-xs'
               }`}>
                 {item.logo}
@@ -215,32 +235,39 @@ export const HardwareManufacturersMarquee: React.FC = () => {
 
               {/* Company Info */}
               <div className="flex flex-col text-left">
-                <span className={`text-sm sm:text-base font-bold tracking-tight whitespace-nowrap ${
-                  isDark ? 'text-white' : 'text-slate-900'
-                }`}>
-                  {item.name}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-sm sm:text-base font-bold tracking-tight whitespace-nowrap group-hover:text-blue-500 dark:group-hover:text-cyan-400 transition-colors ${
+                    isDark ? 'text-white' : 'text-slate-900'
+                  }`}>
+                    {item.name}
+                  </span>
+                  <ExternalLink className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-blue-500 dark:text-cyan-400 shrink-0" />
+                </div>
                 <span className="text-xs sm:text-[13px] font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap mt-0.5">
                   {isHe ? item.categoryHe : item.categoryEn}
                 </span>
               </div>
-            </div>
+            </a>
           ))}
         </div>
 
         {/* TRACK 2: Reverse Marquee */}
-        <div className="animate-marquee-reverse gap-4 sm:gap-5">
+        <div className="animate-marquee-reverse hover:[animation-play-state:paused] gap-4 sm:gap-5 flex">
           {infiniteTrack2.map((item, idx) => (
-            <div
+            <a
               key={`hw-track2-${item.id}-${idx}`}
-              className={`flex items-center gap-4 px-5 py-3.5 sm:px-6 sm:py-4 rounded-xl border transition-all shrink-0 cursor-default select-none shadow-xs hover:scale-[1.02] ${
+              href={item.websiteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`${item.name} - ${isHe ? 'מעבר לאתר הרשמי של היצרן' : 'Visit official website'}`}
+              className={`group flex items-center gap-4 px-5 py-3.5 sm:px-6 sm:py-4 rounded-xl border transition-all shrink-0 cursor-pointer select-none shadow-xs hover:scale-[1.03] active:scale-[0.98] ${
                 isDark 
-                  ? 'bg-[#070a14] border-white/10 hover:border-cyan-500/50 hover:bg-[#0e1730]' 
-                  : 'bg-white border-slate-200/90 hover:border-blue-400 hover:bg-blue-50/50'
+                  ? 'bg-[#070a14] border-white/10 hover:border-cyan-500/60 hover:bg-[#0e1730] hover:shadow-lg hover:shadow-cyan-500/10' 
+                  : 'bg-white border-slate-200/90 hover:border-blue-400 hover:bg-blue-50/50 hover:shadow-md'
               }`}
             >
               {/* Logo SVG in dedicated box */}
-              <div className={`shrink-0 w-12 h-12 sm:w-14 sm:h-14 rounded-xl flex items-center justify-center p-2 text-slate-800 dark:text-slate-200 ${
+              <div className={`shrink-0 w-12 h-12 sm:w-14 sm:h-14 rounded-xl flex items-center justify-center p-2 text-slate-800 dark:text-slate-200 group-hover:scale-105 transition-transform ${
                 isDark ? 'bg-slate-900/90 border border-white/10' : 'bg-slate-50 border border-slate-200/80 shadow-xs'
               }`}>
                 {item.logo}
@@ -248,16 +275,19 @@ export const HardwareManufacturersMarquee: React.FC = () => {
 
               {/* Company Info */}
               <div className="flex flex-col text-left">
-                <span className={`text-sm sm:text-base font-bold tracking-tight whitespace-nowrap ${
-                  isDark ? 'text-white' : 'text-slate-900'
-                }`}>
-                  {item.name}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className={`text-sm sm:text-base font-bold tracking-tight whitespace-nowrap group-hover:text-blue-500 dark:group-hover:text-cyan-400 transition-colors ${
+                    isDark ? 'text-white' : 'text-slate-900'
+                  }`}>
+                    {item.name}
+                  </span>
+                  <ExternalLink className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-blue-500 dark:text-cyan-400 shrink-0" />
+                </div>
                 <span className="text-xs sm:text-[13px] font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap mt-0.5">
                   {isHe ? item.categoryHe : item.categoryEn}
                 </span>
               </div>
-            </div>
+            </a>
           ))}
         </div>
 

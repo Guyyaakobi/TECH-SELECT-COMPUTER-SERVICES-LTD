@@ -180,7 +180,7 @@ export async function generateReportPDF(data: ReportPdfData): Promise<{
               דוח אסטרטגי: ארכיטקטורת AI וניתוח כדאיות עסקית (ROI)
             </div>
             <div style="font-size: 12px; color: #cbd5e1;">
-              מסמך הערכה מנהלי מותאם אישית | הוכן על ידי מוקד ההנדסה והארכיטקטורה של טק-סלקט
+              מסמך הערכה מנהלי מותאם אישית | הוכן על ידי חטיבת ההנדסה והארכיטקטורה של טק-סלקט
             </div>
           </div>
 

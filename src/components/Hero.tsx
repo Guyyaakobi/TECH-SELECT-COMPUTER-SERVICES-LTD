@@ -308,14 +308,14 @@ export const Hero: React.FC<HeroProps> = ({
                   <span className={`text-xs font-sans font-semibold px-3 py-1 rounded-full border ${
                     isDark ? 'bg-white/[0.04] border-white/10 text-slate-300' : 'bg-slate-100 border-slate-200 text-slate-800'
                   }`}>
-                    {isHe ? 'אחריות שוטפת ב-SLA' : '24/7 SLA Operations'}
+                    {isHe ? 'אחריות שוטפת ב-SLA' : 'Enterprise SLA Operations'}
                   </span>
                 </div>
 
                 <p className={`text-xs sm:text-sm leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
                   {isHe
-                    ? 'ניהול כולל של תחנות עבודה, שרתים, משתמשים, סביבות Microsoft 365 ותקציב מחשוב. מענה אנושי מהיר במוקד תמיכה (Helpdesk), ניטור פרואקטיבי 24/7, וליווי אסטרטגי שמעניק להנהלה שקט תעשייתי מלא.'
-                    : 'End-to-end management of workstations, servers, users, M365 environments, and tech budgeting. Rapid-response live helpdesk, 24/7 proactive telemetry, and executive vCIO advisory.'}
+                    ? 'ניהול כולל של תחנות עבודה, שרתים, משתמשים, סביבות Microsoft 365 ותקציב מחשוב. מענה הנדסי אישי ומהיר, ניטור תשתיות פרואקטיבי, וליווי אסטרטגי שמעניק להנהלה שקט תעשייתי מלא.'
+                    : 'End-to-end management of workstations, servers, users, M365 environments, and tech budgeting. Dedicated senior engineering response, proactive infrastructure monitoring, and executive vCIO advisory.'}
                 </p>
 
                 {/* Visual Flow Steps */}
@@ -336,7 +336,7 @@ export const Hero: React.FC<HeroProps> = ({
                     isDark ? 'bg-white/[0.02] border-white/[0.06]' : 'bg-slate-50 border-slate-200'
                   }`}>
                     <span className="text-[10px] font-mono text-indigo-400 font-bold block">03. MONITOR</span>
-                    <span className={`text-xs font-medium ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{isHe ? 'ניטור 24/7' : '24/7 Monitoring'}</span>
+                    <span className={`text-xs font-medium ${isDark ? 'text-slate-200' : 'text-slate-800'}`}>{isHe ? 'ניטור פרואקטיבי' : 'Proactive Monitoring'}</span>
                   </div>
                   <div className={`p-3 rounded-xl border text-center space-y-1 ${
                     isDark ? 'bg-white/[0.02] border-white/[0.06]' : 'bg-slate-50 border-slate-200'

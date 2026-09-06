@@ -174,9 +174,9 @@ export const Footer: React.FC<FooterProps> = ({
 
             <div className={`pt-2 text-[11px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
               <span className={`font-bold block mb-1 ${isDark ? 'text-white' : 'text-slate-900'}`}>
-                {isHe ? 'שעות פעילות מוקד:' : 'Working Hours:'}
+                {isHe ? 'שעות פעילות המשרד:' : 'Office Hours:'}
               </span>
-              <div className="font-sans">{isHe ? 'א\'-ה\': 08:30 - 18:00 | תמיכה 24/7 למנויים' : 'Sun-Thu: 08:30 - 18:00 | 24/7 SLA'}</div>
+              <div className="font-sans">{isHe ? 'א\'-ה\': 08:30 - 18:00 | מענה SLA בהתאם להסכם' : 'Sun-Thu: 08:30 - 18:00 | Enterprise SLA'}</div>
             </div>
           </div>
 

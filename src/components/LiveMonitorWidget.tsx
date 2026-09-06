@@ -46,7 +46,7 @@ export const LiveMonitorWidget: React.FC = () => {
             <span className={`text-sm font-extrabold flex items-center gap-1.5 font-heading ${
               isDark ? 'text-white' : 'text-slate-900'
             }`}>
-              כל המערכות פועלות כסדרן (24/7/365)
+              כל המערכות פועלות כסדרן (ניטור שוטף)
             </span>
           </div>
         </div>
@@ -121,7 +121,7 @@ export const LiveMonitorWidget: React.FC = () => {
           <div className={`flex justify-between mb-1.5 text-[11px] ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>
             <span className="flex items-center gap-1.5 font-bold">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-              מוקד SOC 24/7 & הגנת EDR
+              ניטור SOC & הגנת EDR
             </span>
             <span className="text-emerald-600 font-bold">מאובטח</span>
           </div>

@@ -38,13 +38,13 @@ const SERVICE_MODAL_EN_DATA: Record<string, {
   'managed-it-systems': {
     title: 'Comprehensive Managed IT & Strategic vCIO Services',
     subtitle: 'Full Systems Governance, Workstations, M365 & IT Budgeting',
-    fullDesc: 'TECH-SELECT operates as the executive engineering extension of your organization. We assume turnkey accountability over system architecture, employee workstations, physical servers, cloud infrastructure, identity governance, and day-to-day user support. Our service includes 24/7 proactive telemetry monitoring, rigorous SLA-backed live helpdesk response, intelligent SaaS FinOps license optimization, and strategic vCIO roadmapping that eliminates wasteful tech expenditures.',
+    fullDesc: 'TECH-SELECT operates as the executive engineering extension of your organization. We assume turnkey accountability over system architecture, employee workstations, physical servers, cloud infrastructure, identity governance, and day-to-day user support. Our service includes proactive telemetry monitoring, rigorous SLA-backed engineering response, intelligent SaaS FinOps license optimization, and strategic vCIO roadmapping that eliminates wasteful tech expenditures.',
     features: [
       'Continuous turnkey governance of endpoints, on-prem servers, and cloud infrastructure',
       'User identity, Active Directory / Microsoft Entra ID permissions, and M365 tenant management',
       'FinOps license optimization: eliminating zombie seats and duplicate subscriptions',
-      'Rapid-response live engineering Helpdesk with guaranteed contractual response times',
-      '24/7 proactive Remote Monitoring and Management (RMM) detecting issues before downtime',
+      'Dedicated engineering support with contractual response time guarantees',
+      'Proactive Remote Monitoring and Management (RMM) detecting issues before downtime',
       'Strategic vCIO advisory for technology planning and annual budgetary precision'
     ],
     slaTitle: 'High Availability & Proactive Telemetry Governance',
@@ -140,7 +140,7 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ service, onClose, on
     : (service.fullDesc || (service as any).fullDescription || (service as any).description || service.shortDesc);
   const modalFeatures = (!isHe && enData) ? enData.features : (service.features || (service as any).capabilities || []);
   const modalSlaTitle = (!isHe && enData) ? enData.slaTitle : (isHe ? 'מחויבות לזמני תגובה (SLA מנוהל)' : 'Dedicated SLA Response Time');
-  const modalSlaDesc = (!isHe && enData) ? enData.slaDesc : (isHe ? 'מענה מהיר מתחייב, מוקד Helpdesk ישיר וצוות כוננות' : 'Guaranteed rapid response & cleared engineering team');
+  const modalSlaDesc = (!isHe && enData) ? enData.slaDesc : (isHe ? 'מענה מהיר מתחייב, צוות הנדסה ישיר ואחריות SLA מלאה' : 'Guaranteed rapid response & cleared engineering team');
 
   const renderIcon = (name: string) => {
     const iconClass = `w-8 h-8 ${isDark ? 'text-cyan-400' : 'text-blue-600'}`;
@@ -305,7 +305,7 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ service, onClose, on
             <span className={`px-3 py-1 rounded-full text-xs font-sans font-bold border ${
               isDark ? 'bg-cyan-950/80 text-cyan-300 border-cyan-500/40' : 'bg-white text-blue-800 border-blue-200 shadow-2xs'
             }`}>
-              24/7 / SLA 99.99%
+              SLA 99.99% / Enterprise Support
             </span>
           </div>
         </div>

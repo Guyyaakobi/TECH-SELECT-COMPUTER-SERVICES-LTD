@@ -90,9 +90,10 @@ export async function handleDiagnosticPost(request: Request, env: Env): Promise<
 
     const apiKey = getGeminiApiKey(env);
     const testPrompt = String(prompt || "Hello Gemini, please respond with a short confirmation message in Hebrew.").slice(0, 1000);
-    const candidateModels = requestedModel
-      ? [requestedModel, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash"]
-      : ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash"];
+    const defaultModels = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
+    const deprecated = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash", "gemini-2.0-pro", "gemini-pro"];
+    const sanitizedModel = requestedModel && !deprecated.includes(requestedModel) ? requestedModel : "gemini-3.8-flash";
+    const candidateModels = [sanitizedModel, ...defaultModels.filter((m) => m !== sanitizedModel)];
 
     if (!apiKey) {
       return new Response(
