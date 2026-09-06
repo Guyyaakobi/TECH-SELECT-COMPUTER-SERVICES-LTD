@@ -1,7 +1,8 @@
 import React from 'react';
-import { Cpu, DollarSign, Server, Sparkles, CheckCircle2, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Cpu, DollarSign, Server, Sparkles, CheckCircle2, ArrowLeft, ArrowRight, Truck } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
+import { HardwareManufacturersMarquee } from './HardwareManufacturersMarquee';
 
 export const StrategicDifferentiatorsBanner: React.FC = () => {
   const { isHe } = useLanguage();
@@ -130,6 +131,9 @@ export const StrategicDifferentiatorsBanner: React.FC = () => {
             );
           })}
         </div>
+
+        {/* OEM Hardware Manufacturers & Vendor Ecosystem Banner */}
+        <HardwareManufacturersMarquee />
       </div>
     </div>
   );

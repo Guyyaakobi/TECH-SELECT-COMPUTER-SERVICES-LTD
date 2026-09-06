@@ -4,6 +4,7 @@ import { X, CheckCircle2, ShieldCheck, Server, Cloud, Database, Wifi, Cpu, Monit
 import { COMPANY_INFO } from '../data/content';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
+import { HardwareManufacturersMarquee } from './HardwareManufacturersMarquee';
 
 interface ServiceModalProps {
   service: ServiceItem | null;
@@ -267,6 +268,13 @@ export const ServiceModal: React.FC<ServiceModalProps> = ({ service, onClose, on
               ))}
             </div>
           </div>
+
+          {/* OEM Hardware Manufacturers Banner */}
+          {service.id === 'hardware-procurement' && (
+            <div className="pt-2">
+              <HardwareManufacturersMarquee />
+            </div>
+          )}
 
           {/* SLA & Delivery Commitment */}
           <div className={`p-4 rounded-xl border flex flex-col sm:flex-row items-center justify-between gap-4 ${

@@ -549,7 +549,7 @@ async function sendAlertEmail({
 async function startServer() {
   try {
     const app = express();
-    const PORT = Number(process.env.PORT) || 3000;
+    const PORT = 3000;
 
     app.use(express.json({ limit: "10mb" }));
     app.use(express.urlencoded({ extended: true, limit: "10mb" }));
