@@ -4,7 +4,13 @@ import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
 import { HardwareManufacturersMarquee } from './HardwareManufacturersMarquee';
 
-export const StrategicDifferentiatorsBanner: React.FC = () => {
+interface StrategicDifferentiatorsBannerProps {
+  showHardwareMarquee?: boolean;
+}
+
+export const StrategicDifferentiatorsBanner: React.FC<StrategicDifferentiatorsBannerProps> = ({
+  showHardwareMarquee = true
+}) => {
   const { isHe } = useLanguage();
   const { isDark } = useTheme();
 
@@ -133,7 +139,7 @@ export const StrategicDifferentiatorsBanner: React.FC = () => {
         </div>
 
         {/* OEM Hardware Manufacturers & Vendor Ecosystem Banner */}
-        <HardwareManufacturersMarquee />
+        {showHardwareMarquee && <HardwareManufacturersMarquee />}
       </div>
     </div>
   );
