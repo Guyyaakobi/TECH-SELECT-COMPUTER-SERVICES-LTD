@@ -1,5 +1,5 @@
 {
-  "name": "TECH SELECT",
+  "name": "TECH-SELECT",
   "description": "שותף טכנולוגי כולל, ניהול IT, ענן, סייבר, ומיפוי והטמעת AI בארגונים (AI Discovery) מבית טק-סלקט שירותי מחשוב בע״מ",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

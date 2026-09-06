@@ -134,8 +134,6 @@ export const ServicesIndexModal: React.FC<ServicesIndexModalProps> = ({
     { name: 'Synology', tier: 'Enterprise Storage' },
     { name: 'Palo Alto Networks', tier: 'Next-Gen Firewall' },
     { name: 'Veeam', tier: 'Cloud Backup' },
-    { name: 'Acronis', tier: 'Cyber Protection & Backup' },
-    { name: 'Arcserve', tier: 'Business Continuity & UDP' },
     { name: 'Ubiquiti UniFi', tier: 'Infrastructure' },
     { name: 'APC Schneider', tier: 'Critical Power & Rack' },
     { name: 'Apple Enterprise', tier: 'Authorized Business' }
@@ -268,7 +266,7 @@ export const ServicesIndexModal: React.FC<ServicesIndexModalProps> = ({
         'Virtual Machine Management & On-Prem to Cloud Bridging',
         'Cloud Identity Protection & Enterprise Data Guard'
       ],
-      brands: ['Microsoft 365', 'Azure Cloud', 'Entra ID', 'SharePoint Online', 'Veeam Cloud', 'Acronis Cyber Protect', 'Arcserve UDP', 'AWS Enterprise', 'VMware Broadcom']
+      brands: ['Microsoft 365', 'Azure Cloud', 'Entra ID', 'SharePoint Online', 'Veeam Cloud', 'AWS Enterprise', 'VMware Broadcom']
     },
     {
       id: 'managed',
@@ -280,27 +278,27 @@ export const ServicesIndexModal: React.FC<ServicesIndexModalProps> = ({
       bgColor: 'bg-purple-500/10',
       borderColor: 'border-purple-500/30',
       activeGlow: 'shadow-[0_0_25px_rgba(168,85,247,0.25)]',
-      descHe: 'ניהול IT היקפי בריטיינר קבוע, תמיכה הנדסית פרואקטיבית ופרויקטי הבראת תשתיות טכנולוגיות.',
-      descEn: 'Proactive retainer support, senior engineering team & complete infrastructure remediation.',
-      statsHe: 'ניהול פרואקטיבי | SLA מהיר | יישור קו',
-      statsEn: 'Proactive IT | SLA Metrics | Remediation',
+      descHe: 'ניהול IT היקפי בריטיינר קבוע, מענה הנדסי ישיר ופרויקטי הבראת תשתיות טכנולוגיות.',
+      descEn: 'Proactive retainer support, direct senior engineering access & complete infrastructure remediation.',
+      statsHe: 'מענה ישיר | SLA מהיר | יישור קו',
+      statsEn: 'Direct Support | SLA Metrics | Remediation',
       itemsHe: [
-        'תמיכה הנדסית פרואקטיבית ומענה אנושי מהיר ע"י מהנדסי IT בכירים',
+        'מענה הנדסי ישיר ומהיר ע"י מהנדסי IT בכירים (ללא מוקדנים)',
         'פרויקטי "יישור קו" והבראת תשתיות שנבנו טלאי על טלאי',
         'ניהול מלווה של מנהל IT ארגוני במודל ריטיינר קבוע ושקוף',
-        'ניטור רציף ופרואקטיבי, עדכוני אבטחה שוטפים ומניעת תקלות מראש',
+        'ניטור מערכות רציף, עדכוני אבטחה שוטפים ומניעת תקלות מראש',
         'בניית תיק אתר (Site Documentation) מפורט ושקוף לארגון',
         'התחייבות SLA לרמת שירות מהירה ומדידה לכל קריאה'
       ],
       itemsEn: [
-        'Proactive Technical Support & Direct Access to Senior IT Engineers',
+        'Direct Access to Senior IT Engineers (No Junior Dispatchers)',
         'Infrastructure Alignment & Cable/Server Remediation Projects',
         'Dedicated Managed IT Director under Fixed Transparent Retainer',
         'Continuous Telemetry Monitoring, Security Patching & Incident Prevention',
         'Comprehensive Site Documentation & Infrastructure Inventory',
         'Strict SLA Metrics & Guaranteed Fast Response Times'
       ],
-      brands: ['Enterprise SLA Support', 'Site Audit', 'Network Topology', 'Proactive Monitoring', 'Dedicated Engineer']
+      brands: ['Enterprise SLA', 'Site Audit', 'Network Topology', 'Proactive Monitoring', 'Dedicated Engineer']
     },
     {
       id: 'hardware',

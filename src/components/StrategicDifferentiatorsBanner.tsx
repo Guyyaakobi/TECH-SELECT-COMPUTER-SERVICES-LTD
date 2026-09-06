@@ -2,15 +2,8 @@ import React from 'react';
 import { Cpu, DollarSign, Server, Sparkles, CheckCircle2, ArrowLeft, ArrowRight, Truck } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
-import { HardwareManufacturersMarquee } from './HardwareManufacturersMarquee';
 
-interface StrategicDifferentiatorsBannerProps {
-  showHardwareMarquee?: boolean;
-}
-
-export const StrategicDifferentiatorsBanner: React.FC<StrategicDifferentiatorsBannerProps> = ({
-  showHardwareMarquee = true
-}) => {
+export const StrategicDifferentiatorsBanner: React.FC = () => {
   const { isHe } = useLanguage();
   const { isDark } = useTheme();
 
@@ -137,9 +130,6 @@ export const StrategicDifferentiatorsBanner: React.FC<StrategicDifferentiatorsBa
             );
           })}
         </div>
-
-        {/* OEM Hardware Manufacturers & Vendor Ecosystem Banner */}
-        {showHardwareMarquee && <HardwareManufacturersMarquee />}
       </div>
     </div>
   );

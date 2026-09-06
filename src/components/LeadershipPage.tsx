@@ -129,19 +129,19 @@ export const TEAM_MEMBERS: TeamMember[] = [
     id: 'yosef-aiasa',
     nameHe: 'יוסף איאסה',
     nameEn: 'Yosef Aiasa',
-    roleHe: 'מנהל מערך שטח, הנדסת מערכות ותמיכת Enterprise',
-    roleEn: 'Head of Field Operations & Enterprise Systems Support',
-    teamDepartmentHe: 'מפקד על צוות מהנדסי השטח, מנהלי התשתיות וטכנאי ה-Enterprise',
-    teamDepartmentEn: 'Commands Field Support Engineers, Infrastructure Specialists & Enterprise Technicians',
+    roleHe: 'מנהל מערך שטח, תמיכה טכנית ו-Enterprise Helpdesk',
+    roleEn: 'Head of Field Operations & Enterprise Helpdesk',
+    teamDepartmentHe: 'מפקד על צוות מהנדסי השטח, מוקדני ה-Helpdesk הבכירים וטכנאי ה-Enterprise',
+    teamDepartmentEn: 'Commands Field Support Engineers, Senior Helpdesk Specialists & Enterprise Technicians',
     category: 'support',
     image: '/yosef-aiasa.svg',
     initials: 'YA',
     accentColor: 'from-emerald-600 to-teal-500',
     linkedinUrl: 'https://www.linkedin.com/in/yosef-aiasa-717b86254/',
-    bioHe: 'מפקד על מערך השטח והתמיכה של TECH-SELECT ומנהל ישירות את צוותי מהנדסי השטח ומהנדסי התמיכה הבכירים. מוביל פריסת ציי מחשוב, שרתים ותחנות עבודה מאובטחות (EDR / MDM), ומתמחה בטיפול בתקלות מורכבות ובאירועי קצה קריטיים באתר הלקוח ובשליטה מרחוק. תחת פיקודו, צוותי התמיכה והשטח פועלים בסטנדרט SLA קפדני עם זמני תגובה שוברי שיא, ומעניקים שקט תעשייתי מלא לאלפי משתמשים בארגונים המובילים בישראל.',
-    bioEn: 'Commands TECH-SELECT\'s field engineering division and enterprise systems support, directly managing squads of senior on-site engineers and support specialists. Oversees fleet endpoint deployment, secure hardware configurations (EDR / MDM), and complex rapid-incident resolution. Under his leadership, our field and support squads maintain record-breaking SLA response times, delivering unconditional operational peace of mind to thousands of enterprise users.',
-    badgesHe: ['פיקוד על צוותי שטח ותשתיות', 'הנדסת מערכות ופריסות שרתים', 'ניהול ואבטחת ציי קצה (EDR/MDM)', 'זמני תגובה שוברי שיא'],
-    badgesEn: ['Commands Field & Systems Squads', 'On-Site Field Engineering', 'Fleet Endpoint Security (EDR/MDM)', 'Record SLA Response Times'],
+    bioHe: 'מפקד על מערך השטח והתמיכה של TECH-SELECT ומנהל ישירות את צוותי מהנדסי השטח ומוקדני ה-Helpdesk הבכירים. מוביל פריסת ציי מחשוב, שרתים ותחנות עבודה מאובטחות (EDR / MDM), ומתמחה בטיפול בתקלות מורכבות ובאירועי קצה קריטיים באתר הלקוח ובשליטה מרחוק. תחת פיקודו, צוותי התמיכה והשטח פועלים בסטנדרט SLA קפדני עם זמני תגובה שוברי שיא, ומעניקים שקט תעשייתי מלא לאלפי משתמשים בארגונים המובילים בישראל.',
+    bioEn: 'Commands TECH-SELECT\'s field engineering division and enterprise Helpdesk operations, directly managing squads of senior on-site engineers and support specialists. Oversees fleet endpoint deployment, secure hardware configurations (EDR / MDM), and complex rapid-incident resolution. Under his leadership, our field and support squads maintain record-breaking SLA response times, delivering unconditional operational peace of mind to thousands of enterprise users.',
+    badgesHe: ['פיקוד על צוותי שטח ו-Helpdesk', 'הנדסת מערכות ופריסות שרתים', 'ניהול ואבטחת ציי קצה (EDR/MDM)', 'זמני תגובה שוברי שיא'],
+    badgesEn: ['Commands Field & Helpdesk Squads', 'On-Site Field Engineering', 'Fleet Endpoint Security (EDR/MDM)', 'Record SLA Response Times'],
     stats: { labelHe: 'זמן מענה ממוצע לקריאות קריטיות', labelEn: 'Avg Critical SLA Response', value: '< 10m' }
   }
 ];
@@ -258,8 +258,8 @@ export const LeadershipPage: React.FC<LeadershipPageProps> = ({
           isDark ? 'text-slate-300' : 'text-slate-600'
         }`}>
           {isHe
-            ? 'ב-TECH-SELECT אחריות הנדסית אינה סיסמה. הנהלת החברה מעניקה ליווי טכנולוגי אישי וצמוד לכל לקוח, תכנון ארכיטקטורה מתקדמת, מעטפת ענן וסייבר מקיפה ורציפות עסקית מלאה ומובטחת.'
-            : 'At TECH-SELECT, engineering accountability is our foundation. Executive leadership provides personalized architectural advisory, robust cloud infrastructure, cybersecurity protection, and continuous enterprise resilience.'}
+            ? 'ב-TECH-SELECT אחריות הנדסית אינה סיסמה. הנהלת החברה מעניקה ליווי טכנולוגי אישי וצמוד לכל לקוח, תכנון ארכיטקטורה מתקדמת, מעטפת ענן וסייבר מקיפה ורציפות עסקית מלאה תחת הסכם SLA מחייב.'
+            : 'At TECH-SELECT, engineering accountability is our foundation. Executive leadership provides personalized architectural advisory, robust cloud infrastructure, cybersecurity protection, and comprehensive business continuity under strict contractual SLAs.'}
         </p>
 
         {/* Value Highlights Chips with Linear CTA Soft Scale */}
@@ -268,7 +268,7 @@ export const LeadershipPage: React.FC<LeadershipPageProps> = ({
             { titleHe: 'ליווי אישי של המייסד', titleEn: 'Direct Executive Lead', subHe: 'מעורבות הנדסית צמודה', subEn: 'Hands-on architectural lead' },
             { titleHe: 'ספק משהב״ט מורשה', titleEn: 'MoD Authorized', subHe: 'סיווג ביטחוני בתוקף', subEn: 'Active Security Clearances' },
             { titleHe: 'אחריות Turnkey מלאה', titleEn: 'Turnkey Ownership', subHe: 'כתובת אחת לכל אתגר', subEn: 'Single accountable partner' },
-            { titleHe: 'תמיכה ו-SLA מובטח', titleEn: 'Guaranteed SLA', subHe: 'מענה מהיר ומחויבות ל-SLA', subEn: 'Contractual SLA response' },
+            { titleHe: 'תמיכה ו-SLA מובטח', titleEn: 'Guaranteed SLA', subHe: 'מענה הנדסי מהיר ומחייב', subEn: 'Contractual rapid engineering response' },
           ].map((item, idx) => (
             <div
               key={idx}

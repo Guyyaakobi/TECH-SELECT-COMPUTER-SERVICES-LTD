@@ -4,7 +4,7 @@ import {
   Ticket, CheckCircle2, AlertCircle,
   RefreshCw, ArrowRight, ArrowLeft,
   KeyRound, ShieldCheck, Lock, Unlock, Mail, User, Phone, LogOut, Loader2, Shield,
-  Cpu, Zap, Play, Volume2, VolumeX, Mic, MicOff
+  Cpu, Zap, Play
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { useTheme } from '../context/ThemeContext';
@@ -127,8 +127,19 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
     return { isOpen: false, otpSent: false, otpCode: '', verified: false, loading: false, error: '' };
   });
 
-  // Immediate AI Access for all visitors and clients
-  const [isVerified, setIsVerified] = useState<boolean>(true);
+  // 4-Digit OTP Gate State: Locked until verified!
+  const [isVerified, setIsVerified] = useState<boolean>(() => {
+    try {
+      const saved = sessionStorage.getItem('tech_select_ai_verified_user');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.email && parsed?.timestamp && Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
+          return true;
+        }
+      }
+    } catch {}
+    return false;
+  });
 
   const [verifiedUser, setVerifiedUser] = useState<{ email: string; fullName: string; sessionToken: string } | null>(() => {
     try {
@@ -233,228 +244,6 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
   const [assignedTech, setAssignedTech] = useState<{ he: string; en: string }>(() => getRandomTech());
   const [isIncognito, setIsIncognito] = useState(false);
 
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const [isListening, setIsListening] = useState(false);
-  const [isVoiceMuted, setIsVoiceMuted] = useState(true);
-  const [liveTranscript, setLiveTranscript] = useState('');
-  const speechUtteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
-  const activeAudioRef = useRef<HTMLAudioElement | null>(null);
-
-  const stopSpeaking = () => {
-    if (activeAudioRef.current) {
-      try {
-        activeAudioRef.current.pause();
-        activeAudioRef.current.currentTime = 0;
-      } catch (err) {
-        console.warn('Error pausing audio:', err);
-      }
-      activeAudioRef.current = null;
-    }
-    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
-    setIsSpeaking(false);
-  };
-
-  const fallbackSpeechSynthesis = (cleanText: string, targetLang: string) => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
-      setIsSpeaking(false);
-      return;
-    }
-    try {
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.resume();
-
-      const utterance = new SpeechSynthesisUtterance(cleanText);
-      utterance.lang = targetLang.startsWith('he') ? 'he-IL' : 'en-US';
-      utterance.rate = 1.02; // Natural conversational tempo
-      utterance.pitch = 1.0;
-
-      utterance.onstart = () => setIsSpeaking(true);
-      utterance.onend = () => setIsSpeaking(false);
-      utterance.onerror = () => setIsSpeaking(false);
-
-      speechUtteranceRef.current = utterance;
-      window.speechSynthesis.speak(utterance);
-    } catch (err) {
-      console.warn('Speech synthesis fallback error:', err);
-      setIsSpeaking(false);
-    }
-  };
-
-  const speakText = (text: string, forceLang?: 'he' | 'en') => {
-    if (isVoiceMuted || typeof window === 'undefined') return;
-
-    // Clean text from markdown formatting, asterisks, URLs, and optimize phonetics for natural Hebrew speech
-    const cleanText = text
-      .replace(/[*_#`~[\]()]/g, '')
-      .replace(/https?:\/\/\S+/g, '')
-      .replace(/מ[- ]?TECH[- ]?SELECT/gi, 'מטק סלקט')
-      .replace(/ב[- ]?TECH[- ]?SELECT/gi, 'בטק סלקט')
-      .replace(/TECH[- ]?SELECT/gi, 'טק סלקט')
-      .replace(/\bשלך\b/g, 'שלךָ')
-      .replace(/\n+/g, ' ')
-      .trim();
-
-    if (!cleanText) return;
-
-    stopSpeaking();
-
-    // Determine target language and take first conversational chunk (~200 chars)
-    const targetLang = forceLang || (isHe ? 'he' : 'en');
-    const sentences = cleanText.split(/([.?!;\n]+)/);
-    const spokenSlice = (sentences.slice(0, 3).join('').slice(0, 210) || cleanText.slice(0, 210)).trim();
-
-    try {
-      // 1. Primary Engine: Real audio stream from backend TTS proxy
-      const ttsUrl = `/api/tts?text=${encodeURIComponent(spokenSlice)}&lang=${targetLang}`;
-      const audio = new Audio(ttsUrl);
-      audio.playbackRate = 1.15; // Crisp, faster and energetic delivery
-      activeAudioRef.current = audio;
-
-      audio.onplay = () => {
-        setIsSpeaking(true);
-      };
-
-      audio.onended = () => {
-        setIsSpeaking(false);
-        activeAudioRef.current = null;
-      };
-
-      audio.onerror = (e) => {
-        console.warn('TTS audio load/decode error, attempting SpeechSynthesis fallback:', e);
-        activeAudioRef.current = null;
-        fallbackSpeechSynthesis(spokenSlice, targetLang);
-      };
-
-      const playPromise = audio.play();
-      if (playPromise !== undefined) {
-        playPromise.catch((err) => {
-          console.warn('Audio play prevented (e.g. user gesture required), trying SpeechSynthesis:', err);
-          fallbackSpeechSynthesis(spokenSlice, targetLang);
-        });
-      }
-    } catch (err) {
-      console.warn('TTS audio initialization failed, using SpeechSynthesis:', err);
-      fallbackSpeechSynthesis(spokenSlice, targetLang);
-    }
-  };
-
-  const handlePlayGreeting = () => {
-    setIsVoiceMuted(false);
-    if (!isVerified) {
-      speakText(isHe ? 'שלום, הגעת למוקד ה-AI של טק סלקט. הזן בבקשה את המייל שלך לקבלת קוד אימות.' : 'Hello, welcome to Tech-Select AI Concierge. Please enter your email to receive a verification code.');
-    } else {
-      const userFirstName = authFirstName.trim() || verifiedUser?.fullName?.split(' ')[0] || '';
-      if (userFirstName) {
-        speakText(
-          isHe 
-            ? `היי ${userFirstName}, אימתתי את הפרטים שלך בטק סלקט. במה אוכל לעזור לך היום?`
-            : `Hi ${userFirstName}, your credentials are authenticated at TECH SELECT. How can I assist you today?`
-        );
-      } else {
-        speakText(isHe ? 'שלום, הגעת לעוזר ה-AI החכם של טק סלקט. במה אוכל לעזור לך היום?' : 'Hello! Welcome to Tech-Select AI Concierge. How may I assist you today?');
-      }
-    }
-  };
-
-  const handleToggleVoiceMute = () => {
-    if (!isVoiceMuted) {
-      stopSpeaking();
-      setIsVoiceMuted(true);
-    } else {
-      setIsVoiceMuted(false);
-    }
-  };
-
-  const handleSpeakNow = () => {
-    if (isListening) {
-      setIsListening(false);
-      setLiveTranscript('');
-      return;
-    }
-
-    if (isSpeaking) {
-      stopSpeaking();
-      return;
-    }
-
-    // Play greeting and activate voice recognition
-    setIsVoiceMuted(false);
-    handlePlayGreeting();
-
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
-      return;
-    }
-
-    try {
-      const recognition = new SpeechRecognition();
-      recognition.lang = isHe ? 'he-IL' : 'en-US';
-      recognition.continuous = false;
-      recognition.interimResults = true;
-
-      recognition.onstart = () => {
-        setIsListening(true);
-        setLiveTranscript('');
-      };
-
-      recognition.onresult = (event: any) => {
-        let interim = '';
-        let final = '';
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            final += event.results[i][0].transcript;
-          } else {
-            interim += event.results[i][0].transcript;
-          }
-        }
-        const currentText = (final || interim || '').trim();
-        if (currentText) {
-          setLiveTranscript(currentText);
-          setInputQuestion(currentText);
-        }
-        if (final.trim()) {
-          setIsListening(false);
-          setLiveTranscript('');
-          handleSendChat(final.trim());
-        }
-      };
-
-      recognition.onerror = (e: any) => {
-        console.warn('Speech recognition error:', e);
-        setIsListening(false);
-        setLiveTranscript('');
-      };
-
-      recognition.onend = () => {
-        setIsListening(false);
-        setLiveTranscript('');
-      };
-
-      // Start recognition after brief delay so avatar voice begins first
-      setTimeout(() => {
-        try {
-          recognition.start();
-        } catch {
-          setIsListening(false);
-        }
-      }, 1400);
-    } catch (err) {
-      console.warn('Failed to start speech recognition:', err);
-      setIsListening(false);
-      setLiveTranscript('');
-    }
-  };
-
-  // Stop speaking when concierge window closes
-  useEffect(() => {
-    if (!isOpen) {
-      stopSpeaking();
-      setIsListening(false);
-    }
-  }, [isOpen]);
-
   useEffect(() => {
     detectIncognito().then((res) => {
       if (res.isIncognito) setIsIncognito(true);
@@ -467,19 +256,19 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
   const rotatingPlaceholders = useMemo(() => {
     if (isHe) {
       return [
-        'עוזר AI חכם • טק-סלקט',
-        'תאר תקלה, שאלה או בקש ייעוץ...',
-        'פתיחת קריאת שירות לתמיכה מהירה',
-        'פתרונות ענן, סייבר ו-IT מנוהל',
-        'תיאום פגישה עם גיא יעקובי',
+        'LET THE AI WORK...',
+        'LET THE AI WORK... תאר תקלה או שאל שאלה',
+        'LET THE AI WORK... פתיחת קריאת שירות מהירה',
+        'LET THE AI WORK... בדיקת סטטוס קריאה במערכת',
+        'LET THE AI WORK... ייעוץ מחשוב ענן וסייבר',
       ];
     }
     return [
-      'Smart AI Concierge • Tech-Select',
-      'Describe an issue or ask a question...',
-      'Fast IT service ticket creation',
-      'Cloud, Cyber & Managed IT support',
-      'Schedule a consultation with Guy',
+      'LET THE AI WORK...',
+      'LET THE AI WORK... Describe an issue or ask',
+      'LET THE AI WORK... Open a fast service ticket',
+      'LET THE AI WORK... Check ticket live status',
+      'LET THE AI WORK... Cloud & Cyber consultation',
     ];
   }, [isHe]);
 
@@ -532,18 +321,28 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
     targetTech: { he: string; en: string },
     userName?: string
   ): string => {
-    if (info?.checked && info.isCustomer) {
-      const clientName = info.contactName || userName || (isHe ? 'לקוח יקר' : 'Valued Client');
-      const company = info.companyName || (isHe ? 'טק-סלקט' : 'Tech-Select');
-      return isHe
-        ? `שלום ${clientName}! נעים לראות אותך. זיהיתי את חשבונך ב-${company}.\nאני כאן כדי לתת מענה טכנולוגי מהיר, לבדוק סטטוס קריאה או לפתוח פנייה חדשה עבור צוות ההנדסה שלנו בהובלת גיא יעקובי.\nאיך אוכל לעזור לך היום?`
-        : `Hello ${clientName}! Great to see you again (${company}).\nI am here to provide swift technical assistance, check ticket status, or open a service request with our engineering team led by Guy Yaakobi.\nHow can I help you today?`;
+    const techDisplayName = isHe ? (info?.technician || targetTech.he) : (info?.technician || targetTech.en);
+
+    if (info?.checked) {
+      if (!info.isCustomer) {
+        // Guest user wording - strict adherence to user request:
+        return isHe
+          ? `היי, אני העוזר של ${techDisplayName}. אני רואה שאתה עדיין לא לקוח שלנו, אבל לא נורא, שאל מה שאתה צריך ואני אראה מה אני יכול לעשות.`
+          : `Hi, I am the assistant of ${techDisplayName}. I see that you are not yet our client, but no worries! Feel free to ask whatever you need, and I'll see what I can do for you.`;
+      } else {
+        // Active Atera client wording - strict adherence to user request:
+        const clientName = info.contactName || userName || (isHe ? 'לקוח יקר' : 'Valued Client');
+        const company = info.companyName || (isHe ? 'טק-סלקט' : 'Tech-Select');
+        return isHe
+          ? `שלום ${clientName}! אני העוזר של ${techDisplayName} מחברת טק-סלקט. זיהיתי אותך כלקוח קיים במערכת השירות (${company}). אני כאן כדי להעניק לך שירות מצוין, לפתוח קריאה במידת הצורך או לענות על כל שאלה. במה אוכל לעזור לך היום?`
+          : `Hello ${clientName}! I am the assistant of ${techDisplayName} from Tech-Select. I recognized you as an existing client in our service desk (${company}). I am here to provide you with excellent service, open a ticket if needed, or answer any question. How may I help you today?`;
+      }
     }
 
-    // Default modern welcoming greeting for guests and visitors
+    // Default standard greeting
     return isHe
-      ? `שלום! הגעת לעוזר ה-AI החכם של טק-סלקט (Tech-Select).\nאני כאן כדי לעזור לך בכל שאלה על שירותי מחשוב, פתרונות ענן ואבטחת מידע, פתרון תקלות טכניות, פתיחת קריאות שירות, או תיאום שיחת ייעוץ אישית עם גיא יעקובי.\nבמה אוכל לסייע לך היום?`
-      : `Hello! Welcome to the Tech-Select Smart AI Concierge.\nI am here to assist you with managed IT services, cloud & cybersecurity solutions, technical support, ticket creation, or scheduling a consultation with Guy Yaakobi.\nHow may I help you today?`;
+      ? `היי, אני העוזר של ${techDisplayName}. אני רואה שאתה עדיין לא לקוח שלנו, אבל לא נורא, שאל מה שאתה צריך ואני אראה מה אני יכול לעשות.`
+      : `Hi, I am the assistant of ${techDisplayName}. I see that you are not yet our client, but no worries! Feel free to ask whatever you need, and I'll see what I can do for you.`;
   };
 
   // Check customer status in Atera API
@@ -800,7 +599,6 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
             m.id === msgId ? { ...m, displayedText: fullText, isStreaming: false } : m
           )
         );
-        speakText(fullText);
       } else {
         const partial = fullText.slice(0, currentIndex);
         setMessages((prev) =>
@@ -856,7 +654,7 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
           email: cleanEmail,
           fullName,
           phone: cleanPhone,
-          action: isHe ? 'פתיחת עוזר ה-AI של טק-סלקט' : 'Tech-Select AI Concierge Access',
+          action: isHe ? 'פתיחת מוקד השירות וה-AI של טק-סלקט' : 'Tech-Select AI Concierge Access',
         }),
       });
       const rawText = await res.text().catch(() => '');
@@ -956,12 +754,6 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
       setVerifiedUser(verifiedRecord);
       setAuthStep('success');
 
-      // Personalized verbal greeting immediately upon verification
-      const userFirstName = authFirstName.trim() || verifiedRecord.fullName.split(' ')[0] || '';
-      const personalizedGreetingSpeech = isHe
-        ? `שלום ${userFirstName ? userFirstName + ', ' : ''}אימתתי את הפרטים שלךָ בהצלחה. במה אוכל לסייע לך היום בטק סלקט?`
-        : `Hi ${userFirstName || 'there'}, your credentials are confirmed. How can I assist you today at TECH SELECT?`;
-
       // Check Atera status immediately and build greeting according to customer vs guest
       const ateraInfo = await checkCustomerStatusInAtera(verifiedRecord.email, assignedTech.he);
       const verifiedWelcome = buildWelcomeGreeting(ateraInfo, assignedTech, verifiedRecord.fullName);
@@ -979,9 +771,7 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
 
       setTimeout(() => {
         setIsVerified(true);
-        // Concierge immediately speaks to the verified user out loud
-        speakText(personalizedGreetingSpeech);
-      }, 550);
+      }, 600);
     } catch (err: any) {
       setAuthError(err.message || (isHe ? 'קוד שגוי או שפג תוקפו' : 'Invalid or expired code'));
     } finally {
@@ -1004,6 +794,12 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
   const handleSendChat = async (textOverride?: string) => {
     const q = (textOverride !== undefined ? textOverride : inputQuestion).trim();
     if (!q || isLoading) return;
+
+    // Guard: lock check
+    if (!isVerified) {
+      setAuthStep('email');
+      return;
+    }
 
     // CEO Simulator gate check in chat
     const isCeoQuery = /(?:סימולטור|מנכ["״]?ל|מנכלי?ם|ceo|simulator)/i.test(q);
@@ -1060,6 +856,13 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
         data = { reply: rawText };
       }
 
+      if (response.status === 401 || data?.requiresVerification) {
+        setIsVerified(false);
+        setAuthStep('email');
+        setAuthError(isHe ? 'נדרש אימות 4 ספרות מחדש' : '4-digit OTP verification required');
+        return;
+      }
+
       const replyText = data?.reply || (isHe
         ? 'טק-סלקט שירותי מחשוב וענן – אני כאן לרשותך. האם תרצה לפתוח קריאה, לבדוק סטטוס, או לקבל מידע על פתרונות מחשוב וסייבר?'
         : 'Tech-Select IT & Cloud Services – How else may I assist you today?');
@@ -1099,7 +902,7 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
     } catch (err) {
       const errId = 'err-' + Date.now();
       const fallback = isHe
-        ? 'טק-סלקט שירותי מחשוב בע"מ – צוות המומחים שלנו עומד לרשותך בניהול IT, אבטחת מידע וסייבר, וענן Microsoft 365. תוכל לרשום לי את פרטי התקלה לפתיחה מהירה או לשאול כל שאלה.'
+        ? 'טק-סלקט שירותי מחשוב בע"מ – מוקד המומחים שלנו עומד לרשותך בניהול IT, אבטחת מידע וסייבר, וענן Microsoft 365. תוכל לרשום לי את פרטי התקלה לפתיחה מהירה או לשאול כל שאלה.'
         : 'Tech-Select IT Services – Our team is ready to assist with Cloud, Cyber and Managed Services. Feel free to describe your request or ask any question.';
 
       setMessages((prev) => [
@@ -1182,20 +985,20 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
                   ? 'עוזר ה-AI נעול - לחץ לאימות 4 ספרות במייל'
                   : 'AI Concierge Locked - Click to verify with 4-digit code'
                 : isHe
-                ? 'פתח עוזר וירטואלי חכם | TECH SELECT AI'
+                ? 'פתח עוזר וירטואלי חכם | TECH-SELECT AI'
                 : 'Open AI Assistant'
             }
             aria-label={isHe ? 'עוזר וירטואלי חכם' : 'AI Assistant'}
           >
             {/* Status Icon - ONLY this circle rolls and rotates rightwards! */}
             <div className="relative flex items-center justify-center shrink-0 animate-roll-in-from-left">
-              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full p-[1.5px] shadow-sm bg-gradient-to-tr from-cyan-500 via-sky-500 to-indigo-600">
-                <div className={`w-full h-full rounded-full overflow-hidden flex items-center justify-center ${isDark ? 'bg-slate-950' : 'bg-white'}`}>
-                  <Sparkles className="w-4 h-4 sm:w-4.5 sm:h-4.5 text-sky-400 group-hover:scale-110 transition-transform duration-300" />
+              <div className="w-8 h-8 rounded-full p-[1.5px] shadow-sm bg-gradient-to-tr from-cyan-500 via-sky-500 to-indigo-600">
+                <div className={`w-full h-full rounded-full flex items-center justify-center ${isDark ? 'bg-slate-950' : 'bg-white'}`}>
+                  <Sparkles className="w-4 h-4 text-sky-400 transition-transform duration-300 group-hover:scale-115 group-hover:rotate-12" />
                 </div>
               </div>
-              <span className={`absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-white dark:ring-slate-900 ${isVerified ? 'bg-emerald-500' : 'bg-amber-500'}`}>
-                {isVerified && <span className="absolute inset-0 rounded-full animate-ping opacity-75 bg-emerald-400" />}
+              <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-white dark:ring-slate-900 bg-emerald-500">
+                <span className="absolute inset-0 rounded-full animate-ping opacity-75 bg-emerald-400" />
               </span>
             </div>
 
@@ -1246,83 +1049,101 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
           }`}
         >
           {/* Header */}
-          <div className={`px-4 sm:px-5 lg:px-4 py-3 sm:py-3.5 pt-[max(0.75rem,env(safe-area-inset-top))] border-b flex items-center justify-between shrink-0 backdrop-blur-md ${
-            isDark ? 'border-slate-800/80 bg-slate-900/80' : 'border-slate-100 bg-white/90'
+          <div className={`px-4 sm:px-6 lg:px-4 py-3 sm:py-3.5 pt-[max(0.75rem,env(safe-area-inset-top))] border-b flex items-center justify-between shrink-0 ${
+            isDark ? 'border-slate-800/80 bg-slate-900/60 lg:bg-slate-900/40' : 'border-slate-100 bg-slate-50/90 lg:bg-slate-50/70'
           }`}>
             <div className="flex items-center gap-3">
               <div className="relative">
-                <div className="w-9 h-9 sm:w-10 sm:h-10 lg:w-9 lg:h-9 rounded-2xl p-[1.5px] shadow-sm bg-gradient-to-tr from-cyan-500 via-sky-500 to-indigo-600 flex items-center justify-center">
+                <div className={`w-9 h-9 sm:w-10 sm:h-10 lg:w-9 lg:h-9 rounded-2xl p-[1.5px] shadow-sm ${
+                  !isVerified
+                    ? 'bg-gradient-to-tr from-amber-500 via-orange-500 to-sky-600'
+                    : 'bg-gradient-to-tr from-cyan-500 via-sky-500 to-indigo-600'
+                }`}>
                   <div className={`w-full h-full rounded-2xl flex items-center justify-center ${isDark ? 'bg-slate-950' : 'bg-white'}`}>
-                    <Sparkles className="w-4.5 h-4.5 sm:w-5 sm:h-5 text-sky-400" />
+                    {!isVerified ? (
+                      <Lock className="w-4 h-4 text-amber-400" />
+                    ) : (
+                      <Sparkles className="w-4 h-4 text-sky-400" />
+                    )}
                   </div>
                 </div>
-                <span className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full ring-2 ring-white dark:ring-slate-950 ${isVerified ? 'bg-emerald-500' : 'bg-amber-500'}`}>
-                  {isVerified && <span className="absolute inset-0 rounded-full animate-ping opacity-60 bg-emerald-400" />}
+                <span className={`absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full ring-2 ring-white dark:ring-slate-950 ${
+                  !isVerified ? 'bg-amber-500' : 'bg-emerald-500'
+                }`}>
+                  <span className={`absolute inset-0 rounded-full animate-ping opacity-60 ${
+                    !isVerified ? 'bg-amber-400' : 'bg-emerald-400'
+                  }`} />
                 </span>
               </div>
-
               <div>
-                <div className="flex items-center gap-1.5 sm:gap-2">
-                  <h3 className="font-bold text-xs sm:text-sm lg:text-xs leading-tight text-slate-900 dark:text-white">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-bold text-xs sm:text-sm lg:text-sm leading-tight text-slate-900 dark:text-white">
                     {!isVerified
-                      ? (isHe ? 'TECH SELECT AI | אימות זהות (4 ספרות)' : 'TECH SELECT AI | Identity Verification')
-                      : (isHe ? 'עוזר AI חכם | TECH-SELECT' : 'Smart AI Concierge | TECH-SELECT')}
+                      ? isHe
+                        ? 'אימות זהות מאובטח (4 ספרות)'
+                        : 'Secure 4-Digit Identity Gate'
+                      : isHe
+                      ? `העוזר של ${assignedTech.he}`
+                      : `Assistant of ${assignedTech.en}`}
                   </h3>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border flex items-center gap-1 ${
-                    !isVerified
-                      ? 'bg-amber-500/10 text-amber-500 border-amber-500/30'
-                      : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                  }`}>
-                    {!isVerified ? (
-                      <>
-                        <Lock className="w-2.5 h-2.5" />
-                        <span>{isHe ? 'נעול לאימות' : 'Locked'}</span>
-                      </>
-                    ) : (
-                      <>
-                        <Shield className="w-2.5 h-2.5 text-emerald-400" />
-                        <span>{isHe ? 'מאומת' : 'Verified'}</span>
-                      </>
-                    )}
-                  </span>
+                  {!isVerified ? (
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 dark:text-amber-400 border border-amber-500/20">
+                      🔒 {isHe ? 'נעול לאימות' : 'Locked'}
+                    </span>
+                  ) : isIncognito ? (
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-500 dark:text-amber-400 border border-amber-500/20" title={isHe ? 'גלישה בסתר זוהתה - שכבת אבטחה פעילה' : 'Private browsing detected'}>
+                      {isHe ? '🛡️ סתר מאובטח' : '🛡️ Incognito'}
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 dark:text-emerald-400 border border-emerald-500/20 flex items-center gap-1">
+                      <ShieldCheck className="w-3 h-3" />
+                      <span>{isHe ? 'מאומת' : 'Verified'}</span>
+                    </span>
+                  )}
                 </div>
-                <p className="text-[10px] sm:text-[11px] lg:text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 flex items-center gap-1">
-                  <span>Tech-Select Computer Services LTD</span>
-                  <span>•</span>
-                  <span>{isHe ? 'שירותי מחשוב והנדסת IT' : 'Managed IT & Systems'}</span>
+                <p className="text-[11px] sm:text-xs lg:text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  {!isVerified
+                    ? isHe
+                      ? 'טק-סלקט שירותי מחשוב בע"מ'
+                      : 'Tech-Select Computer Services LTD'
+                    : isHe
+                    ? 'מוקד תמיכה טכנולוגי | Tech-Select'
+                    : 'Tech Support Desk | Tech-Select'}
                 </p>
               </div>
             </div>
 
-            <div className="flex items-center gap-1 sm:gap-1.5">
+            <div className="flex items-center gap-1.5 sm:gap-2 lg:gap-1">
               {isVerified && (
                 <>
-                  <button
-                    onClick={() => setMessages([messages[0]])}
-                    type="button"
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                    title={isHe ? 'איפוס שיחה' : 'Reset Conversation'}
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                  </button>
+                  {messages.length > 1 && (
+                    <button
+                      onClick={() => setMessages([messages[0]])}
+                      className="p-2 sm:p-2.5 lg:p-2 rounded-full lg:rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors cursor-pointer"
+                      title={isHe ? 'איפוס שיחה' : 'Reset Conversation'}
+                      aria-label={isHe ? 'איפוס שיחה' : 'Reset Conversation'}
+                    >
+                      <RefreshCw className="w-4 h-4 sm:w-4.5 sm:h-4.5 lg:w-4 lg:h-4" />
+                    </button>
+                  )}
                   <button
                     onClick={handleLogout}
-                    type="button"
-                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors cursor-pointer"
-                    title={isHe ? 'התנתק מהעוזר' : 'Logout'}
+                    className="p-2 sm:p-2.5 lg:p-2 rounded-full lg:rounded-xl text-slate-400 hover:text-amber-500 hover:bg-amber-50 dark:hover:bg-amber-500/10 transition-colors cursor-pointer"
+                    title={isHe ? 'נעילה מחדש והתנתקות' : 'Lock & Sign Out'}
+                    aria-label={isHe ? 'נעילה מחדש' : 'Lock'}
                   >
-                    <LogOut className="w-4 h-4" />
+                    <LogOut className="w-4 h-4 sm:w-4.5 sm:h-4.5 lg:w-4 lg:h-4" />
                   </button>
                 </>
               )}
-
+              {/* Close Button: Noticeable, ergonomic touch target on mobile/tablet */}
               <button
                 onClick={() => setIsOpen(false)}
-                type="button"
-                className="w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 transition-all cursor-pointer active:scale-95 shrink-0"
+                className="w-8 h-8 sm:w-9 sm:h-9 lg:w-8 lg:h-8 rounded-full flex items-center justify-center text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white bg-slate-100 hover:bg-slate-200 dark:bg-slate-800/90 dark:hover:bg-slate-700 transition-all cursor-pointer active:scale-95 shrink-0"
                 title={isHe ? 'סגור חלון' : 'Close'}
+                aria-label={isHe ? 'סגור חלון' : 'Close'}
               >
-                <X className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
+                <X className="w-4.5 h-4.5 sm:w-5 sm:h-5 lg:w-4 lg:h-4" />
               </button>
             </div>
           </div>
@@ -1544,7 +1365,7 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
                     ) : (
                       <>
                         <CheckCircle2 className="w-4 h-4" />
-                        <span>{isHe ? 'אמת והפעל את עוזר ה-AI' : 'Verify & Unlock AI Concierge'}</span>
+                        <span>{isHe ? 'אמת ופתח את מוקד ה-AI' : 'Verify & Unlock AI Concierge'}</span>
                       </>
                     )}
                   </button>
@@ -1587,7 +1408,7 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
                     {isHe ? 'אימות הושלם בהצלחה!' : 'Identity Verified!'}
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    {isHe ? 'מפעיל את עוזר ה-AI של טק-סלקט...' : 'Unlocking Tech-Select AI Concierge...'}
+                    {isHe ? 'פותח את מוקד ה-AI של טק-סלקט...' : 'Unlocking Tech-Select AI Concierge...'}
                   </p>
                 </div>
               )}
@@ -1623,7 +1444,7 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
                             <span>
                               {msg.text.includes('נסגר') || msg.text.includes('נפתר') || msg.text.includes('שמחתי לעזור')
                                 ? (isHe ? 'קריאה תועדה ונסגרה בהצלחה במערכת:' : 'Resolved Ticket Recorded:')
-                                : (isHe ? 'מספר קריאה במערכת השירות:' : 'Ticket Number:')}
+                                : (isHe ? 'מספר קריאה במערכת המוקד:' : 'Ticket Number:')}
                             </span>
                           </div>
                           <div className="text-xl sm:text-2xl font-mono font-black text-white mt-1 tracking-wider">
@@ -1733,28 +1554,17 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
                       <div className="flex items-center justify-between gap-2 mt-2 pt-1 border-t border-black/5 dark:border-white/5 opacity-60 text-[10px] sm:text-[11px] lg:text-[10px]">
                         <span>{msg.time}</span>
                         {msg.sender === 'ai' && !msg.isStreaming && (
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => speakText(msg.text)}
-                              className="hover:opacity-100 transition-opacity flex items-center gap-1 cursor-pointer p-1 text-sky-400 hover:text-sky-300"
-                              title={isHe ? 'השמע תשובה זו בקול' : 'Play voice'}
-                            >
-                              <Volume2 className="w-3.5 h-3.5" />
-                              <span className="text-[10px] font-medium">{isHe ? 'השמע' : 'Voice'}</span>
-                            </button>
-                            <button
-                              onClick={() => copyToClipboard(msg.text, msg.id)}
-                              className="hover:opacity-100 transition-opacity flex items-center gap-0.5 cursor-pointer p-1"
-                              title={isHe ? 'העתק תשובה' : 'Copy'}
-                            >
-                              {copiedId === msg.id ? (
-                                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                              ) : (
-                                <Copy className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          </div>
+                          <button
+                            onClick={() => copyToClipboard(msg.text, msg.id)}
+                            className="hover:opacity-100 transition-opacity flex items-center gap-0.5 cursor-pointer p-1"
+                            title={isHe ? 'העתק תשובה' : 'Copy'}
+                          >
+                            {copiedId === msg.id ? (
+                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
                         )}
                       </div>
                     </div>
@@ -1816,30 +1626,12 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
                       type="text"
                       value={inputQuestion}
                       onChange={(e) => setInputQuestion(e.target.value)}
-                      placeholder={
-                        isHe
-                          ? 'LET THE AI WORK... תאר תקלה או שאל שאלה...'
-                          : 'LET THE AI WORK... Describe an issue or ask...'
-                      }
+                      placeholder="LET THE AI WORK... תאר תקלה או שאל שאלה..."
                       disabled={isLoading}
                       className={`flex-1 py-1.5 px-2 bg-transparent text-base lg:text-[13px] focus:outline-none ${
                         isDark ? 'text-slate-100 placeholder:text-slate-500' : 'text-slate-900 placeholder:text-slate-400'
                       }`}
                     />
-
-                    {/* Quick Mute/Unmute audio button inside input */}
-                    <button
-                      type="button"
-                      onClick={handleToggleVoiceMute}
-                      className={`p-1.5 rounded-full transition-colors cursor-pointer shrink-0 ${
-                        isVoiceMuted 
-                          ? 'text-rose-400 hover:text-rose-300 hover:bg-rose-500/10' 
-                          : 'text-slate-400 hover:text-sky-400 hover:bg-slate-800/40'
-                      }`}
-                      title={isVoiceMuted ? (isHe ? 'בטל השתקת קול' : 'Unmute voice') : (isHe ? 'השתק קול' : 'Mute voice')}
-                    >
-                      {isVoiceMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-                    </button>
 
                     <button
                       type="submit"
@@ -1861,7 +1653,7 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
                   <span className="text-[10px] sm:text-[11px] lg:text-[10px] text-slate-400 dark:text-slate-500 font-medium tracking-wide">
                     {isHe
                       ? 'מופעל באמצעות Gemini • Zero UI • אימות OTP מאובטח'
-                      : 'Powered by Gemini • Zero UI • Secure OTP Verified'}
+                      : 'Powered by Gemini • Zero UI • Secure OTP Verification'}
                   </span>
                 </div>
               </div>

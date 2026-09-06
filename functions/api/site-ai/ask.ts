@@ -564,7 +564,7 @@ ${isGuest ? `
           parts: [{ text: userQuestion || "מה אתם עושים בטק-סלקט?" }],
         });
 
-        const models = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"];
+        const models = ["gemini-3.8-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"];
         for (const model of models) {
           try {
             const apiRes = await fetch(

@@ -24,7 +24,7 @@ export const ManagedITSection: React.FC = () => {
         'FinOps & License Optimization: Rigorous SaaS subscription governance to prevent duplicate payments & inactive seats',
         'Tailored IT infrastructure for clear and isolated Air-Gap networks',
         'Engineers and network administrators with valid active security clearances',
-        'Fast guaranteed SLA support & dedicated engineering for all employees',
+        'Fast guaranteed SLA support - live human helpdesk for all employees',
         'vCISO services & executive board advisory for budget & security roadmap'
       ];
 
@@ -172,7 +172,7 @@ export const ManagedITSection: React.FC = () => {
                   isDark ? 'bg-white/[0.03] border-white/[0.06] text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-800'
                 }`}>
                   <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                  <span>{isHe ? 'אחריות שוטפת ב-SLA' : 'Enterprise SLA Support'}</span>
+                  <span>{isHe ? 'אמנת שירות ו-SLA הנדסי' : 'Contractual Engineering SLA'}</span>
                 </div>
               </div>
             </div>

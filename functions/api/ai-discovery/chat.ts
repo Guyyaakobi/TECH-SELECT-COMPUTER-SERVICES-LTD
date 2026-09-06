@@ -104,10 +104,9 @@ export async function handleChat(request: Request, env: Env, _ctx?: any): Promis
     let usedModel = "";
 
     const requestedModel = body?.model;
-    const defaultModels = ["gemini-3.8-flash", "gemini-3.6-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
-    const deprecated = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash", "gemini-2.0-pro", "gemini-pro"];
-    const sanitizedModel = requestedModel && !deprecated.includes(requestedModel) ? requestedModel : "gemini-3.8-flash";
-    const candidateModels = [sanitizedModel, ...defaultModels.filter((m) => m !== sanitizedModel)];
+    const candidateModels = requestedModel
+      ? [requestedModel, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash"]
+      : ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash"];
 
     if (apiKey) {
       // Clean, sanitize and format messages

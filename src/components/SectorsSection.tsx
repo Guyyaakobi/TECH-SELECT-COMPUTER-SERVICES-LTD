@@ -79,7 +79,7 @@ export const SectorsSection: React.FC = () => {
           subtitle: 'Advanced cybersecurity, regulator & cyber insurance compliance',
           challenges: [
             'Targeted phishing attacks and financial data breach risks',
-            'Strict insurance prerequisites (AI EDR, 24/7 SOC, MFA)',
+            'Strict insurance prerequisites (AI EDR, SOC Monitoring, MFA)',
             'Complex permission matrices across accounting & trading platforms'
           ],
           solutions: [

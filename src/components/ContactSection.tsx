@@ -125,12 +125,12 @@ export const ContactSection: React.FC<ContactSectionProps> = ({ onOpenPrivacy })
     ? [
         { days: "ראשון - חמישי", time: "08:30 - 18:00" },
         { days: "שישי", time: "08:30 - 13:00" },
-        { days: "שבת / חירום", time: "תמיכה 24/7 למנויים" },
+        { days: "שבת / חירום", time: "מעטפת חירום וזמינות ב-SLA" },
       ]
     : [
         { days: "Sun - Thu", time: "08:30 - 18:00" },
         { days: "Friday", time: "08:30 - 13:00" },
-        { days: "Sat / Emergency", time: "24/7 SLA Hotline" },
+        { days: "Sat / Emergency", time: "Emergency SLA Coverage" },
       ];
 
   return (

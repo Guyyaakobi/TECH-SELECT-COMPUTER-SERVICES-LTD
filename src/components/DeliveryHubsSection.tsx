@@ -303,7 +303,7 @@ export const DeliveryHubsSection: React.FC<DeliveryHubsSectionProps> = ({
                   </div>
                   <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium backdrop-blur-md bg-emerald-950/70 text-emerald-300 border border-emerald-500/30">
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span>{isHe ? 'צוות הנדסה פנימי Tier-3/4 ואחריות SLA מלאה' : 'In-House Tier-3/4 Engineering & Strict SLA'}</span>
+                    <span>{isHe ? 'צוות הנדסה פנימי Tier-3/4 זמין וייעודי' : 'Dedicated In-House Tier-3/4 Engineering'}</span>
                   </div>
                 </div>
               </div>
@@ -505,8 +505,8 @@ export const DeliveryHubsSection: React.FC<DeliveryHubsSectionProps> = ({
                 </h3>
                 <p className={`text-xs sm:text-sm leading-relaxed ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>
                   {isHe 
-                    ? 'תמיכה הנדסית אישית ומענה מהיר, ניהול שרתים ותחנות קצה, גיבויים שוטפים וליווי vCIO צמוד.'
-                    : 'Dedicated engineering support with rapid SLA, proactive server management, endpoints, regular backups, and executive vCIO.'}
+                    ? 'מענה הנדסי ישיר ומקצועי, ניהול שרתים ותחנות קצה, גיבויים שוטפים וליווי vCIO צמוד.'
+                    : 'Dedicated engineering support, proactive server management, endpoints, regular backups, and executive vCIO.'}
                 </p>
               </div>
 

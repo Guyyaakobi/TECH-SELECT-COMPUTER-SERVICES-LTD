@@ -220,7 +220,7 @@ function MainApp() {
           {currentPage === 'services' && (
             <>
               <ServicesSection onSelectForQuote={handleSelectServiceForQuote} />
-              <StrategicDifferentiatorsBanner showHardwareMarquee={false} />
+              <StrategicDifferentiatorsBanner />
             </>
           )}
 
