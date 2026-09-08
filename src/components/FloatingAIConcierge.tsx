@@ -259,19 +259,19 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
   const rotatingPrompts = useMemo(() => {
     if (isHe) {
       return [
-        'תאר תקלה או שאל שאלה',
-        'פתיחת קריאת שירות מהירה',
-        'בדיקת סטטוס קריאה במערכת',
-        'ייעוץ מחשוב ענן וסייבר',
-        'הפעלת סימולטור מנכ"לים',
+        'תאר תקלה או שאלה',
+        'פתיחת קריאת שירות',
+        'בדיקת סטטוס קריאה',
+        'ייעוץ ענן וסייבר',
+        'סימולטור אסון מנכ"ל',
       ];
     }
     return [
       'Describe an issue or ask',
-      'Open a fast service ticket',
-      'Check live ticket status',
-      'Cloud & Cyber consultation',
-      'Launch CEO Disaster Sim',
+      'Open a service ticket',
+      'Check ticket status',
+      'Cloud & Cyber advice',
+      'CEO Disaster Sim',
     ];
   }, [isHe]);
 
@@ -978,7 +978,7 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
             onKeyDown={(e) => e.key === 'Enter' && handleOpenConcierge()}
             className={`group relative flex items-center rounded-full cursor-pointer transition-all duration-700 ease-out shadow-2xl backdrop-blur-2xl border active:scale-98 select-none ${
               isPillExpanded
-                ? 'w-[min(350px,calc(100vw-1.5rem))] sm:w-[360px] h-[50px] px-3.5 gap-2.5'
+                ? 'w-[min(375px,calc(100vw-1.5rem))] sm:w-[385px] h-[50px] px-3 gap-2'
                 : 'w-12 h-12 p-0 justify-center gap-0'
             } ${
               isDark
@@ -1023,11 +1023,11 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
                   <AnimatePresence mode="wait">
                     <motion.span
                       key={placeholderIndex}
-                      initial={{ opacity: 0, y: 7 }}
+                      initial={{ opacity: 0, y: 6 }}
                       animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -7 }}
-                      transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
-                      className="absolute inset-0 flex items-center text-xs sm:text-[13px] font-medium text-slate-700 dark:text-slate-200 truncate"
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+                      className="absolute inset-0 flex items-center text-[11px] sm:text-[11.5px] font-medium text-slate-700 dark:text-slate-200 truncate"
                     >
                       {rotatingPrompts[placeholderIndex]}
                     </motion.span>
@@ -1039,12 +1039,12 @@ export const FloatingAIConcierge: React.FC<FloatingAIConciergeProps> = ({
             {/* Action Arrow Icon Button */}
             <div
               className={`rounded-full flex items-center justify-center shrink-0 transition-all duration-500 ease-out ${
-                isPillExpanded ? 'w-7 h-7 opacity-100 scale-100' : 'w-0 h-0 opacity-0 scale-0 pointer-events-none'
+                isPillExpanded ? 'w-6 h-6 opacity-100 scale-100' : 'w-0 h-0 opacity-0 scale-0 pointer-events-none'
               } ${
                 isDark ? 'bg-white/5 text-slate-400 group-hover:text-sky-400 group-hover:bg-sky-500/20' : 'bg-slate-100 text-slate-500 group-hover:text-sky-600 group-hover:bg-sky-50'
               }`}
             >
-              {isHe ? <ArrowLeft className="w-3.5 h-3.5" /> : <ArrowRight className="w-3.5 h-3.5" />}
+              {isHe ? <ArrowLeft className="w-3 h-3" /> : <ArrowRight className="w-3 h-3" />}
             </div>
           </div>
         </div>
