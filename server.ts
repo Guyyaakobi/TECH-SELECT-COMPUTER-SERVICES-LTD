@@ -1639,35 +1639,35 @@ ${clientInputText || JSON.stringify(formData || {}, null, 2)}
 הנחיות קריטיות:
 1. נתח בכובד ראש ובדיוק מרבי את המערכות שהוזכרו (למשל: Priority, SAP, SharePoint, Salesforce, שרתי קבצים וכו').
 2. זהה את צווארי הבקבוק המדויקים, שעות העבודה המבוזבזות והעלויות התפעוליות.
-3. חשב הערכת חיסכון שנתית וחודשית ריאלית, הגיונית ולא מנופחת ב-₪.
-4. נסח 3 יוזמות AI מעשיות המותאמות ספציפית לתשובות שניתנו (Use Cases מפורטים, לא סיסמאות גנריות).
+3. חשב הערכת חיסכון שנתית וחודשית ריאלית, הגיונית ולא מנופחת ב-₪. 
+4. נסח 3 יוזמות AI מעשיות המותאמות ספציפית לתשובות שניתנו (Use Cases מפורטים, לא סיסמאות גנריות). השתמש בנתונים האמיתיים שעלו מהניתוח (אל תעתיק את מספרי הדוגמה).
 5. בנה תוכנית יישום מדורגת ל-90 יום (Roadmap).
 
-עליך להחזיר אך ורק אובייקט JSON תקני ותקף (ללא שום תווים מסביב, ללא markdown codeblocks):
+עליך להחזיר אך ורק אובייקט JSON תקני ותקף המייצג את המבנה הבא (חובה לחשב את המספרים באופן דינמי בהתאם לנתונים, אל תשתמש במספרים המופיעים כאן כדוגמה!):
 {
-  "executiveSummary": "תמצית מנהלים מעמיקה, עניינית, כנה ואסטרטגית המנתחת את מצב החברה על בסיס דברי המנכ"ל, מציגה את פוטנציאל ההתייעלות וממליצה על פריסה מאובטחת.",
-  "overallReadinessScore": 82,
-  "securityReadinessScore": 86,
-  "automationPotentialScore": 88,
-  "shadowAIRiskScore": 35,
+  "executiveSummary": "תמצית מנהלים מעמיקה, עניינית, כנה ואסטרטגית המנתחת את מצב החברה על בסיס דברי המנכ\"ל, מציגה את פוטנציאל ההתייעלות וממליצה על פריסה מאובטחת.",
+  "overallReadinessScore": <number 0-100, dynamic calculation>,
+  "securityReadinessScore": <number 0-100, dynamic calculation>,
+  "automationPotentialScore": <number 0-100, dynamic calculation>,
+  "shadowAIRiskScore": <number 0-100, dynamic calculation>,
   "financialAnalysis": {
-    "estimatedMonthlyHoursSaved": 240,
-    "estimatedYearlySavingsNIS": 288000,
-    "paybackPeriodMonths": 2.8,
-    "efficiencyGainPercent": 32,
+    "estimatedMonthlyHoursSaved": <number, dynamic calculation>,
+    "estimatedYearlySavingsNIS": <number, dynamic calculation>,
+    "paybackPeriodMonths": <number, dynamic calculation>,
+    "efficiencyGainPercent": <number, dynamic calculation>,
     "summaryExplanation": "הסבר מנומק על חישוב החיסכון וההחזר המבוסס על שחרור שעות עבודה ידניות של הצוות."
   },
   "opportunities": [
     {
       "id": "opp-1",
-      "title": "שם יוזמה 1 מותאמת אישית",
-      "category": "Enterprise RAG",
-      "problemDescription": "תיאור הבעיה הספציפית שעלתה מדברי המנכ"ל",
+      "title": "שם יוזמה 1 מותאמת אישית ללקוח",
+      "category": "Enterprise RAG / Automation / Security etc",
+      "problemDescription": "תיאור הבעיה הספציפית שעלתה מדברי המנכ\"ל",
       "aiSolution": "הפתרון המדויק מבית Tech-Select",
-      "impact": "Critical",
-      "complexity": "Medium",
+      "impact": "Critical / High / Medium",
+      "complexity": "High / Medium / Low",
       "estimatedTimeToValue": "3-4 שבועות",
-      "estimatedHoursSavedMonthly": 100,
+      "estimatedHoursSavedMonthly": <number, dynamic calculation>,
       "recommendedTools": ["Tech-Select Private RAG", "Entra ID SSO", "Vector DB"]
     },
     {
@@ -1679,7 +1679,7 @@ ${clientInputText || JSON.stringify(formData || {}, null, 2)}
       "impact": "High",
       "complexity": "Medium",
       "estimatedTimeToValue": "4-6 שבועות",
-      "estimatedHoursSavedMonthly": 85,
+      "estimatedHoursSavedMonthly": <number, dynamic calculation>,
       "recommendedTools": ["Document AI", "ERP API Integration", "Validation Rules"]
     },
     {
@@ -1691,7 +1691,7 @@ ${clientInputText || JSON.stringify(formData || {}, null, 2)}
       "impact": "Critical",
       "complexity": "Low",
       "estimatedTimeToValue": "1-2 שבועות",
-      "estimatedHoursSavedMonthly": 55,
+      "estimatedHoursSavedMonthly": <number, dynamic calculation>,
       "recommendedTools": ["AI Gateway", "DLP Sanitizer", "Zero-Retention DPA"]
     }
   ],

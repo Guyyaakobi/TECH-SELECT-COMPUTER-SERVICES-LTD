@@ -112,17 +112,18 @@ export async function handleGenerateReport(request: Request, env: Env, _ctx?: an
 ${userText}
 """
 
-עליך להחזיר אך ורק JSON תקין (ללא שום תווים נוספים) במבנה הבא:
+עליך להחזיר אך ורק JSON תקין (ללא שום תווים נוספים) המייצג את המבנה הבא (חובה לחשב את המספרים באופן דינמי בהתאם לנתונים, אל תשתמש במספרים המופיעים כאן כדוגמה!):
 {
   "executiveSummary": "תמצית מנהלים מעמיקה, עניינית ומותאמת אישית לחברה ${finalCompany}",
-  "overallReadinessScore": 84,
-  "securityReadinessScore": 88,
-  "automationPotentialScore": 86,
+  "overallReadinessScore": <number 0-100, dynamic calculation>,
+  "securityReadinessScore": <number 0-100, dynamic calculation>,
+  "automationPotentialScore": <number 0-100, dynamic calculation>,
+  "shadowAIRiskScore": <number 0-100, dynamic calculation>,
   "financialAnalysis": {
-    "estimatedMonthlyHoursSaved": 240,
-    "estimatedYearlySavingsNIS": 288000,
-    "paybackPeriodMonths": 2.8,
-    "efficiencyGainPercent": 32,
+    "estimatedMonthlyHoursSaved": <number, dynamic calculation>,
+    "estimatedYearlySavingsNIS": <number, dynamic calculation>,
+    "paybackPeriodMonths": <number, dynamic calculation>,
+    "efficiencyGainPercent": <number, dynamic calculation>,
     "summaryExplanation": "חישוב חיסכון מבוסס שחרור שעות עבודה ידניות"
   },
   "opportunities": [
@@ -135,7 +136,7 @@ ${userText}
       "impact": "Critical",
       "complexity": "Medium",
       "estimatedTimeToValue": "3-4 שבועות",
-      "estimatedHoursSavedMonthly": 100,
+      "estimatedHoursSavedMonthly": <number, dynamic calculation>,
       "recommendedTools": ["Tech-Select Private RAG", "Entra ID SSO", "Vector DB"]
     },
     {
@@ -147,7 +148,7 @@ ${userText}
       "impact": "High",
       "complexity": "Medium",
       "estimatedTimeToValue": "4-6 שבועות",
-      "estimatedHoursSavedMonthly": 85,
+      "estimatedHoursSavedMonthly": <number, dynamic calculation>,
       "recommendedTools": ["Document AI", "ERP API Integration"]
     },
     {
@@ -159,7 +160,7 @@ ${userText}
       "impact": "Critical",
       "complexity": "Low",
       "estimatedTimeToValue": "1-2 שבועות",
-      "estimatedHoursSavedMonthly": 55,
+      "estimatedHoursSavedMonthly": <number, dynamic calculation>,
       "recommendedTools": ["AI Gateway", "DLP Sanitizer", "Zero-Retention DPA"]
     }
   ],
