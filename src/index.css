@@ -1,0 +1,406 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Heebo', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-heading: 'Heebo', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Heebo', 'Plus Jakarta Sans', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+  
+  html {
+    scroll-behavior: smooth;
+    font-family: 'Heebo', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    letter-spacing: -0.015em;
+  }
+
+  body {
+    background-color: #05070c;
+    color: #f1f5f9;
+    font-family: 'Heebo', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow-x: hidden;
+    transition: background-color 0.3s cubic-bezier(0.16, 1, 0.3, 1), color 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Headings typography: authoritative, clean, upright */
+  h1, h2, h3, h4, h5, h6, .font-heading {
+    font-family: 'Heebo', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-style: normal;
+    letter-spacing: -0.025em;
+  }
+
+  /* Crisp, High-End Executive Light Theme Canvas (calibrated slightly deeper for sharp contrast) */
+  html.light body {
+    background-color: #f3f5f8;
+    color: #080c14;
+  }
+}
+
+/* Luxury Technical Grid Pattern */
+@keyframes rollInFromLeft {
+  0% {
+    opacity: 0;
+    transform: translate3d(-100vw, 0, 0) rotate(-720deg) scale(0.65);
+  }
+  65% {
+    opacity: 1;
+    transform: translate3d(25px, 0, 0) rotate(16deg) scale(1.05);
+  }
+  85% {
+    transform: translate3d(-8px, 0, 0) rotate(-5deg) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+  }
+}
+
+.animate-roll-in-from-left {
+  animation: rollInFromLeft 1.25s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.bg-tech-grid {
+  background-size: 48px 48px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+}
+
+html.light .bg-tech-grid {
+  background-size: 48px 48px;
+  background-image: 
+    linear-gradient(to right, rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 23, 42, 0.035) 1px, transparent 1px);
+}
+
+/* Executive Bidi Utilities */
+.dir-ltr {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+.dir-rtl {
+  direction: rtl;
+  unicode-bidi: isolate;
+}
+
+/* Floating Glass Header */
+.header-glass-pill {
+  background: rgba(8, 11, 18, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.85);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html.light .header-glass-pill {
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 12px 32px -10px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+/* Executive Scrollbars */
+::-webkit-scrollbar {
+  width: 7px;
+}
+::-webkit-scrollbar-track {
+  background: #05070c;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e2433;
+  border-radius: 9999px;
+  border: 2px solid #05070c;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3b82f6;
+}
+
+html.light ::-webkit-scrollbar-track {
+  background: #f3f5f8;
+}
+html.light ::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border: 2px solid #f3f5f8;
+}
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: #2563eb;
+}
+
+/* Subtle Floating Animations */
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes luxuryGlow {
+  0%, 100% { opacity: 0.3; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.02); }
+}
+
+.animate-float-slow {
+  animation: floatSlow 7s ease-in-out infinite;
+}
+
+.animate-luxury-glow {
+  animation: luxuryGlow 14s ease-in-out infinite;
+}
+
+/* High-End Enterprise Card Surfaces (Frosted Glass / Glassmorphism) */
+.gemini-glass,
+.frosted-glass-panel {
+  background: rgba(10, 16, 32, 0.62);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.38), inset 0 1px 0 0 rgba(255, 255, 255, 0.14);
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+html.light .gemini-glass,
+html.light .frosted-glass-panel {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  box-shadow: 0 8px 30px 0 rgba(15, 23, 42, 0.06), inset 0 1px 0 0 rgba(255, 255, 255, 0.95);
+}
+
+.gemini-card,
+.frosted-glass-card {
+  background: rgba(10, 16, 32, 0.58);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1.25rem;
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.4), inset 0 1px 0 0 rgba(255, 255, 255, 0.14);
+}
+
+.gemini-card:hover,
+.frosted-glass-card:hover {
+  background: rgba(15, 24, 48, 0.72);
+  border-color: rgba(56, 189, 248, 0.5);
+  box-shadow: 0 16px 45px -10px rgba(0, 0, 0, 0.65), 0 0 30px rgba(56, 189, 248, 0.18), inset 0 1px 0 0 rgba(255, 255, 255, 0.25);
+  transform: translateY(-2px);
+}
+
+html.light .gemini-card,
+html.light .frosted-glass-card {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  box-shadow: 0 8px 30px 0 rgba(15, 23, 42, 0.06), inset 0 1px 0 0 rgba(255, 255, 255, 0.95);
+}
+
+html.light .gemini-card:hover,
+html.light .frosted-glass-card:hover {
+  background: rgba(255, 255, 255, 0.9);
+  border-color: rgba(37, 99, 235, 0.45);
+  box-shadow: 0 16px 40px -8px rgba(37, 99, 235, 0.14), inset 0 1px 0 0 rgba(255, 255, 255, 1);
+  transform: translateY(-2px);
+}
+
+/* Modern High-End Brushed Platinum Titanium Typography (No cliché AI blue) */
+.gemini-text-gradient {
+  background: linear-gradient(135deg, #ffffff 0%, #f8fafc 45%, #cbd5e1 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.4));
+}
+
+html.light .gemini-text-gradient {
+  background: linear-gradient(135deg, #020617 0%, #0f172a 55%, #334155 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: none;
+}
+
+/* High-clarity razor-sharp typography for navigation elements */
+.nav-crisp-text {
+  -webkit-font-smoothing: subpixel-antialiased;
+  -moz-osx-font-smoothing: auto;
+  text-rendering: optimizeLegibility;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  letter-spacing: -0.012em;
+}
+
+/* =========================================================================
+   Linear-Style Cinematic Entrance Animations
+   Blank Canvas -> Gradual, Slow, Staggered Text & Typography Reveal
+   ========================================================================= */
+
+@keyframes linearFadeDown {
+  0% {
+    opacity: 0;
+    transform: translateY(-26px);
+    filter: blur(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes linearTitleReveal {
+  0% {
+    opacity: 0;
+    transform: translateY(45px) scale(0.96);
+    filter: blur(24px);
+  }
+  50% {
+    opacity: 0.6;
+    filter: blur(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes linearFadeUp {
+  0% {
+    opacity: 0;
+    transform: translateY(32px);
+    filter: blur(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes linearSoftScale {
+  0% {
+    opacity: 0;
+    transform: scale(0.94) translateY(22px);
+    filter: blur(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes linearBackgroundReveal {
+  0% {
+    opacity: 0;
+    transform: scale(1.05);
+    filter: blur(12px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: blur(0);
+  }
+}
+
+.animate-linear-bg {
+  animation: linearBackgroundReveal 2.4s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
+}
+
+/* Slower, ultra-smooth cubic-bezier timing curves (1.5s - 2.4s reveal cadence) */
+.animate-linear-navbar {
+  animation: linearFadeDown 1.2s cubic-bezier(0.16, 1, 0.3, 1) 0.25s both;
+}
+
+.animate-linear-eyebrow {
+  animation: linearFadeUp 1.3s cubic-bezier(0.16, 1, 0.3, 1) 0.5s both;
+}
+
+.animate-linear-title {
+  animation: linearTitleReveal 2.1s cubic-bezier(0.16, 1, 0.3, 1) 0.75s both;
+}
+
+.animate-linear-subtitle {
+  animation: linearFadeUp 1.7s cubic-bezier(0.16, 1, 0.3, 1) 1.15s both;
+}
+
+.animate-linear-cta {
+  animation: linearSoftScale 1.5s cubic-bezier(0.16, 1, 0.3, 1) 1.5s both;
+}
+
+.animate-linear-telemetry {
+  animation: linearFadeUp 1.5s cubic-bezier(0.16, 1, 0.3, 1) 1.85s both;
+}
+
+/* =========================================================================
+   Enterprise Logos Marquee Animations
+   Smooth infinite running ribbon with pause on hover
+   ========================================================================= */
+
+@keyframes marqueeScroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes marqueeScrollReverse {
+  0% {
+    transform: translateX(-50%);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+.animate-marquee {
+  display: flex;
+  width: max-content;
+  animation: marqueeScroll 38s linear infinite;
+}
+
+.animate-marquee:hover {
+  animation-play-state: paused;
+}
+
+.animate-marquee-reverse {
+  display: flex;
+  width: max-content;
+  animation: marqueeScrollReverse 42s linear infinite;
+}
+
+.animate-marquee-reverse:hover {
+  animation-play-state: paused;
+}
+
+/* Gemini Sky-Blue Delicate Atmospheric Aura (Blooms softly behind top text) */
+@keyframes geminiSkyBloom {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -8%) scale(0.88);
+    filter: blur(45px);
+  }
+  30% {
+    opacity: 0.2;
+    filter: blur(60px);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+    filter: blur(85px);
+  }
+}
+
+.animate-gemini-sky-bloom {
+  animation: geminiSkyBloom 1.8s cubic-bezier(0.16, 1, 0.3, 1) 0.35s both;
+}
+
+
+

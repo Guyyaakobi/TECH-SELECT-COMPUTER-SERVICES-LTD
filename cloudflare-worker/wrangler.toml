@@ -1,0 +1,9 @@
+name = "tech-select-worker"
+main = "worker.ts"
+compatibility_date = "2024-09-01"
+
+# Environment variables & secrets (configure in Cloudflare Dashboard or with `wrangler secret put`)
+# ATERA_API_KEY
+# TENANT_ID
+# CLIENT_ID
+# CLIENT_SECRET

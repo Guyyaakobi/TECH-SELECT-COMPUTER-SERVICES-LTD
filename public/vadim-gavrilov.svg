@@ -1,0 +1,156 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <radialGradient id="vadimBg" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#1e2438" />
+      <stop offset="60%" stop-color="#0e1322" />
+      <stop offset="100%" stop-color="#04060d" />
+    </radialGradient>
+
+    <!-- Studio Backlight -->
+    <radialGradient id="vadimRim" cx="50%" cy="30%" r="50%">
+      <stop offset="0%" stop-color="#6366f1" stop-opacity="0.25" />
+      <stop offset="60%" stop-color="#06b6d4" stop-opacity="0.15" />
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Skin Tone Gradients -->
+    <linearGradient id="vadimSkin" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f6dcd0" />
+      <stop offset="40%" stop-color="#edc5b5" />
+      <stop offset="85%" stop-color="#dca996" />
+      <stop offset="100%" stop-color="#c98f7a" />
+    </linearGradient>
+
+    <linearGradient id="vadimSkinShadow" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#000000" stop-opacity="0" />
+      <stop offset="100%" stop-color="#8a5336" stop-opacity="0.3" />
+    </linearGradient>
+
+    <!-- Hair Gradient -->
+    <linearGradient id="vadimHair" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#382e2c" />
+      <stop offset="40%" stop-color="#241c1a" />
+      <stop offset="100%" stop-color="#120c0a" />
+    </linearGradient>
+
+    <!-- Executive Navy Jacket Gradient -->
+    <linearGradient id="vadimJacket" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e2d4a" />
+      <stop offset="50%" stop-color="#131c30" />
+      <stop offset="100%" stop-color="#090e1a" />
+    </linearGradient>
+
+    <filter id="softBlurVadim" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur stdDeviation="1.5" />
+    </filter>
+  </defs>
+
+  <!-- Background Studio Surface -->
+  <rect width="400" height="400" fill="url(#vadimBg)" />
+  <circle cx="200" cy="180" r="160" fill="url(#vadimRim)" />
+
+  <!-- Shoulders & Dark Executive Jacket -->
+  <g id="clothing">
+    <!-- Inner Dark Shirt -->
+    <path d="M 165 285 L 200 375 L 235 285 Z" fill="#0f1624" />
+    <line x1="200" y1="310" x2="200" y2="400" stroke="#050a12" stroke-width="2" />
+    <circle cx="200" cy="345" r="3" fill="#334155" />
+
+    <!-- Jacket Body -->
+    <path d="M 40 400 C 50 325 95 295 145 282 L 200 318 L 255 282 C 305 295 350 325 360 400 Z" fill="url(#vadimJacket)" />
+    
+    <!-- Left Lapel -->
+    <path d="M 145 282 L 195 365 L 170 375 L 122 300 Z" fill="#253556" stroke="#0b1220" stroke-width="1.5" />
+    <!-- Right Lapel -->
+    <path d="M 255 282 L 205 365 L 230 375 L 278 300 Z" fill="#253556" stroke="#0b1220" stroke-width="1.5" />
+  </g>
+
+  <!-- Neck -->
+  <g id="neck">
+    <path d="M 164 218 L 164 282 Q 200 302 236 282 L 236 218 Z" fill="url(#vadimSkin)" />
+    <path d="M 164 218 L 164 250 Q 200 270 236 250 L 236 218 Z" fill="url(#vadimSkinShadow)" opacity="0.55" />
+    <path d="M 196 252 Q 200 256 204 252" fill="none" stroke="#9e5c3e" stroke-width="1.8" stroke-linecap="round" />
+  </g>
+
+  <!-- Head & Ears -->
+  <g id="head">
+    <!-- Left Ear -->
+    <path d="M 126 178 C 117 178 117 212 129 216 C 130 212 130 188 129 178 Z" fill="#dca996" />
+    <path d="M 125 186 C 120 188 120 202 126 207" fill="none" stroke="#a06042" stroke-width="1.8" />
+
+    <!-- Right Ear -->
+    <path d="M 274 178 C 283 178 283 212 271 216 C 270 212 270 188 271 178 Z" fill="#dca996" />
+    <path d="M 275 186 C 280 188 280 202 274 207" fill="none" stroke="#a06042" stroke-width="1.8" />
+
+    <!-- Face Shape (Vadim's gentle structured oval face) -->
+    <path d="M 130 162 C 128 108 160 92 200 92 C 240 92 272 108 270 162 C 270 205 258 248 200 252 C 142 248 130 205 130 162 Z" fill="url(#vadimSkin)" />
+    <path d="M 130 162 C 128 108 160 92 200 92 C 240 92 272 108 270 162 C 270 205 258 248 200 252 C 142 248 130 205 130 162 Z" fill="url(#vadimSkinShadow)" />
+  </g>
+
+  <!-- Hair (Neat, Short Executive Dark Hair with natural texture) -->
+  <g id="hair">
+    <path d="M 128 152 C 124 100 148 66 200 64 C 252 66 276 100 272 152 C 266 130 258 106 242 94 C 226 82 210 80 200 80 C 190 80 174 82 158 94 C 142 106 134 130 128 152 Z" fill="url(#vadimHair)" />
+    <!-- Styled Texture Peaks -->
+    <path d="M 152 90 Q 170 70 188 78 Q 200 66 215 76 Q 232 68 248 88 Q 225 80 200 82 Q 175 80 152 90 Z" fill="#2d2220" />
+    <!-- Sideburns -->
+    <path d="M 129 146 L 127 175 L 133 173 L 133 142 Z" fill="#1e1514" />
+    <path d="M 271 146 L 273 175 L 267 173 L 267 142 Z" fill="#1e1514" />
+  </g>
+
+  <!-- Eyes, Eyebrows & Signature Glasses -->
+  <g id="eyes_brows_glasses">
+    <!-- Eyebrows (Natural dark masculine arch) -->
+    <path d="M 148 152 C 160 146 178 146 186 150 C 178 149 160 149 148 154 Z" fill="#1a1413" />
+    <path d="M 252 152 C 240 146 222 146 214 150 C 222 149 240 149 252 154 Z" fill="#1a1413" />
+
+    <!-- Left Eye White & Iris (Brown) -->
+    <path d="M 155 167 Q 169 159 183 167 Q 169 174 155 167 Z" fill="#ffffff" stroke="#5d3928" stroke-width="1.1" />
+    <circle cx="169" cy="167" r="4.8" fill="#382115" />
+    <circle cx="169" cy="167" r="2.8" fill="#0d0805" />
+    <circle cx="167.6" cy="165.5" r="1.1" fill="#ffffff" />
+    <path d="M 154 163 Q 169 157 183 163" fill="none" stroke="#75432c" stroke-width="1.1" />
+
+    <!-- Right Eye White & Iris -->
+    <path d="M 217 167 Q 231 159 245 167 Q 231 174 217 167 Z" fill="#ffffff" stroke="#5d3928" stroke-width="1.1" />
+    <circle cx="231" cy="167" r="4.8" fill="#382115" />
+    <circle cx="231" cy="167" r="2.8" fill="#0d0805" />
+    <circle cx="229.6" cy="165.5" r="1.1" fill="#ffffff" />
+    <path d="M 217 163 Q 231 157 246 163" fill="none" stroke="#75432c" stroke-width="1.1" />
+
+    <!-- Vadim's Rectangular Modern Dark Glasses -->
+    <!-- Bridge -->
+    <path d="M 186 163 Q 200 160 214 163" fill="none" stroke="#1c1917" stroke-width="2.6" stroke-linecap="round" />
+    
+    <!-- Left Lens Frame -->
+    <rect x="146" y="152" width="40" height="26" rx="5" fill="none" stroke="#1c1917" stroke-width="2.6" />
+    <rect x="147" y="153" width="38" height="24" rx="4" fill="#67e8f9" opacity="0.08" />
+    <line x1="150" y1="172" x2="162" y2="156" stroke="#ffffff" stroke-width="1" opacity="0.4" stroke-linecap="round" />
+
+    <!-- Right Lens Frame -->
+    <rect x="214" y="152" width="40" height="26" rx="5" fill="none" stroke="#1c1917" stroke-width="2.6" />
+    <rect x="215" y="153" width="38" height="24" rx="4" fill="#67e8f9" opacity="0.08" />
+    <line x1="218" y1="172" x2="230" y2="156" stroke="#ffffff" stroke-width="1" opacity="0.4" stroke-linecap="round" />
+
+    <!-- Temples -->
+    <line x1="146" y1="160" x2="132" y2="164" stroke="#1c1917" stroke-width="2.4" />
+    <line x1="254" y1="160" x2="268" y2="164" stroke="#1c1917" stroke-width="2.4" />
+  </g>
+
+  <!-- Nose -->
+  <g id="nose">
+    <path d="M 197 160 L 194 195 Q 188 198 187 201 Q 200 204 213 201 Q 212 198 206 195 L 203 160" fill="none" stroke="#b27150" stroke-width="1.6" stroke-linecap="round" />
+    <ellipse cx="192" cy="200" rx="3" ry="1.6" fill="#6a3821" />
+    <ellipse cx="208" cy="200" rx="3" ry="1.6" fill="#6a3821" />
+  </g>
+
+  <!-- Lips & Friendly Smile -->
+  <g id="mouth">
+    <path d="M 183 220 Q 192 216 200 218 Q 208 216 217 220 Q 200 222 183 220 Z" fill="#ab5d4e" />
+    <path d="M 182 220 Q 200 225 218 220" fill="none" stroke="#54241b" stroke-width="1.8" stroke-linecap="round" />
+    <path d="M 185 221 Q 200 229 215 221 Q 200 225 185 221 Z" fill="#bf7162" />
+  </g>
+
+  <!-- Ambient Rim Glow Ring -->
+  <circle cx="200" cy="200" r="196" fill="none" stroke="url(#vadimRim)" stroke-width="4" opacity="0.6" />
+</svg>
