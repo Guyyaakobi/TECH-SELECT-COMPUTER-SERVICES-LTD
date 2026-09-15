@@ -1102,8 +1102,8 @@ async function startServer() {
         }
 
         const candidateModels = requestedModel 
-          ? [requestedModel, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash"]
-          : ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash"];
+          ? [requestedModel, "gemini-3.8-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"]
+          : ["gemini-3.8-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"];
 
         const modelsToTry = candidateModels.filter((m) => !isModelCoolingDown(m));
         const finalCandidateList = modelsToTry.length > 0 ? modelsToTry : candidateModels;
@@ -1219,14 +1219,18 @@ async function startServer() {
 
         const systemInstruction = `
 אתה ארכיטקט ה-AI הראשי והיועץ האסטרטגי הבכיר של חברת TECH-SELECT (טק-סלקט שירותי מחשוב בע"מ).
-אתה מנהל שיחת ייעוץ ואפיון (AI Discovery) מעמיקה עם מנכ"ל / סמנכ"ל בארגון שרוצה להכניס בינה מלאכותית (AI) בצורה חכמה, רווחית ומאובטחת.
+אתה מנהל שיחת ייעוץ ואפיון (AI Discovery) מעמיקה ומחקרית עם מנכ"ל / סמנכ"ל בארגון שרוצה להכניס בינה מלאכותית (AI) בצורה חכמה, מותאמת אישית, רווחית ומאובטחת.
 
-הגישה שלך:
-1. **ראש של מנכ"ל (Executive Mindset):** התמקד ב-ROI (החזר השקעה), צווארי בקבוק עסקיים, חיסכון בשעות עבודה, שיפור שורת הרווח ושימור יתרון תחרותי.
-2. **אמינות ומקצועיות ללא פשרות (No BS / No Hype):** אל תזרוק מילות באזז סתמיות. תן פתרונות קונקרטיים, ריאליים וארכיטקטורה הנדסית ברורה.
-3. **אבטחה ופרטיות מידע (Security & Privacy):** שים דגש על מניעת דליפת מידע (Shadow AI), הסכמי DPA, שמירה מקומית (On-Prem / Air-Gap) לגופים ביטחוניים מול ענן ארגוני סגור (Azure OpenAI / AWS Bedrock / Google Vertex).
-4. **דיאלוג בונה ומקדם:** שאל שאלות ממוקדות כדי לחדד את האתגר של המנכ"ל (למשל: איפה שמורים המסמכים, כמה אנשים עוסקים במשימה, מהן המערכות הקיימות).
-5. **שפה:** ענה בעברית עסקית רהוטה, ברורה, חדה ומכבדת (אלא אם הפנייה נכתבה באנגלית). השתמש בהדגשות (Bold) ובנקודות כדי שהתשובה תהיה קריאה ופרקטית.
+עקרונות חובה מוחלטים במענה שלך:
+1. **מחקר וניתוח ספציפי (Deep Contextual Research):**
+   - קרא בקפידה כל מילה שהמשתמש כתב. אם הוזכרו מערכות ספציפיות (כגון Priority, SAP, Salesforce, SharePoint, Microsoft 365, שרתי קבצים, SQL, מערכות ייעודיות), התייחס אליהן ישירות והסבר את דרך האינטגרציה הטכנולוגית המדויקת.
+   - אם צוין תחום עיסוק (כגון משרד עורכי דין, משרד רואי חשבון, חברת ביטחון, תעשייה, לוגיסטיקה, פיננסים, בריאות), ספק תובנות עמוקות וספציפיות לאותו ענף (למשל: סודיות לקוחות, חסימת דליפת חוזים, אוטומציית קריאת חשבוניות, בקרת איכות).
+   - **איסור מוחלט על תשובות גנריות:** אל תיתן תשובה כללית שמתאימה לכל עסק. כל תשובה חייבת להיות מותאמת אישית ומדויקת למקרה הספציפי שהוצג.
+2. **ראש של מנכ"ל (Executive ROI Mindset):** התמקד ב-ROI (החזר השקעה), צווארי בקבוק עסקיים, חיסכון מוערך בשעות עבודה של הצוות, שיפור שורת הרווח ושימור יתרון תחרותי.
+3. **אמינות הנדסית וטכנולוגית ללא פשרות (No BS / No Hype):** תן פתרונות קונקרטיים, ריאליים וארכיטקטורה הנדסית ברורה (RAG ארגוני, סוכנים מבוקרים, מנגנוני אימות Entra ID / SSO).
+4. **אבטחה ופרטיות מידע (Security & Zero Data Retention):** שים דגש על מניעת דליפת מידע (Shadow AI), הסכמי DPA של אפס שמירת מידע, הפרדת מידע והרשאות, ושמירה מקומית (On-Prem / Air-Gap) או ענן ארגוני סגור ומאובטח.
+5. **דיאלוג בונה ומקדם:** שאל שאלת המשך אחת ממוקדת כדי לחדד את האפיון (למשל: נפח המסמכים, הרשאות קיימות, או מחלקת הפיילוט הרצויה).
+6. **שפה ועיצוב:** ענה בעברית עסקית רהוטה, ברורה, חדה ומכבדת. השתמש בהדגשות (Bold) ובסעיפים מובנים כדי שהתשובה תהיה קריאה, מקצועית ומשכנעת.
 
 הקשר הארגון הידוע עד כה:
 ${companyContext ? JSON.stringify(companyContext, null, 2) : "טרם נמסרו פרטים מלאים"}
@@ -1238,12 +1242,11 @@ ${companyContext ? JSON.stringify(companyContext, null, 2) : "טרם נמסרו 
         let usedChatModel = "";
         const requestedChatModel = req.body?.model;
         const candidateModels = requestedChatModel
-          ? [requestedChatModel, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.5-flash"]
+          ? [requestedChatModel, "gemini-3.8-flash", "gemini-flash-latest", "gemini-3.1-flash-lite"]
           : [
-              "gemini-2.0-flash",
-              "gemini-1.5-flash",
-              "gemini-1.5-pro",
-              "gemini-2.5-flash",
+              "gemini-3.8-flash",
+              "gemini-flash-latest",
+              "gemini-3.1-flash-lite",
             ];
 
         // Attempt Gemini model generation with timeout protection and model fallback chain
@@ -1615,6 +1618,11 @@ ${companyContext ? JSON.stringify(companyContext, null, 2) : "טרם נמסרו 
         }
 
         const clientInputText = singleWindowText || businessContext || formData?.customPainPoints || formData?.dreamGoalTomorrow || "";
+        const formattedChatTranscript = Array.isArray(chatHistory) && chatHistory.length > 0
+          ? chatHistory
+              .map((m: any) => `${m.role === 'user' ? 'מנכ"ל/פונה' : 'ארכיטקט AI'}: ${m.content || m.text || ''}`)
+              .join('\n')
+          : "";
 
         let parsedReport = null;
 
@@ -1623,23 +1631,25 @@ ${companyContext ? JSON.stringify(companyContext, null, 2) : "טרם נמסרו 
 
           const prompt = `
 אתה ארכיטקט AI ראשי ויועץ אסטרטגי בכיר בחברת TECH-SELECT (טק-סלקט בע"מ).
-לפניך תשובות ישירות ומפורטות שהזין מנכ"ל / סמנכ"ל (C-Level Executive) במסך האבחון המרכזי של החברה.
+לפניך תשובות ישירות ומפורטות שהזין מנכ"ל / סמנכ"ל (C-Level Executive) במסך האבחון והסימולטור המרכזי של החברה.
 
 פרטי הפונה והחברה:
 - שם החברה: ${formData?.companyName || "חברה עסקית"}
 - שם איש הקשר / מנכ"ל: ${formData?.fullName || "הנהלת החברה"}
+- גודל החברה: ${formData?.companySize || "N/A"}
 - אימייל: ${formData?.email || "N/A"}
 - טלפון: ${formData?.phone || "N/A"}
 
-תשובות ודברי המנכ"ל בחלון האבחון (מענה על 4 השאלות: יעד מרכזי, צווארי בקבוק ועומסים, מערכות ליבה ו-ERP, רמת אוטונומיה ואבטחה נדרשת):
+${formattedChatTranscript ? `תמליל שיחת האפיון והייעוץ המלאה שהתקיימה בסימולטור:\n"""\n${formattedChatTranscript}\n"""\n` : ""}
+דברי המנכ"ל ותשובות האבחון:
 """
 ${clientInputText || JSON.stringify(formData || {}, null, 2)}
 """
 
 הנחיות קריטיות:
-1. נתח בכובד ראש ובדיוק מרבי את המערכות שהוזכרו (למשל: Priority, SAP, SharePoint, Salesforce, שרתי קבצים וכו').
-2. זהה את צווארי הבקבוק המדויקים, שעות העבודה המבוזבזות והעלויות התפעוליות.
-3. חשב הערכת חיסכון שנתית וחודשית ריאלית, הגיונית ולא מנופחת ב-₪. 
+1. בצע מחקר וניתוח מעמיק ומדויק של המערכות שהוזכרו (למשל: Priority, SAP, SharePoint, Salesforce, שרתי קבצים וכו').
+2. זהה את צווארי הבקבוק המדויקים, שעות העבודה המבוזבזות והעלויות התפעוליות של תחום העיסוק הספציפי.
+3. חשב הערכת חיסכון שנתית וחודשית ריאלית, הגיונית ולא מנופחת ב-₪ לפי גודל הארגון.
 4. נסח 3 יוזמות AI מעשיות המותאמות ספציפית לתשובות שניתנו (Use Cases מפורטים, לא סיסמאות גנריות). השתמש בנתונים האמיתיים שעלו מהניתוח (אל תעתיק את מספרי הדוגמה).
 5. בנה תוכנית יישום מדורגת ל-90 יום (Roadmap).
 
@@ -1731,10 +1741,9 @@ ${clientInputText || JSON.stringify(formData || {}, null, 2)}
 `;
 
           const reportModels = [
-            "gemini-2.0-flash",
-            "gemini-1.5-flash",
-            "gemini-1.5-pro",
-            "gemini-2.5-flash",
+            "gemini-3.8-flash",
+            "gemini-flash-latest",
+            "gemini-3.1-flash-lite",
           ];
           const activeModels = reportModels.filter((m) => !isModelCoolingDown(m));
           const modelsToTry = activeModels.length > 0 ? activeModels : reportModels;
@@ -3259,10 +3268,9 @@ ${!isAteraCustomer ? `
             );
 
             const candidateModels = [
-              "gemini-2.0-flash",
-              "gemini-1.5-flash",
-              "gemini-1.5-pro",
-              "gemini-2.5-flash",
+              "gemini-3.8-flash",
+              "gemini-flash-latest",
+              "gemini-3.1-flash-lite",
             ];
 
             const activeModels = candidateModels.filter((m) => !isModelCoolingDown(m));

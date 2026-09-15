@@ -507,8 +507,10 @@ Tell me about your IT infrastructure, high-friction manual workflows, or strateg
             text: m.content 
           })),
           companyContext: {
-            companyName,
+            companyName: companyName || gateCompanyName,
             companySize,
+            fullName: fullName || gateFullName,
+            industryNotes: inputText || '',
             language: isHe ? 'he' : 'en'
           },
           sessionToken
