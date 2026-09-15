@@ -35,12 +35,14 @@ export const AIExcellenceReportView: React.FC<AIExcellenceReportViewProps> = ({
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [emailSuccessMsg, setEmailSuccessMsg] = useState<string | null>(null);
   const [isDownloadingPdf, setIsDownloadingPdf] = useState(false);
+  const [downloadSuccessUrl, setDownloadSuccessUrl] = useState<string | null>(null);
 
   const handleDownloadPdf = async () => {
     if (isDownloadingPdf) return;
     setIsDownloadingPdf(true);
+    setDownloadSuccessUrl(null);
     try {
-      await downloadReportPDF({
+      const res = await downloadReportPDF({
         report,
         companyName: report.companyName,
         contactPerson: report.contactPerson,
@@ -48,6 +50,9 @@ export const AIExcellenceReportView: React.FC<AIExcellenceReportViewProps> = ({
         companySize: report.companySize,
         industry: report.industry,
       });
+      if (res?.url) {
+        setDownloadSuccessUrl(res.url);
+      }
     } catch (err) {
       console.error('Failed to generate PDF:', err);
     } finally {
@@ -194,6 +199,25 @@ export const AIExcellenceReportView: React.FC<AIExcellenceReportViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Direct PDF download link if browser blocked automatic download */}
+      {downloadSuccessUrl && (
+        <div className="mb-4 p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-xs flex items-center justify-between gap-2 print:hidden">
+          <div className="flex items-center gap-2">
+            <Check className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <span>{isHe ? 'קובץ הדוח הופק בהצלחה!' : 'PDF report generated successfully!'}</span>
+          </div>
+          <a
+            href={downloadSuccessUrl}
+            download={`Tech-Select-AI-Report-${(report.companyName || 'Company').replace(/[^a-zA-Z0-9_\u0590-\u05FF-]/g, '_')}.pdf`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="px-3 py-1 bg-emerald-600 text-white font-bold rounded hover:bg-emerald-700 transition-colors shrink-0"
+          >
+            {isHe ? 'לחץ כאן לפתיחה / הורדה ידנית' : 'Click here to open/download'}
+          </a>
+        </div>
+      )}
 
       {/* Confirmation & Email Delivery Banner (Non-print) */}
       <div className={`mb-6 p-4 rounded-xl border text-xs flex flex-col md:flex-row md:items-center justify-between gap-3 print:hidden backdrop-blur-xl ${

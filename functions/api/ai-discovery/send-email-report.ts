@@ -1,4 +1,5 @@
 import { sendGraphMail } from "../_shared/graphMail";
+import { jsPDF } from "jspdf";
 import {
   getCorsHeaders,
   getSecurityHeaders,
@@ -13,6 +14,99 @@ interface Env {
   CLIENT_ID?: string;
   CLIENT_SECRET?: string;
   [key: string]: any;
+}
+
+function generateFallbackPdfBase64(data: {
+  company: string;
+  name: string;
+  role: string;
+  phone: string;
+  email: string;
+  companySize: string;
+  yearlySavings: string;
+  hoursSaved: string;
+  summary: string;
+  opportunities: string;
+}): string {
+  try {
+    const doc = new jsPDF();
+
+    // Dark Header Banner
+    doc.setFillColor(11, 15, 25);
+    doc.rect(0, 0, 210, 38, "F");
+    doc.setTextColor(56, 189, 248);
+    doc.setFontSize(16);
+    doc.text("TECH-SELECT AI PRACTICE", 14, 16);
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(11);
+    doc.text("Strategic AI Architecture & ROI Assessment", 14, 24);
+    doc.setFontSize(8);
+    doc.setTextColor(148, 163, 184);
+    doc.text("Tech-Select Computer Services Ltd | Ministry of Defense Supplier #0011033280", 14, 32);
+
+    // Profile Card
+    doc.setTextColor(15, 23, 42);
+    doc.setFontSize(12);
+    doc.text("Executive AI Discovery Report", 14, 48);
+
+    doc.setFontSize(9.5);
+    doc.text(`Organization: ${data.company || "N/A"}`, 14, 58);
+    doc.text(`Contact: ${data.name || "N/A"} (${data.role || "Executive"})`, 14, 65);
+    doc.text(`Email: ${data.email || "N/A"} | Phone: ${data.phone || "N/A"}`, 14, 72);
+    doc.text(`Company Size: ${data.companySize || "21-100"}`, 14, 79);
+
+    // ROI Box
+    doc.setFillColor(6, 78, 59);
+    doc.rect(14, 85, 182, 22, "F");
+    doc.setTextColor(110, 231, 183);
+    doc.setFontSize(9);
+    doc.text("Projected Financial & Operational ROI:", 18, 92);
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(10.5);
+    doc.text(`Monthly Hours Saved: ${data.hoursSaved} hrs  |  Annual Savings: NIS ${data.yearlySavings}`, 18, 101);
+
+    // Executive Summary
+    doc.setTextColor(15, 23, 42);
+    doc.setFontSize(10.5);
+    doc.text("Executive Summary:", 14, 118);
+    doc.setFontSize(8.5);
+    doc.setTextColor(51, 65, 85);
+    const summaryLines = doc.splitTextToSize(data.summary || "AI Architecture Roadmap", 180);
+    doc.text(summaryLines.slice(0, 7), 14, 126);
+
+    // Key Initiatives
+    doc.setFontSize(10.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text("Key AI Initiatives & Automation:", 14, 168);
+    doc.setFontSize(8.5);
+    doc.setTextColor(51, 65, 85);
+    const oppLines = doc.splitTextToSize(data.opportunities || "Enterprise AI Agents, RAG, Integration", 180);
+    doc.text(oppLines.slice(0, 7), 14, 176);
+
+    // Security Architecture
+    doc.setFillColor(241, 245, 249);
+    doc.rect(14, 228, 182, 42, "F");
+    doc.setTextColor(15, 23, 42);
+    doc.setFontSize(9);
+    doc.text("Enterprise Security Architecture (Zero Data Retention):", 18, 235);
+    doc.setFontSize(7.5);
+    doc.setTextColor(71, 85, 105);
+    doc.text("• Tier 1: Identity & Access Management (Microsoft Entra ID, Conditional Access, MFA)", 18, 242);
+    doc.text("• Tier 2: AI DLP Gateway (PII redaction, enterprise DPA, Zero Training guarantee)", 18, 248);
+    doc.text("• Tier 3: Secure Vector Store & Enterprise RAG (Preserving folder permissions & ACLs)", 18, 254);
+    doc.text("• Tier 4: Managed Private Cloud in Israel / Dedicated On-Premises GPU Cluster", 18, 260);
+
+    // Footer
+    doc.setFontSize(7.5);
+    doc.setTextColor(148, 163, 184);
+    doc.text("TECH-SELECT Computer Services Ltd | Phone: 050-3900903 | Email: g@tech-select.co.il", 14, 287);
+
+    const dataUri = doc.output("datauristring");
+    return dataUri.split(",")[1] || "";
+  } catch (e) {
+    console.error("[generateFallbackPdfBase64 error]", e);
+    return "";
+  }
 }
 
 export async function onRequestOptions(contextOrRequest: any): Promise<Response> {
@@ -147,13 +241,39 @@ export async function handleSendEmailReport(request: Request, env: Env, _ctx?: a
 
     // 1. Send via Microsoft Graph API to Guy & Support
     const attachments = [];
-    if (pdfBase64 && typeof pdfBase64 === "string" && pdfBase64.length < 5 * 1024 * 1024) {
-      const safeFilename = sanitizeString(pdfFilename || `Tech-Select-AI-Report-${company}.pdf`, 100).replace(/[^a-zA-Z0-9_\u0590-\u05FF.-]/g, "_");
+    const cleanCompanySafe = sanitizeString(company, 60).replace(/[^a-zA-Z0-9_\u0590-\u05FF.-]/g, "_") || "Company";
+    const safeFilename = sanitizeString(pdfFilename || `Tech-Select-AI-Report-${cleanCompanySafe}.pdf`, 100).replace(/[^a-zA-Z0-9_\u0590-\u05FF.-]/g, "_");
+
+    if (pdfBase64 && typeof pdfBase64 === "string" && pdfBase64.length > 50) {
+      const cleanBase64 = pdfBase64.includes(",") ? pdfBase64.split(",")[1] : pdfBase64;
       attachments.push({
         filename: safeFilename,
-        content: pdfBase64,
+        content: cleanBase64,
         contentType: "application/pdf",
       });
+    }
+
+    // Always guarantee a PDF attachment if client didn't supply one or failed
+    if (attachments.length === 0) {
+      const fallbackPdf = generateFallbackPdfBase64({
+        company,
+        name,
+        role,
+        phone,
+        email,
+        companySize,
+        yearlySavings,
+        hoursSaved,
+        summary,
+        opportunities: opportunitiesFormatted,
+      });
+      if (fallbackPdf) {
+        attachments.push({
+          filename: safeFilename,
+          content: fallbackPdf,
+          contentType: "application/pdf",
+        });
+      }
     }
 
     sendGraphMail(env, {

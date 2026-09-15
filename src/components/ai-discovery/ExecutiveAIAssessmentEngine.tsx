@@ -655,8 +655,8 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
                 phone: finalPhone,
                 email: finalEmail,
                 companySize,
-                erp: erpCrmDetails,
-                customPainPoints: inputText,
+                erp: formData.erpCrmDetails,
+                customPainPoints: userTextSummary,
               });
               if (pdfRes?.base64) {
                 pdfBase64 = pdfRes.base64;
@@ -685,8 +685,8 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
                 phone: finalPhone,
                 email: finalEmail,
                 companySize,
-                erpCrmDetails,
-                customPainPoints: inputText,
+                erpCrmDetails: formData.erpCrmDetails,
+                customPainPoints: userTextSummary,
               },
               clientEmail: finalEmail,
               pdfBase64,
@@ -713,8 +713,8 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
               phone: finalPhone,
               email: finalEmail,
               companySize,
-              erp: erpCrmDetails,
-              customPainPoints: inputText,
+              erp: formData.erpCrmDetails,
+              customPainPoints: userTextSummary,
             }).catch(() => {});
           })();
 

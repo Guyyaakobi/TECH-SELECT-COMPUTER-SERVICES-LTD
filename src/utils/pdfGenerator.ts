@@ -105,14 +105,16 @@ export async function generateReportPDF(data: ReportPdfData): Promise<{
   const oppsPage2 = opportunities.slice(2, 4);
 
   if (isBrowser) {
-    // Build isolated off-screen container for rendering
+    // Build isolated off-screen container for rendering (positioned at 0,0 with 0.01 opacity for correct rendering)
     const container = document.createElement('div');
     container.id = 'tech-select-pdf-container';
     container.style.position = 'fixed';
-    container.style.top = '-99999px';
-    container.style.left = '-99999px';
+    container.style.top = '0px';
+    container.style.left = '0px';
     container.style.width = '794px'; // 210mm at 96 DPI
     container.style.zIndex = '-9999';
+    container.style.opacity = '0.01';
+    container.style.pointerEvents = 'none';
     container.style.background = '#ffffff';
 
     const pageStyle = `
@@ -377,19 +379,34 @@ export async function generateReportPDF(data: ReportPdfData): Promise<{
 
       for (let i = 0; i < pageElements.length; i++) {
         const pageEl = pageElements[i] as HTMLElement;
-        const canvas = await html2canvas(pageEl, {
-          scale: 2, // 2x retina scale for crisp rendering
-          useCORS: true,
-          logging: false,
-          backgroundColor: '#ffffff',
-        });
+        try {
+          const canvas = await html2canvas(pageEl, {
+            scale: 2, // 2x retina scale for crisp rendering
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#ffffff',
+            windowWidth: 794,
+            windowHeight: 1123,
+            scrollX: 0,
+            scrollY: 0,
+          });
 
-        const imgData = canvas.toDataURL('image/jpeg', 0.95);
-        if (i > 0) {
-          doc.addPage();
+          const imgData = canvas.toDataURL('image/jpeg', 0.95);
+          if (i > 0) {
+            doc.addPage();
+          }
+          doc.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+        } catch (pageCanvasErr) {
+          console.warn(`[html2canvas page ${i + 1} render failed, using vector fallback]`, pageCanvasErr);
+          if (i > 0) {
+            doc.addPage();
+          }
+          drawVectorFallbackPage(doc, data, i + 1);
         }
-        doc.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
       }
+    } catch (renderAllErr) {
+      console.warn('[html2canvas outer error, applying vector PDF generation]', renderAllErr);
+      drawVectorFallbackPage(doc, data, 1);
     } finally {
       // Clean up DOM container
       if (container.parentNode) {
@@ -398,8 +415,7 @@ export async function generateReportPDF(data: ReportPdfData): Promise<{
     }
   } else {
     // Basic fallback for non-DOM environments
-    doc.text('Tech-Select AI Executive Assessment', 20, 20);
-    doc.text(`Company: ${companyName}`, 20, 30);
+    drawVectorFallbackPage(doc, data, 1);
   }
 
   const pdfBlob = doc.output('blob');
@@ -416,9 +432,173 @@ export async function generateReportPDF(data: ReportPdfData): Promise<{
 }
 
 /**
- * Trigger immediate client-side PDF download
+ * Fallback vector page in case HTML2Canvas cannot run
  */
-export async function downloadReportPDF(data: ReportPdfData): Promise<void> {
-  const { doc, filename } = await generateReportPDF(data);
-  doc.save(filename);
+function drawVectorFallbackPage(doc: jsPDF, data: ReportPdfData, pageNum: number): void {
+  const companyName = data.companyName || data.report.companyName || 'ארגון בבדיקה';
+  const contactPerson = data.contactPerson || data.report.contactPerson || 'מנהל';
+  const role = data.role || data.report.role || 'הנהלה';
+  const monthlyHours = data.report.financialAnalysis?.estimatedMonthlyHoursSaved || data.report.roi?.monthlyHoursSaved || 240;
+  const rawYearly = data.report.financialAnalysis?.estimatedYearlySavingsNIS || data.report.roi?.estimatedAnnualFinancialSavingsNIS || (monthlyHours * 100 * 12);
+  const yearlySavingsNIS = typeof rawYearly === 'number' ? rawYearly.toLocaleString() : String(rawYearly);
+  const payback = data.report.financialAnalysis?.paybackPeriodMonths || data.report.roi?.paybackMonths || 2.8;
+
+  // Header Banner
+  doc.setFillColor(11, 15, 25);
+  doc.rect(0, 0, 210, 38, 'F');
+  doc.setTextColor(56, 189, 248);
+  doc.setFontSize(16);
+  doc.text('TECH-SELECT AI PRACTICE', 14, 16);
+  doc.setTextColor(255, 255, 255);
+  doc.setFontSize(11);
+  doc.text('Strategic AI Architecture & ROI Assessment', 14, 24);
+  doc.setFontSize(8);
+  doc.setTextColor(148, 163, 184);
+  doc.text('Tech-Select Computer Services Ltd | Ministry of Defense Authorized Supplier #0011033280', 14, 32);
+
+  // Content
+  doc.setTextColor(15, 23, 42);
+  doc.setFontSize(12);
+  doc.text(`Executive AI Assessment - Page ${pageNum} of 2`, 14, 48);
+
+  doc.setFontSize(9.5);
+  doc.text(`Organization: ${companyName}`, 14, 58);
+  doc.text(`Contact: ${contactPerson} (${role})`, 14, 65);
+  doc.text(`Estimated Monthly Hours Saved: ${monthlyHours} hours/mo`, 14, 72);
+  doc.text(`Estimated Annual Financial Savings: NIS ${yearlySavingsNIS}`, 14, 79);
+  doc.text(`Payback Period: ${payback} months`, 14, 86);
+
+  // Executive Summary
+  doc.setFontSize(10.5);
+  doc.text('Executive Summary & Strategic Overview:', 14, 98);
+  doc.setFontSize(8.5);
+  doc.setTextColor(51, 65, 85);
+  const summaryText = data.report.executiveSummary || 'Custom AI Architecture and workflow automation assessment.';
+  const summaryLines = doc.splitTextToSize(summaryText, 180);
+  doc.text(summaryLines.slice(0, 8), 14, 106);
+
+  // Opportunities
+  doc.setFontSize(10.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Key Strategic Initiatives:', 14, 155);
+  doc.setFontSize(8.5);
+  doc.setTextColor(51, 65, 85);
+  let oppY = 163;
+  (data.report.opportunities || []).slice(0, 3).forEach((opp, i) => {
+    const title = `${i + 1}. ${opp.title || (opp as any).titleHe || 'AI Initiative'}`;
+    const desc = opp.aiSolution || opp.problemStatement || '';
+    doc.text(title, 14, oppY);
+    oppY += 5;
+    const descLines = doc.splitTextToSize(desc, 180);
+    doc.text(descLines.slice(0, 2), 14, oppY);
+    oppY += 12;
+  });
+
+  // Security Tiers
+  doc.setFillColor(241, 245, 249);
+  doc.rect(14, 225, 182, 45, 'F');
+  doc.setTextColor(15, 23, 42);
+  doc.setFontSize(9.5);
+  doc.text('Enterprise Security & Zero Data Retention Architecture:', 18, 233);
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105);
+  doc.text('• Tier 1: Identity & Access Management (Microsoft Entra ID, Conditional Access, MFA)', 18, 240);
+  doc.text('• Tier 2: AI DLP Gateway (PII redaction, enterprise DPA, Zero Training guarantee)', 18, 247);
+  doc.text('• Tier 3: Secure Vector Store & Enterprise RAG (Preserving folder permissions & ACLs)', 18, 254);
+  doc.text('• Tier 4: Managed Private Cloud in Israel / Dedicated On-Premises GPU Cluster', 18, 261);
+
+  // Footer
+  doc.setFontSize(7.5);
+  doc.setTextColor(148, 163, 184);
+  doc.text('TECH-SELECT Computer Services Ltd | Direct: 050-3900903 | Office: 077-7700252 | g@tech-select.co.il', 14, 287);
+}
+
+/**
+ * Trigger reliable PDF download across all browser environments (iframes, Safari, Chrome, mobile)
+ */
+export async function downloadReportPDF(data: ReportPdfData): Promise<{ success: boolean; url?: string }> {
+  try {
+    const { doc, blob, filename } = await generateReportPDF(data);
+
+    // Create object URL
+    const blobUrl = window.URL.createObjectURL(blob);
+
+    // Method 1: Immediate anchor tag click
+    let downloadTriggered = false;
+    try {
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      document.body.appendChild(link);
+      link.click();
+      downloadTriggered = true;
+      setTimeout(() => {
+        if (link.parentNode) link.parentNode.removeChild(link);
+      }, 5000);
+    } catch (e) {
+      console.warn('[Blob anchor click failed]', e);
+    }
+
+    // Method 2: jsPDF doc.save
+    try {
+      doc.save(filename);
+      downloadTriggered = true;
+    } catch (saveErr) {
+      console.warn('[doc.save failed]', saveErr);
+    }
+
+    return { success: downloadTriggered, url: blobUrl };
+  } catch (err) {
+    console.warn('[downloadReportPDF client error, falling back to server download]:', err);
+    return downloadReportPdfFromServer(data);
+  }
+}
+
+/**
+ * Server-side direct PDF download fallback
+ */
+export async function downloadReportPdfFromServer(data: ReportPdfData): Promise<{ success: boolean; url?: string }> {
+  try {
+    const safeCompanyName = (data.companyName || 'Company').replace(/[^a-zA-Z0-9_\u0590-\u05FF-]/g, '_');
+    const filename = `Tech-Select-AI-Report-${safeCompanyName}.pdf`;
+
+    const res = await fetch('/api/ai-discovery/download-pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        report: data.report,
+        reportData: data.report,
+        companyName: data.companyName,
+        contactPerson: data.contactPerson,
+        role: data.role,
+        phone: data.phone,
+        email: data.email,
+        companySize: data.companySize,
+        erp: data.erp,
+        customPainPoints: data.customPainPoints,
+      }),
+    });
+
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+    const blob = await res.blob();
+    const blobUrl = window.URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = filename;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      if (link.parentNode) link.parentNode.removeChild(link);
+    }, 5000);
+
+    return { success: true, url: blobUrl };
+  } catch (serverErr) {
+    console.error('[Server PDF download failed]:', serverErr);
+    return { success: false };
+  }
 }

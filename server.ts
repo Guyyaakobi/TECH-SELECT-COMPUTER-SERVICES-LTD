@@ -2193,6 +2193,49 @@ ${formData?.customPainPoints || "N/A"}
     app.post("/api/ai-discovery/send-report-email", sendReportHandler);
 
     // ==========================================
+    // API Route: Download PDF directly from server
+    // ==========================================
+    const downloadPdfHandler = (req: express.Request, res: express.Response) => {
+      try {
+        const body = req.body || {};
+        const reportData = body.reportData || body.report || {};
+        const companyName = body.companyName || reportData?.companyName || "Company";
+        const safeCompanyClean = companyName.replace(/[^a-zA-Z0-9_\u0590-\u05FF-]/g, "_") || "Company";
+        const finalFilename = `Tech-Select-AI-Report-${safeCompanyClean}.pdf`;
+
+        const monthlyHours = reportData?.financialAnalysis?.estimatedMonthlyHoursSaved || reportData?.roi?.monthlyHoursSaved || 240;
+        const yearlySavingsNIS = reportData?.financialAnalysis?.estimatedYearlySavingsNIS || reportData?.roi?.estimatedAnnualFinancialSavingsNIS || (monthlyHours * 100 * 12);
+        const payback = reportData?.financialAnalysis?.paybackPeriodMonths || reportData?.roi?.paybackMonths || 2.8;
+        const execSummary = reportData?.executiveSummary || "דוח אפיון והטמעת AI ארגוני שנערך על ידי ארכיטקט ה-AI של Tech-Select.";
+
+        const pdfBuf = generateServerReportPdf({
+          companyName,
+          contactName: body.contactPerson || reportData?.contactPerson || "מנהל בארגון",
+          role: body.role || reportData?.role || "הנהלה",
+          phone: body.phone || "לא צוין",
+          email: body.email || "",
+          companySize: body.companySize || reportData?.companySize || "21-100",
+          monthlyHours,
+          yearlySavingsNIS,
+          payback,
+          execSummary,
+          opportunities: reportData?.opportunities || [],
+        });
+
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(finalFilename)}"`);
+        res.setHeader("Cache-Control", "no-cache");
+        res.send(pdfBuf);
+      } catch (err) {
+        console.error("[DOWNLOAD PDF SERVER ERROR]", err);
+        res.status(500).json({ error: "Failed to generate PDF" });
+      }
+    };
+
+    app.post("/api/ai-discovery/download-pdf", downloadPdfHandler);
+    app.get("/api/ai-discovery/download-pdf", downloadPdfHandler);
+
+    // ==========================================
     // Atera Direct Integration Helpers (Real API V3)
     // ==========================================
     function getAteraAuthHeaders(): Record<string, string> {

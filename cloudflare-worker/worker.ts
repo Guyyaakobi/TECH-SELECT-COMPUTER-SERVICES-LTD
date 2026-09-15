@@ -20,6 +20,7 @@ import { handleVerifyAccessCode } from "../functions/api/ai-discovery/verify-acc
 import { handleChat } from "../functions/api/ai-discovery/chat";
 import { handleGenerateReport } from "../functions/api/ai-discovery/generate-tailored-report";
 import { handleSendEmailReport } from "../functions/api/ai-discovery/send-email-report";
+import { onRequestPost as handleDownloadPdf } from "../functions/api/ai-discovery/download-pdf";
 import { handleDiagnosticGet as handleDiagnostic } from "../functions/api/ai-discovery/diagnostic";
 import { handleContactSubmission } from "../functions/api/contact";
 import { handleSendOtp } from "../functions/api/auth/send-otp";
@@ -114,6 +115,11 @@ export default {
     // Route 10: AI Discovery - Send Email Report
     if (url.pathname.endsWith("/api/ai-discovery/send-report") || url.pathname.endsWith("/api/ai-discovery/send-email-report")) {
       return handleSendEmailReport(request, env);
+    }
+
+    // Route 10b: AI Discovery - Download PDF directly
+    if (url.pathname.endsWith("/api/ai-discovery/download-pdf")) {
+      return handleDownloadPdf({ request, env });
     }
 
     // Route 11: AI Discovery Diagnostic
