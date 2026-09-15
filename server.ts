@@ -3,6 +3,7 @@ import path from "path";
 import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
+import { jsPDF } from "jspdf";
 
 // Lazy Gemini client helper with required headers
 function getGeminiClient(): GoogleGenAI {
@@ -460,12 +461,15 @@ async function sendEmailViaGraph({
         if (Buffer.isBuffer(att.content)) {
           base64Content = att.content.toString("base64");
         } else if (typeof att.content === "string") {
-          base64Content = Buffer.from(att.content).toString("base64");
+          const cleanStr = att.content.replace(/^data:[^;]+;base64,/, "").trim();
+          base64Content = /^[A-Za-z0-9+/=]+$/.test(cleanStr.replace(/[\r\n]/g, "")) && cleanStr.length > 20
+            ? cleanStr.replace(/[\r\n]/g, "")
+            : Buffer.from(att.content).toString("base64");
         }
         return {
           "@odata.type": "#microsoft.graph.fileAttachment",
           name: att.filename,
-          contentType: att.contentType || "application/octet-stream",
+          contentType: att.contentType || "application/pdf",
           contentBytes: base64Content,
         };
       });
@@ -507,6 +511,7 @@ async function sendAlertEmail({
   replyTo,
   formData,
   attachments,
+  toRecipients,
 }: {
   subject: string;
   html: string;
@@ -518,6 +523,7 @@ async function sendAlertEmail({
     content: Buffer | string;
     contentType?: string;
   }>;
+  toRecipients?: string[];
 }) {
   // 1. Primary delivery: FormSubmit (identical to the working Contact Form method)
   const plainTextMessage = textSummary || html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().substring(0, 1500);
@@ -533,9 +539,22 @@ async function sendAlertEmail({
   });
 
   // 2. Direct delivery via Microsoft Graph API (OAuth2 Client Credentials)
-  const targetAdmin = process.env.ALERT_EMAIL || "g@tech-select.co.il";
+  // Guy Yaakobi (g@tech-select.co.il) MUST ALWAYS be in the recipient list!
+  const targetRecipients: string[] = ["g@tech-select.co.il"];
+  if (process.env.ALERT_EMAIL && !targetRecipients.includes(process.env.ALERT_EMAIL)) {
+    targetRecipients.push(process.env.ALERT_EMAIL);
+  }
+  if (Array.isArray(toRecipients)) {
+    for (const r of toRecipients) {
+      if (r && typeof r === "string" && r.includes("@") && !targetRecipients.includes(r.trim())) {
+        targetRecipients.push(r.trim());
+      }
+    }
+  }
+
+  console.log(`[ALERT EMAIL DISPATCH] Sending to recipients: ${JSON.stringify(targetRecipients)}, attachments: ${attachments?.length || 0}`);
   await sendEmailViaGraph({
-    to: targetAdmin,
+    to: targetRecipients,
     subject,
     content: html,
     isHtml: true,
@@ -1808,11 +1827,131 @@ ${clientInputText || JSON.stringify(formData || {}, null, 2)}
     });
 
     // ==========================================
+    // Helper: Server-Side PDF Generator Fallback
+    // ==========================================
+    function generateServerReportPdf(data: {
+      companyName: string;
+      contactName: string;
+      role?: string;
+      phone?: string;
+      email?: string;
+      companySize?: string;
+      monthlyHours?: number;
+      yearlySavingsNIS?: number;
+      payback?: number;
+      execSummary?: string;
+      opportunities?: any[];
+    }): Buffer {
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      
+      // Header Navy Banner
+      doc.setFillColor(15, 23, 42); // #0f172a
+      doc.rect(0, 0, 210, 38, "F");
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(15);
+      doc.text("TECH-SELECT COMPUTER SERVICES LTD", 14, 16);
+      
+      doc.setFontSize(10.5);
+      doc.setTextColor(56, 189, 248); // #38bdf8
+      doc.text("Executive AI Architecture & Feasibility Report", 14, 24);
+
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text("Authorized Defense Supplier 0011033280 | Enterprise AI Practice | Confidential", 14, 31);
+
+      // Client Details Box
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(203, 213, 225);
+      doc.roundedRect(14, 44, 182, 38, 2, 2, "FD");
+
+      doc.setTextColor(30, 41, 59);
+      doc.setFontSize(9.5);
+      doc.text(`Organization / Company: ${data.companyName}`, 18, 52);
+      doc.text(`Executive Contact: ${data.contactName} (${data.role || "Executive"})`, 18, 59);
+      doc.text(`Contact: ${data.phone || "N/A"} | ${data.email || "N/A"}`, 18, 66);
+      doc.text(`Company Size: ${data.companySize || "21-100"} | Assessment Date: ${new Date().toISOString().split("T")[0]}`, 18, 73);
+
+      // ROI & Financial Metrics Box
+      doc.setFillColor(236, 253, 245); // emerald-50
+      doc.setDrawColor(167, 243, 208);
+      doc.roundedRect(14, 86, 182, 26, 2, 2, "FD");
+
+      doc.setTextColor(6, 95, 70); // emerald-800
+      doc.setFontSize(10.5);
+      doc.text("Projected Financial ROI & Efficiency Impact", 18, 93);
+
+      doc.setTextColor(30, 41, 59);
+      doc.setFontSize(9);
+      doc.text(`Monthly Work Hours Saved: ${data.monthlyHours || 240} hours / month`, 18, 100);
+      doc.text(`Estimated Annual Financial Value: NIS ${Number(data.yearlySavingsNIS || 280000).toLocaleString()}`, 18, 106);
+      doc.text(`Payback Horizon: ~${data.payback || 2.8} months`, 120, 106);
+
+      // Executive Summary Box
+      doc.setFillColor(241, 245, 249);
+      doc.setDrawColor(203, 213, 225);
+      doc.roundedRect(14, 116, 182, 46, 2, 2, "FD");
+
+      doc.setTextColor(15, 23, 42);
+      doc.setFontSize(10);
+      doc.text("Strategic Architecture Assessment & Recommendations:", 18, 123);
+
+      doc.setTextColor(51, 65, 85);
+      doc.setFontSize(8.5);
+      const summaryLines = doc.splitTextToSize(data.execSummary || "Strategic AI transformation plan.", 174);
+      doc.text(summaryLines.slice(0, 7), 18, 130);
+
+      // Key Initiatives Box
+      doc.setFillColor(255, 255, 255);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(14, 166, 182, 100, 2, 2, "FD");
+
+      doc.setTextColor(15, 23, 42);
+      doc.setFontSize(10);
+      doc.text("Core Enterprise AI Initiatives & Implementation Tiers:", 18, 174);
+
+      let curY = 182;
+      const opps = (data.opportunities || []).slice(0, 4);
+      if (opps.length === 0) {
+        opps.push(
+          { title: "Enterprise RAG & Knowledge Intelligence", category: "RAG", impact: "High", time: "3-4 weeks" },
+          { title: "Document & Invoice Automation Pipeline", category: "Automation", impact: "High", time: "4-6 weeks" },
+          { title: "ERP / CRM Process Copilot", category: "Integration", impact: "Medium", time: "6-8 weeks" },
+        );
+      }
+
+      opps.forEach((opp: any, idx: number) => {
+        doc.setFontSize(9);
+        doc.setTextColor(2, 132, 199);
+        doc.text(`${idx + 1}. ${opp.title || opp.titleHe || "AI Initiative"} [${opp.category || "AI"}]`, 18, curY);
+        curY += 5;
+        doc.setFontSize(8);
+        doc.setTextColor(71, 85, 105);
+        const desc = opp.problemDescription || opp.aiSolution || opp.problemStatement || "Operational workflow acceleration.";
+        const descLines = doc.splitTextToSize(desc, 174);
+        doc.text(descLines.slice(0, 2), 18, curY);
+        curY += 8;
+      });
+
+      // Footer
+      doc.setFontSize(7.5);
+      doc.setTextColor(148, 163, 184);
+      doc.text("TECH-SELECT COMPUTER SERVICES LTD | Direct: 050-3900903 | Email: g@tech-select.co.il | https://tech-select.co.il", 14, 287);
+
+      return Buffer.from(doc.output("arraybuffer"));
+    }
+
+    // ==========================================
     // 3. API Route: Send Executive AI Discovery Report via Email
     // ==========================================
-    app.post("/api/ai-discovery/send-report", async (req, res) => {
+    const sendReportHandler = async (req: express.Request, res: express.Response) => {
       try {
-        const { reportData, formData, chatSummary, clientEmail, pdfBase64, pdfFilename } = req.body || {};
+        const body = req.body || {};
+        const reportData = body.reportData || body.report || {};
+        const formData = body.formData || body.lead || body.companyContext || {};
+        const clientEmail = (body.clientEmail || formData?.email || reportData?.email || "").trim();
+        const pdfBase64 = (body.pdfBase64 || "").trim();
+        const pdfFilename = (body.pdfFilename || "").trim();
 
         const targetEmail = "g@tech-select.co.il";
         const companyName = formData?.companyName || reportData?.companyName || "חברה לא צוינה";
@@ -1820,7 +1959,7 @@ ${clientInputText || JSON.stringify(formData || {}, null, 2)}
         const phone = formData?.phone || "לא צוין";
         const email = clientEmail || formData?.email || "";
 
-        console.log(`[AI DISCOVERY REPORT DISPATCH] For ${companyName} (${contactName}) to ${targetEmail}, hasPdf: ${!!pdfBase64}`);
+        console.log(`[AI DISCOVERY REPORT DISPATCH] For ${companyName} (${contactName}) to ${targetEmail} (client: ${email || 'none'}), hasPdf: ${!!pdfBase64}`);
 
         const monthlyHours = reportData?.financialAnalysis?.estimatedMonthlyHoursSaved || reportData?.roi?.monthlyHoursSaved || 240;
         const yearlySavingsNIS = reportData?.financialAnalysis?.estimatedYearlySavingsNIS || reportData?.roi?.estimatedAnnualFinancialSavingsNIS || (monthlyHours * 100 * 12);
@@ -1855,7 +1994,7 @@ ${clientInputText || JSON.stringify(formData || {}, null, 2)}
               <span style="background-color: #0284c7; color: #ffffff; padding: 4px 12px; border-radius: 4px; font-size: 12px; font-weight: bold; letter-spacing: 1px;">TECH-SELECT AI PRACTICE</span>
               <h1 style="color: #38bdf8; margin: 12px 0 6px 0; font-size: 24px;">דוח אפיון והטמעת AI ארגוני (AI Excellence Report)</h1>
               <p style="color: #94a3b8; font-size: 13px; margin: 0;">הופק על ידי מנוע ה-AI Discovery של TECH-SELECT עבור המנכ"ל וההנהלה</p>
-              ${pdfBase64 ? `<p style="margin-top: 8px; color: #34d399; font-size: 14px; font-weight: bold;">📎 קובץ PDF מלא ומעוצב של הדוח מצורף למייל זה!</p>` : ''}
+              <p style="margin-top: 8px; color: #34d399; font-size: 14px; font-weight: bold;">📎 קובץ PDF מלא ומעוצב של הדוח מצורף למייל זה!</p>
             </div>
 
             <!-- פרטי החברה והמנכ"ל -->
@@ -1969,21 +2108,53 @@ ${execSummary}
 ${formData?.customPainPoints || "N/A"}
         `.trim();
 
-        // Build attachments if PDF base64 is supplied
+        // Build attachments: Use client PDF if provided, otherwise generate fallback PDF
         const attachments: Array<{ filename: string; content: Buffer; contentType: string }> = [];
-        if (pdfBase64) {
+        const safeCompanyClean = companyName.replace(/[^a-zA-Z0-9_\u0590-\u05FF-]/g, "_") || "Company";
+        const finalFilename = pdfFilename || `Tech-Select-AI-Report-${safeCompanyClean}.pdf`;
+
+        if (pdfBase64 && pdfBase64.length > 50) {
           try {
             attachments.push({
-              filename: pdfFilename || `Tech-Select-AI-Report-${companyName}.pdf`,
+              filename: finalFilename,
               content: Buffer.from(pdfBase64, "base64"),
               contentType: "application/pdf",
             });
+            console.log(`[AI DISCOVERY PDF ATTACHED] Using client-rendered PDF (${pdfBase64.length} chars) as ${finalFilename}`);
           } catch (bufErr) {
             console.warn("[PDF ATTACHMENT BUFFER ERROR]", bufErr);
           }
         }
 
-        // Send via unified sendAlertEmail (FormSubmit + Microsoft Graph API)
+        // Always guarantee a PDF attachment
+        if (attachments.length === 0) {
+          try {
+            const pdfBuf = generateServerReportPdf({
+              companyName,
+              contactName,
+              role: formData?.role || reportData?.role,
+              phone,
+              email,
+              companySize: formData?.companySize || reportData?.companySize,
+              monthlyHours,
+              yearlySavingsNIS,
+              payback,
+              execSummary,
+              opportunities: reportData?.opportunities || [],
+            });
+            attachments.push({
+              filename: finalFilename,
+              content: pdfBuf,
+              contentType: "application/pdf",
+            });
+            console.log(`[AI DISCOVERY PDF ATTACHED] Generated server PDF (${pdfBuf.length} bytes) as ${finalFilename}`);
+          } catch (pdfGenErr) {
+            console.error("[SERVER FALLBACK PDF GENERATION FAILED]", pdfGenErr);
+          }
+        }
+
+        // Send via unified sendAlertEmail (FormSubmit + Microsoft Graph API to Guy & client)
+        const additionalRecipients = email && email.includes("@") && !email.includes("tech-select") ? [email] : [];
         await sendAlertEmail({
           subject: `🤖 דוח AI Discovery ארגוני מלא למנכ"ל - ${companyName} (${contactName})`,
           html: emailHtml,
@@ -2001,11 +2172,12 @@ ${formData?.customPainPoints || "N/A"}
             executiveSummary: execSummary.substring(0, 500),
           },
           attachments,
+          toRecipients: additionalRecipients,
         });
 
         return res.json({
           success: true,
-          message: `Report successfully dispatched to ${targetEmail}`,
+          message: `Report successfully dispatched with PDF to ${targetEmail}${email ? ' and ' + email : ''}`,
         });
       } catch (err: any) {
         console.error("[SEND REPORT SERVER ERROR]", err);
@@ -2014,7 +2186,11 @@ ${formData?.customPainPoints || "N/A"}
           message: "Report processed",
         });
       }
-    });
+    };
+
+    app.post("/api/ai-discovery/send-report", sendReportHandler);
+    app.post("/api/ai-discovery/send-email-report", sendReportHandler);
+    app.post("/api/ai-discovery/send-report-email", sendReportHandler);
 
     // ==========================================
     // Atera Direct Integration Helpers (Real API V3)
@@ -4053,13 +4229,6 @@ ${!isAteraCustomer ? `
         console.error("[SIMULATOR LOG ERROR]", err?.message || err);
         return res.json({ success: true, message: "Logged" });
       }
-    });
-
-    // Alias for send-report
-    app.post("/api/ai-discovery/send-report-email", async (req, res) => {
-      // Forward to send-report handler
-      req.url = "/api/ai-discovery/send-report";
-      app._router.handle(req, res);
     });
 
     // Vite middleware for development vs static files for production

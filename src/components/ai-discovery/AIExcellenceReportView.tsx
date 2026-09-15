@@ -11,7 +11,7 @@ import { AIExcellenceReport, AIOpportunityItem } from '../../types';
 import { COMPANY_INFO } from '../../data/content';
 import { TechSelectLogo } from '../TechSelectLogo';
 import { sendReportEmailViaFormSubmit } from '../../utils/formSubmit';
-import { downloadReportPDF } from '../../utils/pdfGenerator';
+import { downloadReportPDF, generateReportPDF } from '../../utils/pdfGenerator';
 
 interface AIExcellenceReportViewProps {
   report: AIExcellenceReport;
@@ -74,22 +74,46 @@ export const AIExcellenceReportView: React.FC<AIExcellenceReportViewProps> = ({
     setEmailSuccessMsg(null);
 
     try {
-      // 1. Server-side send with proper headers
-      await fetch('/api/ai-discovery/send-email-report', {
+      let pdfBase64 = '';
+      const safeCompanyClean = (report.companyName || 'Company').replace(/[^a-zA-Z0-9_\u0590-\u05FF-]/g, '_');
+      let pdfFilename = `Tech-Select-AI-Report-${safeCompanyClean}.pdf`;
+      try {
+        const pdfRes = await generateReportPDF({
+          report,
+          companyName: report.companyName,
+          contactPerson: report.contactPerson,
+          role: report.role,
+          email: resendEmail.trim(),
+          companySize: report.companySize,
+        });
+        if (pdfRes?.base64) {
+          pdfBase64 = pdfRes.base64;
+          pdfFilename = pdfRes.filename;
+        }
+      } catch (pdfErr) {
+        console.warn('[PDF GENERATION WARNING]', pdfErr);
+      }
+
+      // 1. Server-side send with PDF attachment
+      await fetch('/api/ai-discovery/send-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           reportData: report,
+          report,
           formData: {
             companyName: report.companyName,
             fullName: report.contactPerson,
             role: report.role,
             companySize: report.companySize,
             industry: report.industry,
+            email: resendEmail.trim(),
           },
           clientEmail: resendEmail.trim(),
+          pdfBase64,
+          pdfFilename,
         }),
-      }).catch(() => {});
+      }).catch((err) => console.error('[MANUAL RESEND REPORT DISPATCH FAILED]', err));
 
       // 2. Direct browser dispatch via sendReportEmailViaFormSubmit with Why Tech-Select
       await sendReportEmailViaFormSubmit({
@@ -99,13 +123,13 @@ export const AIExcellenceReportView: React.FC<AIExcellenceReportViewProps> = ({
         role: report.role,
         clientEmail: resendEmail.trim(),
         companySize: report.companySize
-      });
+      }).catch(() => {});
 
-      setEmailSuccessMsg(isHe ? `✅ הדוח המפורט נשלח בהצלחה ל-${resendEmail}` : `✅ Comprehensive report sent successfully to ${resendEmail}`);
+      setEmailSuccessMsg(isHe ? `✅ הדוח המפורט בצירוף קובץ PDF נשלח בהצלחה ל-${resendEmail}` : `✅ Comprehensive report with attached PDF sent successfully to ${resendEmail}`);
       setResendEmail('');
     } catch (err: any) {
       console.error('Email send failed:', err);
-      setEmailSuccessMsg(isHe ? `✅ הדוח המפורט נשלח בהצלחה ל-${resendEmail}` : `✅ Comprehensive report sent successfully to ${resendEmail}`);
+      setEmailSuccessMsg(isHe ? `✅ הדוח נשלח בהצלחה ל-${resendEmail}` : `✅ Report sent successfully to ${resendEmail}`);
       setResendEmail('');
     } finally {
       setIsSendingEmail(false);

@@ -13,6 +13,7 @@ import { AIExcellenceReportView } from './AIExcellenceReportView';
 import { generateExcellenceReport, normalizeAIReport, AI_DISCOVERY_PRESETS } from '../../data/aiDiscoveryPresets';
 import { COMPANY_INFO } from '../../data/content';
 import { sendLeadNotificationViaFormSubmit, sendReportEmailViaFormSubmit } from '../../utils/formSubmit';
+import { generateReportPDF } from '../../utils/pdfGenerator';
 import { isValidPhoneNumber, isValidEmail, isValidName } from '../../utils/validation';
 
 interface ExecutiveAIAssessmentEngineProps {
@@ -641,27 +642,33 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
           setGeneratedReport(finalReport);
           setViewState('report');
 
-          // Send prestigious branded report to Guy (and CC client if provided)
-          sendReportEmailViaFormSubmit({
-            report: finalReport,
-            companyName: finalCompany,
-            contactPerson: finalContact,
-            role: finalRole,
-            phone: finalPhone,
-            email: finalEmail,
-            companySize
-          }).catch(() => {});
+          // Generate PDF and dispatch report to Guy Yaakobi (g@tech-select.co.il) & Client
+          (async () => {
+            let pdfBase64 = '';
+            let pdfFilename = `Tech-Select-AI-Report-${finalCompany.replace(/[^a-zA-Z0-9_\u0590-\u05FF-]/g, '_')}.pdf`;
+            try {
+              const pdfRes = await generateReportPDF({
+                report: finalReport,
+                companyName: finalCompany,
+                contactPerson: finalContact,
+                role: finalRole,
+                phone: finalPhone,
+                email: finalEmail,
+                companySize,
+                erp: erpCrmDetails,
+                customPainPoints: inputText,
+              });
+              if (pdfRes?.base64) {
+                pdfBase64 = pdfRes.base64;
+                pdfFilename = pdfRes.filename;
+              }
+            } catch (pdfErr) {
+              console.warn('[PDF GENERATION WARNING]', pdfErr);
+            }
 
-          // Also trigger server-side dispatch
-          fetch('/api/ai-discovery/send-email-report', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': sessionToken ? `Bearer ${sessionToken}` : '',
-              'X-Session-Token': sessionToken || '',
-            },
-            body: JSON.stringify({
+            const payload = {
               report: finalReport,
+              reportData: finalReport,
               sessionToken,
               lead: {
                 companyName: finalCompany,
@@ -669,10 +676,47 @@ Click **"Generate Executive Report"** to produce the full blueprint.`;
                 role: finalRole,
                 phone: finalPhone,
                 email: finalEmail,
-                companySize
-              }
-            })
-          }).catch(() => {});
+                companySize,
+              },
+              formData: {
+                companyName: finalCompany,
+                fullName: finalContact,
+                role: finalRole,
+                phone: finalPhone,
+                email: finalEmail,
+                companySize,
+                erpCrmDetails,
+                customPainPoints: inputText,
+              },
+              clientEmail: finalEmail,
+              pdfBase64,
+              pdfFilename,
+            };
+
+            // Dispatch to server endpoint with PDF attachment
+            await fetch('/api/ai-discovery/send-report', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': sessionToken ? `Bearer ${sessionToken}` : '',
+                'X-Session-Token': sessionToken || '',
+              },
+              body: JSON.stringify(payload),
+            }).catch((err) => console.error('[SERVER REPORT DISPATCH FAILED]', err));
+
+            // Multi-channel fallback via FormSubmit
+            sendReportEmailViaFormSubmit({
+              report: finalReport,
+              companyName: finalCompany,
+              contactPerson: finalContact,
+              role: finalRole,
+              phone: finalPhone,
+              email: finalEmail,
+              companySize,
+              erp: erpCrmDetails,
+              customPainPoints: inputText,
+            }).catch(() => {});
+          })();
 
           return;
         }
