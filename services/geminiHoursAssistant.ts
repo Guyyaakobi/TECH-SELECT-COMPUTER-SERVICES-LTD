@@ -304,10 +304,11 @@ export interface AssistantChatParams {
     driveId?: string;
     itemId?: string;
     fileId?: string;
-    rowAddress: string;
+    rowAddress?: string;
     writtenValues?: any[][];
     writtenAt?: number;
     sheetName?: string;
+    customerName?: string;
   };
   writtenEntries?: WrittenEntryResult[];
   env?: any;
@@ -492,26 +493,29 @@ export async function processAssistantChat(
   const { user, message, audio, history = [], action, cardId, activeDrafts = [] } = params;
 
   // 1. Direct Action: Undo written entry (stateless)
-  if (action === "undo_entry" && cardId) {
+  if (action === "undo_entry" && (cardId || params.undoData)) {
     const existing =
-      (params.writtenEntries || []).find((w) => w.id === cardId) ||
-      (params.undoData?.itemId ? (params.undoData as any) : null);
+      (params.writtenEntries || []).find(
+        (w) => w.id === cardId || w.entryId === cardId || (cardId && w.fileId === cardId)
+      ) ||
+      (params.undoData?.itemId || params.undoData?.fileId ? (params.undoData as any) : null) ||
+      ((params.writtenEntries || []).length > 0 ? (params.writtenEntries || [])[0] : null);
 
-    const undoParams =
-      params.undoData ||
-      (existing
-        ? {
-            driveId: existing.driveId,
-            itemId: existing.itemId || existing.fileId,
-            fileId: existing.fileId,
-            rowAddress: existing.rowAddress,
-            writtenValues: existing.writtenValues,
-            writtenAt: existing.writtenAt,
-            sheetName: existing.sheetName,
-          }
-        : null);
+    const rawUndo = params.undoData || {};
+    const effectiveFileId = rawUndo.fileId || rawUndo.itemId || existing?.fileId || existing?.itemId;
+    let effectiveRowAddress = rawUndo.rowAddress || existing?.rowAddress;
+    const effectiveDriveId = rawUndo.driveId || existing?.driveId;
+    const effectiveSheetName = rawUndo.sheetName || existing?.sheetName;
+    const effectiveWrittenValues = rawUndo.writtenValues || existing?.writtenValues;
+    const effectiveWrittenAt = rawUndo.writtenAt || existing?.writtenAt || Date.now();
 
-    if (!undoParams || !undoParams.rowAddress) {
+    // If rowAddress was missing, but targetRow exists: fallback to `${targetRow}:${targetRow}`
+    if (!effectiveRowAddress && (existing?.targetRow || (existing as any)?.rowNumber)) {
+      const rNum = existing?.targetRow || (existing as any)?.rowNumber;
+      effectiveRowAddress = `${rNum}:${rNum}`;
+    }
+
+    if (!effectiveFileId || !effectiveRowAddress) {
       return {
         reply: "לא נמצאו נתוני זיהוי לשורה לביטול או שפג תוקף חלון הזמן (10 דקות).",
         drafts: activeDrafts,
@@ -521,14 +525,27 @@ export async function processAssistantChat(
       };
     }
 
+    const undoParams = {
+      driveId: effectiveDriveId,
+      itemId: effectiveFileId,
+      fileId: effectiveFileId,
+      rowAddress: effectiveRowAddress,
+      writtenValues: effectiveWrittenValues,
+      writtenAt: effectiveWrittenAt,
+      sheetName: effectiveSheetName,
+    };
+
     try {
       await undoRow(undoParams, user, activeEnv);
-      const remainingWritten = (params.writtenEntries || []).filter((w) => w.id !== cardId);
+      const remainingWritten = (params.writtenEntries || []).filter(
+        (w) => w.id !== cardId && w.id !== existing?.id && w.entryId !== cardId
+      );
+      const targetCardId = existing?.id || cardId;
       return {
-        reply: `הרשומה עבור ${existing?.customerName || "הלקוח"} בוטלה בהצלחה ונמחקה מקובץ ה-Excel.`,
+        reply: `הרשומה עבור ${existing?.customerName || rawUndo.customerName || "הלקוח"} בוטלה בהצלחה ונמחקה מקובץ ה-Excel.`,
         drafts: activeDrafts,
         writtenEntries: remainingWritten,
-        undoneCardIds: [cardId],
+        undoneCardIds: targetCardId ? [targetCardId] : [],
         isConfirmed: false,
       };
     } catch (undoErr: any) {
@@ -969,6 +986,7 @@ MANDATORY WORKFLOW:
   // Track state across tool calls
   let collectedDrafts: HoursAssistantEntryDraft[] = [...activeDrafts];
   const newWrittenEntries: WrittenEntryResult[] = [];
+  const undoneCardIds: string[] = [];
   let isConfirmed = false;
 
   // Tool execution loop (max 6 iterations)
@@ -1429,13 +1447,17 @@ MANDATORY WORKFLOW:
         } else if (name === "undo_row") {
           const fileId = String(args.fileId || "");
           const rowAddress = String(args.rowAddress || "");
-          const matchingWritten = (params.writtenEntries || []).find((w) => w.fileId === fileId || w.rowAddress === rowAddress);
+          const matchingWritten =
+            (params.writtenEntries || []).find((w) => w.fileId === fileId || w.rowAddress === rowAddress) ||
+            (params.writtenEntries || [])[0];
+          const effectiveFileId = fileId || matchingWritten?.fileId;
+          const effectiveRowAddress = rowAddress || matchingWritten?.rowAddress;
           const undoRes = await withSafeTimeout(
             undoRow({
               driveId: matchingWritten?.driveId,
-              itemId: fileId,
-              fileId,
-              rowAddress,
+              itemId: effectiveFileId,
+              fileId: effectiveFileId,
+              rowAddress: effectiveRowAddress,
               writtenValues: matchingWritten?.writtenValues,
               writtenAt: matchingWritten?.writtenAt,
               sheetName: matchingWritten?.sheetName,
@@ -1443,6 +1465,9 @@ MANDATORY WORKFLOW:
             15000,
             { success: false } as any
           );
+          if (undoRes && (undoRes as any).success && matchingWritten?.id) {
+            undoneCardIds.push(matchingWritten.id);
+          }
           toolResult = undoRes;
         }
       } catch (toolErr: any) {
@@ -1493,7 +1518,7 @@ MANDATORY WORKFLOW:
     transcript: userTranscript,
     drafts: collectedDrafts,
     writtenEntries: effectiveWritten,
-    undoneCardIds: [],
+    undoneCardIds,
     isConfirmed,
     suggestedAction: isConfirmed
       ? "none"

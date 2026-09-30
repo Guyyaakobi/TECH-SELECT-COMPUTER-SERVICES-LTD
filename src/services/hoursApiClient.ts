@@ -254,10 +254,11 @@ export interface AssistantChatRequest {
     driveId?: string;
     itemId?: string;
     fileId?: string;
-    rowAddress: string;
+    rowAddress?: string;
     writtenValues?: any[][];
     writtenAt?: number;
     sheetName?: string;
+    customerName?: string;
   };
   writtenEntries?: WrittenEntryResult[];
 }

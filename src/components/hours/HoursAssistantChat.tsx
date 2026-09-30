@@ -476,9 +476,19 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
       });
     }
 
-    // Remove undone entries
+    // Remove undone entries from both writtenEntries state and message cards
     if (res.undoneCardIds && res.undoneCardIds.length > 0) {
       setWrittenEntries((prev) => prev.filter((w) => !res.undoneCardIds.includes(w.id)));
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (!msg.writtenEntries) return msg;
+          const remaining = msg.writtenEntries.filter((w) => !res.undoneCardIds.includes(w.id));
+          return {
+            ...msg,
+            writtenEntries: remaining.length > 0 ? remaining : undefined,
+          };
+        })
+      );
     }
 
     // Add model response message
@@ -530,12 +540,19 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
   };
 
   // Direct Card Undo Handler
-  const handleUndoEntry = async (cardId: string) => {
+  const handleUndoEntry = async (cardId: string, directEntry?: WrittenEntryResult) => {
     try {
       setLoading(true);
       setLoadingStep("מבטל שורה מגיליון ה-Excel...");
 
-      const targetEntry = writtenEntries.find((w) => w.id === cardId);
+      // 1. Resolve target entry from direct argument, writtenEntries state, or any message card
+      const targetEntry =
+        directEntry ||
+        writtenEntries.find((w) => w.id === cardId || w.entryId === cardId || w.fileId === cardId) ||
+        messages
+          .flatMap((m) => m.writtenEntries || [])
+          .find((w) => w.id === cardId || w.entryId === cardId || w.fileId === cardId);
+
       const undoData = targetEntry
         ? {
             driveId: targetEntry.driveId,
@@ -545,15 +562,22 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
             writtenValues: targetEntry.writtenValues,
             writtenAt: targetEntry.writtenAt,
             sheetName: targetEntry.sheetName,
+            customerName: targetEntry.customerName,
           }
         : undefined;
 
+      const mergedWritten = [
+        ...(targetEntry ? [targetEntry] : []),
+        ...writtenEntries,
+        ...messages.flatMap((m) => m.writtenEntries || []),
+      ].filter((w, idx, arr) => arr.findIndex((x) => x.id === w.id) === idx);
+
       const res = await apiAssistantChat({
         action: "undo_entry",
-        cardId,
+        cardId: targetEntry?.id || cardId,
         activeDrafts,
         undoData,
-        writtenEntries,
+        writtenEntries: mergedWritten,
       });
 
       handleChatResponse(res, false);
@@ -845,7 +869,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
                             <HoursEntryCard
                               key={w.id}
                               written={w}
-                              onUndo={handleUndoEntry}
+                              onUndo={(id, entry) => handleUndoEntry(id, entry || w)}
                               isUndoing={loading}
                             />
                           ))}

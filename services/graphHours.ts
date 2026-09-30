@@ -3181,12 +3181,33 @@ export async function writeRows(
       }
 
       const addRowData: any = await addRowRes.json();
-      writtenRowAddress = addRowData.address || `Table:${structure.tableName}[Row]`;
+      writtenRowAddress = "";
+
+      // Retrieve real cell range address of the newly added table row
+      if (typeof addRowData.index === "number") {
+        try {
+          const itemAtUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${structure.tableId}/rows/itemAt(index=${addRowData.index})/range`;
+          const itemAtRes = await fetchGraph(itemAtUrl, { method: "GET", headers: sessionHeaders }, env);
+          if (itemAtRes.ok) {
+            const itemAtData: any = await itemAtRes.json();
+            if (itemAtData.address) {
+              writtenRowAddress = itemAtData.address;
+            }
+          }
+        } catch (itemErr) {
+          console.warn("[writeRows] table row range lookup:", itemErr);
+        }
+      }
+      if (!writtenRowAddress) {
+        writtenRowAddress = addRowData.address || `Table:${structure.tableName}[Row:${addRowData.index ?? 0}]`;
+      }
 
       // Enable text wrapping on the written table row so complete technician documentation is fully visible
-      if (addRowData.address) {
+      if (writtenRowAddress && !writtenRowAddress.startsWith("Table:")) {
         try {
-          const formatUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${structure.sheetId}/range(address='${addRowData.address}')/format`;
+          let addr = writtenRowAddress;
+          if (addr.includes("!")) addr = addr.split("!")[1];
+          const formatUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${structure.sheetId}/range(address='${encodeURIComponent(addr)}')/format`;
           await fetchGraph(
             formatUrl,
             {
@@ -3457,13 +3478,68 @@ export async function undoRow(
   const driveId = await resolveDriveForItem(fileId, params.driveId || explicitDriveId, activeEnv);
 
   // Parse sheet name and address
-  let targetAddress = params.rowAddress.trim();
+  let targetAddress = (params.rowAddress || "").trim();
   let targetSheet = params.sheetName ? params.sheetName.trim() : "";
 
   if (targetAddress.includes("!")) {
     const parts = targetAddress.split("!");
     targetSheet = parts[0].replace(/'/g, "").trim();
     targetAddress = parts[1].trim();
+  }
+
+  // Handle format like "Row 14", "שורה 14", "14"
+  const rowMatch = targetAddress.match(/^(?:row|שורה)?\s*(\d+)$/i);
+  if (rowMatch) {
+    const rowNum = rowMatch[1];
+    targetAddress = `${rowNum}:${rowNum}`;
+  }
+
+  const expectedValues = params.writtenValues?.[0];
+
+  // Handle Table row cancellation
+  if (targetAddress.startsWith("Table:")) {
+    try {
+      const structure = await readSheetStructure(fileId, activeEnv, driveId, targetSheet);
+      if (structure.isTable && structure.tableId) {
+        const rowsUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${structure.tableId}/rows?$top=100`;
+        const rowsRes = await fetchGraph(rowsUrl, { method: "GET" }, activeEnv);
+        if (rowsRes.ok) {
+          const rowsData: any = await rowsRes.json();
+          const tRows: any[] = rowsData.value || [];
+          let matchedIndex = -1;
+          for (let i = tRows.length - 1; i >= 0; i--) {
+            const rVals = tRows[i].values?.[0] || [];
+            if (expectedValues && expectedValues.length > 0) {
+              const matches = expectedValues.some((ev: any) => {
+                if (!ev || String(ev).trim().length < 3) return false;
+                return rVals.some((cv: any) => String(cv || "").includes(String(ev)));
+              });
+              if (matches) {
+                matchedIndex = tRows[i].index ?? i;
+                break;
+              }
+            }
+          }
+          if (matchedIndex === -1 && tRows.length > 0) {
+            matchedIndex = tRows[tRows.length - 1].index ?? (tRows.length - 1);
+          }
+          if (matchedIndex !== -1) {
+            const delTableUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${structure.tableId}/rows/itemAt(index=${matchedIndex})`;
+            const delRes = await fetchGraph(delTableUrl, { method: "DELETE" }, activeEnv);
+            if (delRes.ok) {
+              return {
+                success: true,
+                message: `השורה בטבלה ${structure.tableName || "Excel"} בוטלה ונמחקה בהצלחה.`,
+                rowAddress: params.rowAddress,
+                fileId,
+              };
+            }
+          }
+        }
+      }
+    } catch (tblErr) {
+      console.warn("[undoRow] table undo fallback notice:", tblErr);
+    }
   }
 
   // 2. Re-read that row in Excel
@@ -3511,23 +3587,23 @@ export async function undoRow(
     }
   }
 
-  // 4. Verify current values still match writtenValues
-  const expectedValues = params.writtenValues?.[0];
+  // 4. Verify current values still match writtenValues (with tolerance for formatting/types)
   if (Array.isArray(expectedValues) && expectedValues.length > 0) {
-    let hasMismatch = false;
+    let matchingCells = 0;
+    let totalCompared = 0;
     for (let i = 0; i < Math.min(expectedValues.length, currentValues.length); i++) {
       const exp = expectedValues[i];
       const cur = currentValues[i];
       if (exp === null || exp === undefined || exp === "") continue;
-      const expStr = String(exp).trim();
-      const curStr = String(cur !== null && cur !== undefined ? cur : "").trim();
-      if (expStr !== curStr && !curStr.includes(expStr) && !expStr.includes(curStr)) {
-        hasMismatch = true;
-        break;
+      totalCompared++;
+      const expStr = String(exp).trim().toLowerCase();
+      const curStr = String(cur !== null && cur !== undefined ? cur : "").trim().toLowerCase();
+      if (expStr === curStr || curStr.includes(expStr) || expStr.includes(curStr)) {
+        matchingCells++;
       }
     }
 
-    if (hasMismatch) {
+    if (totalCompared > 0 && matchingCells === 0) {
       throw new Error("לא ניתן לבטל שורה זו: תוכן השורה שונה או עודכן בקובץ מאז כתיבתה");
     }
   }

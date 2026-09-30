@@ -34,7 +34,7 @@ interface HoursEntryCardProps {
   draft?: HoursAssistantEntryDraft;
   written?: WrittenEntryResult;
   onConfirm?: (cardId: string) => void;
-  onUndo?: (cardId: string) => void;
+  onUndo?: (cardId: string, entry?: WrittenEntryResult) => void;
   onUpdateDraft?: (updated: HoursAssistantEntryDraft) => void;
   isConfirming?: boolean;
   isUndoing?: boolean;
@@ -220,7 +220,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
           {/* Undo Button with 10-Minute Countdown */}
           {canStillUndo ? (
             <button
-              onClick={() => onUndo && onUndo(written.id)}
+              onClick={() => onUndo && onUndo(written.id, written)}
               disabled={isUndoing}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-red-50 border border-red-200 text-red-600 text-xs font-semibold transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 shadow-xs"
               title="ביטול ומחיקת השורה תוך 10 דקות"
