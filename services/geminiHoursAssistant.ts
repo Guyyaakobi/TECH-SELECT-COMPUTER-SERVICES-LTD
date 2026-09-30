@@ -323,24 +323,13 @@ export async function processAssistantChat(
       targetDraft.webUrl = mt.webUrl;
     }
 
-    // Prepare row object with full aliases
-    const rowPayload: Record<string, any> = {
+    // Prepare row object
+    const rowPayload = targetDraft.mappedRow || {
       תאריך: targetDraft.date,
-      date: targetDraft.date,
       עובד: user.name,
-      טכנאי: user.name,
-      employee: user.name,
       משך: targetDraft.durationHours,
-      שעות: targetDraft.durationHours,
-      hours: targetDraft.durationHours,
-      duration: targetDraft.durationHours,
       "סוג עבודה": targetDraft.workType,
-      סוג: targetDraft.workType,
-      workType: targetDraft.workType,
       תיאור: targetDraft.description,
-      פירוט: targetDraft.description,
-      description: targetDraft.description,
-      ...(targetDraft.mappedRow || {}),
     };
 
     const writeRes = await writeRows(targetDraft.fileId, [rowPayload], user, activeEnv, targetDraft.driveId, targetDraft.workType);

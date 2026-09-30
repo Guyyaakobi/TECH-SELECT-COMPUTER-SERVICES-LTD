@@ -1465,20 +1465,15 @@ export async function readSheetStructure(
   let nextEmptyRowNumber = actualHeaderRowNumber + totalDataRows + 1;
   let totalsRowAddress: string | undefined = undefined;
 
-  // Make sure the range width strictly matches headers.length
-  const numCols = Math.max(headers.length, 1);
-  const startColCode = (startColLetter || "A").charCodeAt(0) - 65;
-  const endColCode = startColCode + numCols - 1;
-  const computedEndColLetter = String.fromCharCode(65 + Math.min(Math.max(endColCode, 0), 25));
-
   if (hasTotalsRow) {
     const actualTotalsRowNumber = startRowIndex + totalsRowOffset;
-    totalsRowAddress = `${startColLetter}${actualTotalsRowNumber}:${computedEndColLetter}${actualTotalsRowNumber}`;
+    totalsRowAddress = `${startColLetter}${actualTotalsRowNumber}:${endColLetter}${actualTotalsRowNumber}`;
     // If totals row is immediately below the last data row, the new row will be placed at that exact row
+    // (using shift down or insertion)
     nextEmptyRowNumber = actualTotalsRowNumber;
   }
 
-  const nextEmptyRowAddress = `${startColLetter}${nextEmptyRowNumber}:${computedEndColLetter}${nextEmptyRowNumber}`;
+  const nextEmptyRowAddress = `${startColLetter}${nextEmptyRowNumber}:${endColLetter}${nextEmptyRowNumber}`;
 
   // Detect row formats (date, time, hours, formula columns)
   const formats = detectRowFormats(headers, dataRows, dataFormulas);
@@ -1570,185 +1565,14 @@ function detectRowFormats(
 }
 
 /**
- * Resolves cell value for a given Excel column header name with smart Hebrew/English mapping.
- * Ensures fields like "שעות", "פירוט", "טכנאי", "תאריך" are never written as empty strings.
- */
-export function resolveCellValueForHeader(
-  headerName: string,
-  colIdx: number,
-  rowObj: Record<string, any>,
-  userContext?: { name?: string; email?: string },
-  targetWorkType?: string,
-  formats?: { dateFormat?: string; hoursFormat?: "decimal" | "hh:mm" }
-): any {
-  const norm = (headerName || "").toLowerCase().trim();
-
-  // 1. Direct exact or case-insensitive key match in rowObj
-  if (rowObj[headerName] !== undefined && rowObj[headerName] !== null && rowObj[headerName] !== "") {
-    return rowObj[headerName];
-  }
-
-  for (const [k, v] of Object.entries(rowObj)) {
-    if (v !== undefined && v !== null && v !== "") {
-      const normK = k.toLowerCase().trim();
-      if (norm === normK) {
-        return v;
-      }
-    }
-  }
-
-  // 2. Date column (תאריך / יום / date)
-  if (
-    norm.includes("תאריך") ||
-    norm.includes("יום") ||
-    norm === "date" ||
-    norm.includes("date") ||
-    colIdx === 0
-  ) {
-    const rawDate =
-      rowObj["תאריך"] ||
-      rowObj["date"] ||
-      rowObj["day"] ||
-      rowObj["Date"] ||
-      new Date().toISOString().split("T")[0];
-
-    if (rawDate) {
-      if (formats?.dateFormat === "DD/MM/YYYY" && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
-        const [y, m, d] = rawDate.split("-");
-        return `${d}/${m}/${y}`;
-      } else if (formats?.dateFormat === "DD.MM.YYYY" && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
-        const [y, m, d] = rawDate.split("-");
-        return `${d}.${m}.${y}`;
-      }
-      return rawDate;
-    }
-  }
-
-  // 3. Employee / Technician / Worker (עובד / טכנאי / שם)
-  if (
-    norm.includes("עובד") ||
-    norm.includes("טכנאי") ||
-    norm.includes("שם") ||
-    norm.includes("איש צוות") ||
-    norm.includes("מבצע") ||
-    norm.includes("משתמש") ||
-    norm.includes("employee") ||
-    norm.includes("technician") ||
-    norm.includes("tech") ||
-    norm.includes("user")
-  ) {
-    return (
-      rowObj["עובד"] ||
-      rowObj["טכנאי"] ||
-      rowObj["employee"] ||
-      rowObj["name"] ||
-      rowObj["technician"] ||
-      userContext?.name ||
-      userContext?.email ||
-      "עובד Tech-Select"
-    );
-  }
-
-  // 4. Hours / Duration (שעות / משך / כמות / סה"כ)
-  if (
-    norm.includes("שעות") ||
-    norm.includes("משך") ||
-    norm.includes("כמות") ||
-    norm.includes("סה\"כ") ||
-    norm.includes("סה״כ") ||
-    norm.includes("סך") ||
-    norm.includes("hours") ||
-    norm.includes("duration") ||
-    norm.includes("qty")
-  ) {
-    const rawDuration =
-      rowObj["משך"] ??
-      rowObj["שעות"] ??
-      rowObj["duration"] ??
-      rowObj["hours"] ??
-      rowObj["durationHours"];
-
-    if (rawDuration !== undefined && rawDuration !== null && rawDuration !== "") {
-      const num = typeof rawDuration === "number" ? rawDuration : parseFloat(rawDuration);
-      if (!isNaN(num)) {
-        if (formats?.hoursFormat === "hh:mm") {
-          const hours = Math.floor(num);
-          const mins = Math.round((num - hours) * 60);
-          return `${hours < 10 ? "0" + hours : hours}:${mins < 10 ? "0" + mins : mins}`;
-        }
-        return num;
-      }
-      return rawDuration;
-    }
-  }
-
-  // 5. Description / Task / Details / Notes (תיאור / פירוט / פעילות)
-  if (
-    norm.includes("תיאור") ||
-    norm.includes("פירוט") ||
-    norm.includes("הערות") ||
-    norm.includes("פעילות") ||
-    norm.includes("מהות") ||
-    norm.includes("נושא") ||
-    norm.includes("קריאה") ||
-    norm.includes("משימה") ||
-    norm.includes("description") ||
-    norm.includes("details") ||
-    norm.includes("task") ||
-    norm.includes("activity") ||
-    norm.includes("notes") ||
-    norm.includes("comments")
-  ) {
-    return (
-      rowObj["תיאור"] ||
-      rowObj["פירוט"] ||
-      rowObj["description"] ||
-      rowObj["task"] ||
-      rowObj["details"] ||
-      rowObj["activity"] ||
-      ""
-    );
-  }
-
-  // 6. Work Type / Tab / Category (סוג עבודה / סוג)
-  if (
-    norm.includes("סוג") ||
-    norm.includes("קטגוריה") ||
-    norm.includes("אופי") ||
-    norm.includes("type") ||
-    norm.includes("category")
-  ) {
-    return (
-      rowObj["סוג עבודה"] ||
-      rowObj["סוג"] ||
-      rowObj["workType"] ||
-      rowObj["type"] ||
-      targetWorkType ||
-      ""
-    );
-  }
-
-  // 7. Start / End time
-  if (norm.includes("התחלה") || norm.includes("start") || norm.includes("משעה")) {
-    return rowObj["שעת התחלה"] || rowObj["startTime"] || rowObj["start"] || "";
-  }
-  if (norm.includes("סיום") || norm.includes("end") || norm.includes("עד שעה")) {
-    return rowObj["שעת סיום"] || rowObj["endTime"] || rowObj["end"] || "";
-  }
-
-  // 8. Customer
-  if (norm.includes("לקוח") || norm.includes("חברה") || norm.includes("customer")) {
-    return rowObj["לקוח"] || rowObj["customer"] || "";
-  }
-
-  return "";
-}
-
-/**
- * 5. writeRows(fileId, rows) – writes a row directly into the Excel workbook on SharePoint.
+ * 5. writeRows(fileId, rows) – rows are objects keyed by the EXISTING header names.
  * - Table -> POST /workbook/tables/{id}/rows/add.
- * - Plain range -> PATCH /workbook/worksheets/{id}/range(address='...').
- * - Session-less direct write ensures changes are committed directly and immediately to SharePoint.
+ * - Plain range -> PATCH exactly the next empty row(s). Never overwrite existing data,
+ *   formulas, headers, totals or formatting. If a column contains a formula in previous rows,
+ *   do not write a value into it.
+ * - Use a workbook session (persistChanges=true), close it afterwards.
+ * - Retry 409/423/429 up to 3 times with backoff, then return a clear Hebrew error.
+ * - Return the written row address and a web link to the file.
  */
 export async function writeRows(
   fileId: string,
@@ -1775,151 +1599,188 @@ export async function writeRows(
     rows[0]?.type ||
     "";
 
-  // 1. Read current sheet structure under this drive and specific workType tab (ביקור באתר, טיקטים, פרוייקטים)
-  const structure = await readSheetStructure(fileId, env, driveId, targetWorkType);
-  const headers = structure.headers && structure.headers.length > 0
-    ? structure.headers
-    : ["תאריך", "שם עובד", "שעות", "סוג עבודה", "פירוט"];
-  const sheetName = structure.sheetName || targetWorkType || "";
+  // 1. Attempt to create a workbook session, with seamless fallback to session-less writes
+  let sessionHeaders: Record<string, string> = {};
+  let sessionId: string | null = null;
 
-  // 2. Map rows into matrix of values with smart Hebrew/English header resolution
-  const rowValuesMatrix = rows.map((rowObj) => {
-    const mapped = headers.map((headerName, colIdx) => {
-      // If this column has a formula in previous rows, do NOT write a value into it
-      if (structure.formats.formulaColumns.includes(colIdx)) {
-        return null;
-      }
-
-      return resolveCellValueForHeader(
-        headerName,
-        colIdx,
-        rowObj,
-        userContext,
-        targetWorkType,
-        structure.formats
-      );
-    });
-
-    // Safety fallback: if everything resolved to empty strings, assign positionally
-    const hasAnyValue = mapped.some((v) => v !== "" && v !== null && v !== undefined);
-    if (!hasAnyValue && headers.length > 0) {
-      if (headers.length >= 1) mapped[0] = rowObj["תאריך"] || rowObj["date"] || "";
-      if (headers.length >= 2) mapped[1] = userContext?.name || rowObj["עובד"] || "";
-      if (headers.length >= 3) mapped[2] = rowObj["משך"] ?? rowObj["שעות"] ?? 1;
-      if (headers.length >= 4) mapped[3] = rowObj["סוג עבודה"] || targetWorkType || "";
-      if (headers.length >= 5) mapped[4] = rowObj["תיאור"] || rowObj["description"] || "";
-    }
-
-    return mapped;
-  });
-
-  let writtenRowAddress = "";
-
-  // 3. Direct Session-less write to Microsoft Graph (commits immediately to SharePoint storage)
-  // CASE A: Excel Table
-  if (structure.isTable && structure.tableId) {
-    const addRowUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${structure.tableId}/rows/add`;
-    const addRowRes = await fetchGraph(
-      addRowUrl,
+  try {
+    const sessionUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/createSession`;
+    const sessionRes = await fetchGraph(
+      sessionUrl,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ values: rowValuesMatrix }),
+        body: JSON.stringify({ persistChanges: true }),
       },
       env
     );
 
-    if (!addRowRes.ok) {
-      const err = await addRowRes.text().catch(() => "");
-      throw new Error(`שגיאה בהוספת שורה לטבלת Excel (${addRowRes.status}): ${err}`);
+    if (sessionRes.ok) {
+      const sessionData: any = await sessionRes.json();
+      sessionId = sessionData?.id || null;
+      if (sessionId) {
+        sessionHeaders = { "workbook-session-id": sessionId };
+      }
+    } else {
+      const errText = await sessionRes.text().catch(() => "");
+      console.warn(
+        `[writeRows] createSession returned ${sessionRes.status} (${errText}). Proceeding with direct session-less write.`
+      );
     }
-
-    const addRowData: any = await addRowRes.json();
-    writtenRowAddress = addRowData.address || `Table:${structure.tableName}[Row]`;
-
-    undoLog.push({
-      entryId,
-      user: userName,
-      fileId,
-      rowAddress: writtenRowAddress,
-      timestamp: now,
-      isTable: true,
-      tableId: structure.tableId,
-      rowIndex: structure.totalDataRows,
-    });
+  } catch (sessErr) {
+    console.warn("[writeRows] createSession exception, proceeding session-less:", sessErr);
   }
-  // CASE B: Plain Range
-  else {
-    const sheetId = structure.sheetId;
-    const targetAddress = structure.nextEmptyRowAddress;
 
-    // If there is a totals row right at this position, insert empty row before writing
-    if (structure.hasTotalsRow && structure.totalsRowAddress) {
-      const insertUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${structure.totalsRowAddress}')/insert`;
-      const insertRes = await fetchGraph(
-        insertUrl,
+  try {
+    // 2. Read current sheet structure under this drive and specific workType tab (ביקור באתר, טיקטים, פרוייקטים)
+    const structure = await readSheetStructure(fileId, env, driveId, targetWorkType);
+    const headers = structure.headers;
+    const sheetName = structure.sheetName || targetWorkType || "";
+
+    // Map rows into matrix of values according to headers
+    const rowValuesMatrix = rows.map((rowObj) => {
+      return headers.map((headerName, colIdx) => {
+        // If this column has a formula in previous rows, do NOT write a value into it
+        if (structure.formats.formulaColumns.includes(colIdx)) {
+          return null;
+        }
+
+        // Try exact header match
+        if (rowObj[headerName] !== undefined) {
+          return rowObj[headerName];
+        }
+
+        // Fuzzy match header name if not exact
+        const normHeader = normalizeCustomerString(headerName);
+        for (const [key, val] of Object.entries(rowObj)) {
+          if (normalizeCustomerString(key) === normHeader) {
+            return val;
+          }
+        }
+
+        return "";
+      });
+    });
+
+    let writtenRowAddress = "";
+
+    // CASE A: Excel Table
+    if (structure.isTable && structure.tableId) {
+      const addRowUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${structure.tableId}/rows/add`;
+      const addRowRes = await fetchGraph(
+        addRowUrl,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ shift: "Down" }),
+          headers: sessionHeaders,
+          body: JSON.stringify({ values: rowValuesMatrix }),
         },
         env
       );
 
-      if (!insertRes.ok) {
-        console.warn("[writeRows] range insert shift down returned non-ok:", insertRes.status);
+      if (!addRowRes.ok) {
+        const err = await addRowRes.text().catch(() => "");
+        throw new Error(`שגיאה בהוספת שורה לטבלת Excel (${addRowRes.status}): ${err}`);
+      }
+
+      const addRowData: any = await addRowRes.json();
+      writtenRowAddress = addRowData.address || `Table:${structure.tableName}[Row]`;
+
+      // Log into server-side undo log
+      undoLog.push({
+        entryId,
+        user: userName,
+        fileId,
+        rowAddress: writtenRowAddress,
+        timestamp: now,
+        isTable: true,
+        tableId: structure.tableId,
+        rowIndex: structure.totalDataRows,
+      });
+    }
+    // CASE B: Plain Range
+    else {
+      const sheetId = structure.sheetId;
+      const targetAddress = structure.nextEmptyRowAddress;
+
+      // If there is a totals row right at this position, insert empty row(s) before writing
+      // to push totals row down and protect formulas/formatting!
+      if (structure.hasTotalsRow && structure.totalsRowAddress) {
+        const insertUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${structure.totalsRowAddress}')/insert`;
+        const insertRes = await fetchGraph(
+          insertUrl,
+          {
+            method: "POST",
+            headers: sessionHeaders,
+            body: JSON.stringify({ shift: "Down" }),
+          },
+          env
+        );
+
+        if (!insertRes.ok) {
+          console.warn("[writeRows] range insert shift down returned non-ok:", insertRes.status);
+        }
+      }
+
+      // Write values to target address via PATCH
+      const writeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${targetAddress}')`;
+      const writeRes = await fetchGraph(
+        writeUrl,
+        {
+          method: "PATCH",
+          headers: sessionHeaders,
+          body: JSON.stringify({ values: rowValuesMatrix }),
+        },
+        env
+      );
+
+      if (!writeRes.ok) {
+        const err = await writeRes.text().catch(() => "");
+        throw new Error(`שגיאה בכתיבת שורות לגיליון Excel (${writeRes.status}): ${err}`);
+      }
+
+      writtenRowAddress = targetAddress;
+
+      // Log into server-side undo log
+      undoLog.push({
+        entryId,
+        user: userName,
+        fileId,
+        rowAddress: writtenRowAddress,
+        timestamp: now,
+        isTable: false,
+        sheetId,
+      });
+    }
+
+    // Get item webUrl
+    const itemUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}?$select=webUrl`;
+    const itemRes = await fetchGraph(itemUrl, { method: "GET" }, env);
+    let webUrl = "";
+    if (itemRes.ok) {
+      const itemData: any = await itemRes.json();
+      webUrl = itemData.webUrl || "";
+    }
+
+    return {
+      success: true,
+      rowAddress: writtenRowAddress,
+      sheetName,
+      webUrl,
+      entryId,
+      timestamp: now,
+      fileId,
+      writtenValues: rowValuesMatrix,
+    };
+  } finally {
+    // 3. Close the workbook session if one was created
+    if (sessionId) {
+      try {
+        const closeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/closeSession`;
+        await fetchGraph(closeUrl, { method: "POST", headers: sessionHeaders }, env);
+      } catch (closeErr) {
+        console.warn("[writeRows] Error closing workbook session:", closeErr);
       }
     }
-
-    // Write values to target address via PATCH (direct session-less write)
-    const writeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${targetAddress}')`;
-    const writeRes = await fetchGraph(
-      writeUrl,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ values: rowValuesMatrix }),
-      },
-      env
-    );
-
-    if (!writeRes.ok) {
-      const err = await writeRes.text().catch(() => "");
-      throw new Error(`שגיאה בכתיבת שורות לגיליון Excel (${writeRes.status}): ${err}`);
-    }
-
-    writtenRowAddress = targetAddress;
-
-    undoLog.push({
-      entryId,
-      user: userName,
-      fileId,
-      rowAddress: writtenRowAddress,
-      timestamp: now,
-      isTable: false,
-      sheetId,
-    });
   }
-
-  // Get item webUrl
-  const itemUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}?$select=webUrl`;
-  const itemRes = await fetchGraph(itemUrl, { method: "GET" }, env);
-  let webUrl = "";
-  if (itemRes.ok) {
-    const itemData: any = await itemRes.json();
-    webUrl = itemData.webUrl || "";
-  }
-
-  return {
-    success: true,
-    rowAddress: writtenRowAddress,
-    sheetName,
-    webUrl,
-    entryId,
-    timestamp: now,
-    fileId,
-    writtenValues: rowValuesMatrix,
-  };
 }
 
 /**
