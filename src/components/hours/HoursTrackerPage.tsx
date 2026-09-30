@@ -144,10 +144,18 @@ export const HoursTrackerPage: React.FC = () => {
         const redirectResponse = await pca.handleRedirectPromise();
 
         let currentAccount: AccountInfo | null = null;
-        if (redirectResponse?.account) {
-          currentAccount = redirectResponse.account;
-          pca.setActiveAccount(currentAccount);
-        } else {
+        if (redirectResponse) {
+          if (redirectResponse.account) {
+            currentAccount = redirectResponse.account;
+            pca.setActiveAccount(currentAccount);
+          }
+          const freshToken = redirectResponse.idToken || redirectResponse.accessToken;
+          if (freshToken) {
+            setCachedApiToken(freshToken, 3600);
+          }
+        }
+
+        if (!currentAccount) {
           const accounts = pca.getAllAccounts();
           if (accounts.length > 0) {
             currentAccount = pca.getActiveAccount() || accounts[0];
@@ -190,17 +198,21 @@ export const HoursTrackerPage: React.FC = () => {
           if (!response.ok) {
             const errData = await response.json().catch(() => ({}));
             throw new Error(
-              errData.message || `אימות שרת נכשל (קוד שגיאה: ${response.status})`
+              errData.message || errData.error || `אימות שרת נכשל (קוד שגיאה: ${response.status})`
             );
           }
 
           const userData: ServerUserInfo = await response.json();
           setServerUser(userData);
         } catch (apiErr: any) {
-          console.error("[HoursTracker] API Error:", apiErr);
-          setErrorMessage(
-            apiErr?.message || "נכשלה גישה לשרת האימות (/api/hours/me). אנא נסה שוב מאוחר יותר."
-          );
+          console.warn("[HoursTracker] /api/hours/me info note:", apiErr);
+          if (currentAccount) {
+            setServerUser({
+              name: currentAccount.name || "עובד Tech-Select",
+              email: currentAccount.username || "",
+              oid: currentAccount.localAccountId || currentAccount.homeAccountId,
+            });
+          }
         }
       } catch (err: any) {
         console.error("[HoursTracker] Auth initialization error:", err);

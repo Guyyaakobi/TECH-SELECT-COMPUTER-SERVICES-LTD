@@ -4297,8 +4297,13 @@ ${!isAteraCustomer ? `
 
     // GET /api/hours/config: Public runtime configuration (Client safe - no secrets)
     hoursRouter.get("/config", (_req, res) => {
-      const tenantId = (process.env.AZURE_TENANT_ID || process.env.TENANT_ID || "").trim();
-      const clientId = (process.env.AZURE_CLIENT_ID || process.env.CLIENT_ID || "").trim();
+      const tenantId = (process.env.AZURE_TENANT_ID || process.env.TENANT_ID || "dba15196-0ead-457f-85df-b57d8f7af5ba").trim();
+      const clientId = (
+        process.env.AZURE_CLIENT_ID ||
+        process.env.HOURS_GRAPH_CLIENT_ID ||
+        process.env.CLIENT_ID ||
+        "5953dd8f-f812-4ebf-948d-2ad58f237442"
+      ).trim();
       const apiScope = clientId ? `api://${clientId}/access_as_user` : "";
 
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");

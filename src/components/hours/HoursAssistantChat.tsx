@@ -297,12 +297,18 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
       handleChatResponse(res, true);
     } catch (err: any) {
       console.error("[handleSendAudio] Error:", err);
+      const rawMsg = err?.message || "";
+      const isAuthErr = rawMsg.toLowerCase().includes("unauthorized") || rawMsg.includes("401") || rawMsg.includes("אימות");
+      const errorText = isAuthErr
+        ? "🔒 לא זוהתה הרשאת גישה פעילה או שפג תוקף החיבור ל-Microsoft 365. אנא רענן את העמוד כדי לחדש את החיבור."
+        : `שגיאה בעיבוד ההקלטה: ${rawMsg || "נא לנסות שוב"}`;
+
       setMessages((prev) => [
         ...prev,
         {
           id: `err_${Date.now()}`,
           role: "model",
-          text: `שגיאה בעיבוד ההקלטה: ${err?.message || "נא לנסות שוב"}`,
+          text: errorText,
           timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
         },
       ]);
@@ -369,12 +375,18 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
       handleChatResponse(res, false);
     } catch (err: any) {
       console.error("[handleSendText] Error:", err);
+      const rawMsg = err?.message || "";
+      const isAuthErr = rawMsg.toLowerCase().includes("unauthorized") || rawMsg.includes("401") || rawMsg.includes("אימות");
+      const errorText = isAuthErr
+        ? "🔒 לא זוהתה הרשאת גישה פעילה או שפג תוקף החיבור מול Microsoft 365. אנא רענן את העמוד כדי לחדש את החיבור."
+        : `שגיאה: ${rawMsg || "נא לנסות שוב"}`;
+
       setMessages((prev) => [
         ...prev,
         {
           id: `err_${Date.now()}`,
           role: "model",
-          text: `שגיאה: ${err?.message || "נא לנסות שוב"}`,
+          text: errorText,
           timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
         },
       ]);
@@ -457,7 +469,19 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
       handleChatResponse(res, false);
     } catch (err: any) {
       console.error("[handleConfirmEntry] Error:", err);
-      alert(`שגיאה בהזנת שורה: ${err?.message || "נא לנסות שוב"}`);
+      const rawMsg = err?.message || "";
+      const isAuthErr = rawMsg.toLowerCase().includes("unauthorized") || rawMsg.includes("401");
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `err_${Date.now()}`,
+          role: "model",
+          text: isAuthErr
+            ? "🔒 לא זוהתה הרשאת גישה פעילה או שפג תוקף החיבור מול Microsoft 365. נא לרענן את העמוד כדי לחדש את החיבור."
+            : `שגיאה בהזנת שורה: ${rawMsg || "נא לנסות שוב"}`,
+          timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
+        },
+      ]);
     } finally {
       setLoading(false);
     }
@@ -478,7 +502,19 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
       handleChatResponse(res, false);
     } catch (err: any) {
       console.error("[handleUndoEntry] Error:", err);
-      alert(`שגיאה בביטול שורה: ${err?.message || "נא לנסות שוב"}`);
+      const rawMsg = err?.message || "";
+      const isAuthErr = rawMsg.toLowerCase().includes("unauthorized") || rawMsg.includes("401");
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `err_${Date.now()}`,
+          role: "model",
+          text: isAuthErr
+            ? "🔒 לא זוהתה הרשאת גישה פעילה או שפג תוקף החיבור מול Microsoft 365. נא לרענן את העמוד כדי לחדש את החיבור."
+            : `שגיאה בביטול שורה: ${rawMsg || "נא לנסות שוב"}`,
+          timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
+        },
+      ]);
     } finally {
       setLoading(false);
     }

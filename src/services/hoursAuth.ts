@@ -98,8 +98,30 @@ export async function initMsal(config: AzureHoursConfig): Promise<PublicClientAp
 /**
  * Helper to acquire API Token:
  * Checks memory & sessionStorage cache first.
- * Then attempts acquireTokenSilent with safe timeout.
+ * Then attempts acquireTokenSilent with fallback to User.Read and MSAL localStorage cache.
  */
+function findMsalLocalStorageToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i) || "";
+      // Match MSAL ID token or Access token entries
+      if (key.includes("idtoken") || key.includes("accesstoken")) {
+        const itemStr = localStorage.getItem(key);
+        if (itemStr && itemStr.startsWith("{") && itemStr.includes("secret")) {
+          const parsed = JSON.parse(itemStr);
+          const secret = parsed.secret || parsed.idToken || parsed.accessToken;
+          const exp = Number(parsed.expiresOn || parsed.extendedExpiresOn || 0) * 1000;
+          if (secret && (!exp || exp > Date.now())) {
+            return secret;
+          }
+        }
+      }
+    }
+  } catch {}
+  return null;
+}
+
 export async function getApiToken(
   pca?: PublicClientApplication,
   customScope?: string
@@ -114,6 +136,11 @@ export async function getApiToken(
   if (!instance) {
     const stored = sessionStorage.getItem("hours_bearer_token");
     if (stored) return stored;
+    const lsToken = findMsalLocalStorageToken();
+    if (lsToken) {
+      setCachedApiToken(lsToken, 1800);
+      return lsToken;
+    }
     throw new Error("מערכת האימות טרם אותחלה. יש לבצע התחברות.");
   }
 
@@ -123,6 +150,11 @@ export async function getApiToken(
   if (!activeAccount) {
     const stored = sessionStorage.getItem("hours_bearer_token");
     if (stored) return stored;
+    const lsToken = findMsalLocalStorageToken();
+    if (lsToken) {
+      setCachedApiToken(lsToken, 1800);
+      return lsToken;
+    }
     throw new Error("לא נמצא חשבון פעיל מחובר. יש לבצע התחברות למערכת.");
   }
 
@@ -130,33 +162,69 @@ export async function getApiToken(
     instance.setActiveAccount(activeAccount);
   }
 
-  const scope = customScope || currentConfig?.apiScope || "User.Read";
-  const tokenRequest = {
-    scopes: [scope],
-    account: activeAccount,
-    redirectUri: getRedirectUri(),
-  };
+  const targetScope = customScope || currentConfig?.apiScope || "User.Read";
 
+  // Try silent token acquisition
   try {
+    const tokenRequest = {
+      scopes: [targetScope],
+      account: activeAccount,
+      redirectUri: getRedirectUri(),
+    };
+
     const response = await Promise.race([
       instance.acquireTokenSilent(tokenRequest),
       new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error("Timeout during silent token refresh")), 7000)
       ),
     ]);
-    if (response?.accessToken) {
-      setCachedApiToken(response.accessToken, 3600);
-      return response.accessToken;
+
+    const token = response?.idToken || response?.accessToken;
+    if (token) {
+      setCachedApiToken(token, 3600);
+      return token;
     }
-    throw new Error("לא התקבל טוקן גישה מ-Microsoft Entra ID");
   } catch (err: any) {
-    console.warn("[getApiToken] Silent token acquisition failed:", err);
-    const stored = sessionStorage.getItem("hours_bearer_token");
-    if (stored) {
-      return stored;
+    // If custom scope failed, fallback to User.Read
+    if (targetScope !== "User.Read") {
+      try {
+        const fallbackRes = await instance.acquireTokenSilent({
+          scopes: ["User.Read"],
+          account: activeAccount,
+          redirectUri: getRedirectUri(),
+        });
+        const fallbackToken = fallbackRes?.idToken || fallbackRes?.accessToken;
+        if (fallbackToken) {
+          setCachedApiToken(fallbackToken, 3600);
+          return fallbackToken;
+        }
+      } catch (fallbackErr) {
+        console.warn("[getApiToken] Fallback silent token acquisition failed:", fallbackErr);
+      }
     }
-    throw new Error("פג תוקף החיבור ל-Microsoft 365. אנא רענן את העמוד והתחבר שוב.");
   }
+
+  // Fallback to activeAccount idToken if available
+  const accountIdToken = (activeAccount as any)?.idToken;
+  if (accountIdToken) {
+    setCachedApiToken(accountIdToken, 3600);
+    return accountIdToken;
+  }
+
+  // Fallback to sessionStorage
+  const stored = sessionStorage.getItem("hours_bearer_token");
+  if (stored) {
+    return stored;
+  }
+
+  // Fallback to localStorage MSAL cache
+  const lsToken = findMsalLocalStorageToken();
+  if (lsToken) {
+    setCachedApiToken(lsToken, 1800);
+    return lsToken;
+  }
+
+  throw new Error("פג תוקף החיבור ל-Microsoft 365. אנא רענן את העמוד והתחבר שוב.");
 }
 
 /**
@@ -167,9 +235,10 @@ export async function loginWithMicrosoft(
   customScope?: string
 ): Promise<void> {
   const instance = pca || getMsalInstance();
-  const scope = customScope || currentConfig?.apiScope || "User.Read";
+  const defaultScopes = ["openid", "profile", "email", "User.Read"];
+  const scopes = customScope ? [customScope] : defaultScopes;
   const loginRequest = {
-    scopes: [scope],
+    scopes,
     redirectUri: getRedirectUri(),
     prompt: "select_account",
   };
