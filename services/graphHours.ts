@@ -930,6 +930,124 @@ export function parseYearMonth(dateInput: string): { year: number; month: number
   return { year, month, ym: `${year}-${mm}` };
 }
 
+// In-memory cache mapping fileId to its resolved driveId to prevent Cloudflare subrequest limit
+export const fileDriveMap = new Map<string, string>();
+
+export function recordFileDrive(fileId: string, driveId: string) {
+  if (fileId && driveId) {
+    fileDriveMap.set(fileId, driveId);
+  }
+}
+
+/**
+ * Matches an item from the hours folder for the requested year & month.
+ * Handles patterns such as:
+ * - "אסיו ספטמבר.xlsx"
+ * - "אסיו ספטמבר 2026.xlsx"
+ * - "09.2026.xlsx" / "2026-09.xlsx" / "09-2026.xlsx" / "09-26.xlsx"
+ * - "ספטמבר 2026" (month folder)
+ * Disqualifies any item that explicitly mentions a DIFFERENT month (e.g. אפריל when looking for ספטמבר).
+ */
+export function matchMonthItem(
+  items: any[],
+  year: number,
+  month: number,
+  customerName?: string
+): any | null {
+  if (!items || items.length === 0) return null;
+
+  const mm = month < 10 ? `0${month}` : `${month}`;
+  const yy = String(year).slice(-2);
+  const targetHebrewAliases = HEBREW_MONTHS[month] || [];
+
+  // Identify all other Hebrew month aliases to prevent cross-month false positives
+  const otherMonthHebrewAliases: string[] = [];
+  for (let m = 1; m <= 12; m++) {
+    if (m !== month) {
+      const aliases = HEBREW_MONTHS[m] || [];
+      for (const a of aliases) {
+        if (a.length >= 3) otherMonthHebrewAliases.push(a.toLowerCase());
+      }
+    }
+  }
+
+  // Pre-filter items to exclude temp Excel lock files
+  const validItems = items.filter((i) => !i.name.startsWith("~$"));
+
+  let bestItem: any = null;
+  let bestScore = 0;
+
+  for (const item of validItems) {
+    const rawName = (item.name || "").toLowerCase();
+    const cleanName = rawName.replace(/\.xlsx$/i, "").trim();
+
+    // 1. Negative check: if this file explicitly contains ANOTHER month name, REJECT!
+    const hasOtherHebrewMonth = otherMonthHebrewAliases.some((other) => {
+      const regex = new RegExp(`(^|[\\s._-])${other}([\\s._-]|$)`, "i");
+      return regex.test(cleanName) || cleanName.includes(other);
+    });
+    if (hasOtherHebrewMonth) {
+      continue; // Skip! Belongs to a different month!
+    }
+
+    let score = 0;
+
+    // 2. Target Hebrew month name match (e.g. "ספטמבר", "ספט")
+    const hasTargetHebrew = targetHebrewAliases.some((alias) => {
+      return cleanName.includes(alias.toLowerCase());
+    });
+    if (hasTargetHebrew) {
+      score += 100;
+    }
+
+    // 3. Target numeric month pattern match (e.g. "09.2026", "2026-09", "09-2026", "09-26", "09")
+    const monthPatterns = [
+      new RegExp(`(^|[\\s._-])${mm}([\\s._-]|$)`),
+      new RegExp(`\\b${year}[-.]${mm}\\b`),
+      new RegExp(`\\b${mm}[-.]${year}\\b`),
+      new RegExp(`\\b${mm}[-.]${yy}\\b`),
+    ];
+    for (const pat of monthPatterns) {
+      if (pat.test(cleanName)) {
+        score += 80;
+        break;
+      }
+    }
+
+    // 4. Target year match bonus (e.g. "2026" or "26")
+    if (cleanName.includes(String(year)) || cleanName.includes(` ${yy} `) || cleanName.endsWith(` ${yy}`) || cleanName.includes(`-${yy}-`)) {
+      score += 30;
+    }
+
+    // 5. Customer name match bonus (e.g. "אסיו")
+    if (customerName) {
+      const custNorm = customerName.toLowerCase().trim();
+      if (custNorm && cleanName.includes(custNorm)) {
+        score += 20;
+      }
+    }
+
+    // 6. Direct Excel file bonus (.xlsx) or folder
+    if (rawName.endsWith(".xlsx")) {
+      score += 10;
+    } else if (item.folder) {
+      score += 8;
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestItem = item;
+    }
+  }
+
+  // Only accept if score passed significant threshold
+  if (bestScore >= 80) {
+    return bestItem;
+  }
+
+  return null;
+}
+
 /**
  * 3. findMonthTarget(customer, date) – list children of "{customer}/שעות עבודה".
  * DETECT the existing month naming pattern from existing names (e.g. "2026-09", "09.2026",
@@ -1042,59 +1160,7 @@ export async function findMonthTarget(
     }
   }
 
-  // Candidate patterns for the requested month:
-  // e.g. "2026-09", "09.2026", "09-2026", "09-26", "09.26", "2026.09", "ספטמבר 2026", "ספטמבר 26", etc.
-  const candidates: string[] = [
-    `${year}-${mm}`,
-    `${mm}.${year}`,
-    `${mm}-${year}`,
-    `${mm}-${yy}`,
-    `${mm}.${yy}`,
-    `${year}.${mm}`,
-    `${mm}_${year}`,
-    `${year}_${mm}`,
-  ];
-  for (const h of hebrewNames) {
-    candidates.push(`${h} ${year}`);
-    candidates.push(`${h} ${yy}`);
-    candidates.push(`${h}_${year}`);
-    candidates.push(`${h}-${year}`);
-    candidates.push(`${mm} ${h} ${year}`);
-    candidates.push(`שעות ${h} ${year}`);
-  }
-
-  // Check matching items in hoursItems
-  // Check both A) Month folder -> .xlsx inside, and B) Direct .xlsx file
-  let matchedItem: any = null;
-
-  for (const item of hoursItems) {
-    const cleanItemName = item.name.toLowerCase().replace(/\.xlsx$/i, "").trim();
-
-    const matchesCandidate = candidates.some((c) => {
-      const cleanC = c.toLowerCase().trim();
-      return cleanItemName === cleanC || cleanItemName.includes(cleanC) || cleanC.includes(cleanItemName);
-    });
-
-    if (matchesCandidate) {
-      matchedItem = item;
-      break;
-    }
-  }
-
-  // If no direct candidate match, do fuzzy token search on existing items
-  if (!matchedItem) {
-    for (const item of hoursItems) {
-      const cleanItemName = item.name.toLowerCase();
-      const hasMonthNum = cleanItemName.includes(mm) || cleanItemName.includes(` ${month} `) || cleanItemName.includes(`-${month}-`);
-      const hasYear = cleanItemName.includes(String(year)) || cleanItemName.includes(yy);
-      const hasHebrew = hebrewNames.some((h) => cleanItemName.includes(h.toLowerCase()));
-
-      if ((hasMonthNum && hasYear) || (hasHebrew && hasYear)) {
-        matchedItem = item;
-        break;
-      }
-    }
-  }
+  const matchedItem = matchMonthItem(hoursItems, year, month, customerFolder.name);
 
   // If NOT found: return clear "not found" with existing names. NEVER create files!
   if (!matchedItem) {
@@ -1132,6 +1198,8 @@ export async function findMonthTarget(
       };
     }
 
+    recordFileDrive(xlsxFile.id, driveId);
+
     return {
       found: true,
       customerName: customerFolder.name,
@@ -1149,6 +1217,8 @@ export async function findMonthTarget(
 
   // Case B: matched item is directly an .xlsx file
   if (matchedItem.name.toLowerCase().endsWith(".xlsx")) {
+    recordFileDrive(matchedItem.id, driveId);
+
     return {
       found: true,
       customerName: customerFolder.name,
@@ -1175,59 +1245,27 @@ export async function findMonthTarget(
 }
 
 /**
- * Resolves the correct driveId for a fileId across all Document Libraries in the SharePoint site.
+ * Resolves the correct driveId for a fileId without causing subrequest limits on Cloudflare Workers.
  */
 export async function resolveDriveForItem(
   fileId: string,
   preferredDriveId?: string,
   env?: any
 ): Promise<string> {
-  const { siteId, driveId: defaultDriveId } = await resolveSharePointDrive(env);
-  const candidates = [preferredDriveId, defaultDriveId].filter(Boolean) as string[];
-
-  // 1. Try candidates first
-  for (const dId of candidates) {
-    try {
-      const checkRes = await fetchGraph(
-        `https://graph.microsoft.com/v1.0/drives/${dId}/items/${fileId}?$select=id,name`,
-        { method: "GET" },
-        env
-      );
-      if (checkRes.ok) {
-        return dId;
-      }
-    } catch {
-      // continue
-    }
+  // 1. If preferredDriveId is provided, use it directly (0 subrequests!)
+  if (preferredDriveId) {
+    recordFileDrive(fileId, preferredDriveId);
+    return preferredDriveId;
   }
 
-  // 2. If not found in candidates, search across all site drives
-  try {
-    const allDrivesRes = await fetchGraph(
-      `https://graph.microsoft.com/v1.0/sites/${siteId}/drives?$select=id,name`,
-      { method: "GET" },
-      env
-    );
-    if (allDrivesRes.ok) {
-      const allDrivesData: any = await allDrivesRes.json();
-      const drivesList: any[] = allDrivesData.value || [];
-      for (const drive of drivesList) {
-        if (candidates.includes(drive.id)) continue;
-        const itemCheck = await fetchGraph(
-          `https://graph.microsoft.com/v1.0/drives/${drive.id}/items/${fileId}?$select=id,name`,
-          { method: "GET" },
-          env
-        );
-        if (itemCheck.ok) {
-          return drive.id;
-        }
-      }
-    }
-  } catch (err) {
-    console.warn("[resolveDriveForItem] Error checking drives:", err);
+  // 2. Check in-memory file drive cache (0 subrequests!)
+  if (fileDriveMap.has(fileId)) {
+    return fileDriveMap.get(fileId)!;
   }
 
-  return preferredDriveId || defaultDriveId;
+  // 3. Fallback to default SharePoint drive
+  const { driveId: defaultDriveId } = await resolveSharePointDrive(env);
+  return defaultDriveId;
 }
 
 /**
