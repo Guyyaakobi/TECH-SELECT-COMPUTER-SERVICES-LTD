@@ -526,81 +526,72 @@ export async function detectAndListCustomers(
     childrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/root:/${encodeURIComponent(cleanPath)}:/children?$top=999`;
   }
 
-  let folderCustomers: CustomerFolder[] = [];
-  try {
-    const res = await fetchGraph(childrenUrl, { method: "GET" }, env);
-    if (res.ok) {
-      const data: any = await res.json();
-      const rootFolders: any[] = (data.value || []).filter((item: any) => Boolean(item.folder));
-      if (rootFolders.length > 0) {
-        folderCustomers = rootFolders.map((folder: any) => ({
-          id: folder.id,
-          name: folder.name,
-          webUrl: folder.webUrl,
-          driveId,
-          type: "folder" as const,
-        }));
-      }
-    }
-  } catch (err) {
-    console.warn("[detectAndListCustomers] Error checking default document library:", err);
-  }
+  let allCustomers: CustomerFolder[] = [];
 
-  // If customer folders were found in the document library
-  if (folderCustomers.length > 0) {
-    customersCache = {
-      timestamp: now,
-      siteId,
-      detectedStructure: "folders",
-      items: folderCustomers,
-    };
-    return {
-      siteId,
-      detectedStructure: "folders",
-      totalCustomers: folderCustomers.length,
-      first10Customers: folderCustomers.slice(0, 10).map((c) => c.name),
-      customers: folderCustomers,
-    };
-  }
-
-  // =========================================================================
-  // 2. If no folders found: list document libraries (1 single request)
-  // =========================================================================
-  let libraryCustomers: CustomerFolder[] = [];
+  // 1. Fetch document libraries: GET /sites/{siteId}/drives (1 subrequest)
   try {
     const drivesUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/drives?$top=999`;
     const drivesRes = await fetchGraph(drivesUrl, { method: "GET" }, env);
     if (drivesRes.ok) {
       const drivesData: any = await drivesRes.json();
       const allDrives: any[] = (drivesData.value || []).filter(
-        (d: any) => !d.system && d.name !== "Preservation Hold Library"
+        (d: any) =>
+          !d.system &&
+          d.name !== "Preservation Hold Library" &&
+          d.name !== "Site Assets" &&
+          d.name !== "Style Library"
       );
 
-      libraryCustomers = allDrives.map((drive: any) => ({
-        id: drive.id,
-        name: drive.name,
-        webUrl: drive.webUrl,
-        driveId: drive.id,
-        type: "library" as const,
-      }));
+      for (const drive of allDrives) {
+        allCustomers.push({
+          id: drive.id,
+          name: drive.name,
+          webUrl: drive.webUrl,
+          driveId: drive.id,
+          type: "library" as const,
+        });
+      }
     }
   } catch (err) {
     console.warn("[detectAndListCustomers] Error checking document libraries:", err);
   }
 
-  if (libraryCustomers.length > 0) {
+  // 2. Also fetch folders in default document library: GET /root/children (1 subrequest)
+  try {
+    const res = await fetchGraph(childrenUrl, { method: "GET" }, env);
+    if (res.ok) {
+      const data: any = await res.json();
+      const rootFolders: any[] = (data.value || []).filter((item: any) => Boolean(item.folder));
+      for (const folder of rootFolders) {
+        // avoid duplicating if drive already has this name
+        if (!allCustomers.some((c) => c.name.toLowerCase() === folder.name.toLowerCase())) {
+          allCustomers.push({
+            id: folder.id,
+            name: folder.name,
+            webUrl: folder.webUrl,
+            driveId,
+            type: "folder" as const,
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[detectAndListCustomers] Error checking default document library:", err);
+  }
+
+  if (allCustomers.length > 0) {
     customersCache = {
       timestamp: now,
       siteId,
       detectedStructure: "libraries",
-      items: libraryCustomers,
+      items: allCustomers,
     };
     return {
       siteId,
       detectedStructure: "libraries",
-      totalCustomers: libraryCustomers.length,
-      first10Customers: libraryCustomers.slice(0, 10).map((c) => c.name),
-      customers: libraryCustomers,
+      totalCustomers: allCustomers.length,
+      first10Customers: allCustomers.slice(0, 10).map((c) => c.name),
+      customers: allCustomers,
     };
   }
 

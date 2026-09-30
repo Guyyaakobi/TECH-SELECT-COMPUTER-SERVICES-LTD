@@ -9,6 +9,9 @@ import {
   Building2,
   ChevronDown,
   ChevronUp,
+  Palette,
+  Sparkles,
+  Check,
 } from "lucide-react";
 import {
   fetchHoursConfig,
@@ -42,6 +45,27 @@ export const HoursTrackerPage: React.FC = () => {
   const [runtimeConfig, setRuntimeConfig] = useState<AzureHoursConfig | null>(null);
   const [showFallbackButton, setShowFallbackButton] = useState<boolean>(false);
   const [showTestPanel, setShowTestPanel] = useState<boolean>(false);
+
+  // Modern Color Palette Switcher State ("cyan" = Deep Cyber, "amber" = Obsidian Amber)
+  const [colorPalette, setColorPalette] = useState<"cyan" | "amber">(() => {
+    try {
+      const saved = localStorage.getItem("techselect_hours_palette");
+      return saved === "amber" ? "amber" : "cyan";
+    } catch {
+      return "cyan";
+    }
+  });
+  const [showPaletteMenu, setShowPaletteMenu] = useState<boolean>(false);
+
+  const handlePaletteChange = (palette: "cyan" | "amber") => {
+    setColorPalette(palette);
+    try {
+      localStorage.setItem("techselect_hours_palette", palette);
+    } catch {
+      // ignore
+    }
+    setShowPaletteMenu(false);
+  };
 
   const isInitializingRef = useRef(false);
 
@@ -232,24 +256,47 @@ export const HoursTrackerPage: React.FC = () => {
   return (
     <div
       dir="rtl"
-      className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col font-sans selection:bg-blue-600 selection:text-white"
+      className={`min-h-screen ${
+        colorPalette === "amber" ? "bg-[#090a0e] selection:bg-amber-600" : "bg-[#07090e] selection:bg-blue-600"
+      } text-slate-100 flex flex-col font-sans transition-colors duration-500 selection:text-white`}
     >
       {/* Background Tech Ambient Glow */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute top-0 right-1/4 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-0 left-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl" />
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
+        {colorPalette === "amber" ? (
+          <>
+            <div className="absolute top-0 right-1/4 w-[32rem] h-[32rem] bg-amber-600/10 rounded-full blur-3xl animate-pulse" />
+            <div className="absolute bottom-0 left-1/4 w-[32rem] h-[32rem] bg-orange-500/10 rounded-full blur-3xl" />
+          </>
+        ) : (
+          <>
+            <div className="absolute top-0 right-1/4 w-[32rem] h-[32rem] bg-blue-600/10 rounded-full blur-3xl" />
+            <div className="absolute bottom-0 left-1/4 w-[32rem] h-[32rem] bg-cyan-500/10 rounded-full blur-3xl" />
+          </>
+        )}
       </div>
 
       {/* Top Header */}
-      <header className="relative z-10 border-b border-white/10 bg-[#07090e]/80 backdrop-blur-md sticky top-0 px-4 sm:px-8 py-3.5 flex items-center justify-between">
+      <header className="relative z-20 border-b border-white/10 bg-[#07090e]/85 backdrop-blur-xl sticky top-0 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/40 flex items-center justify-center text-blue-400">
+          <div
+            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors duration-300 shadow-sm ${
+              colorPalette === "amber"
+                ? "bg-amber-500/20 border border-amber-500/40 text-amber-400"
+                : "bg-blue-600/20 border border-blue-500/40 text-blue-400"
+            }`}
+          >
             <Clock className="w-4 h-4" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-bold text-white tracking-wide">TECH-SELECT</span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-cyan-300 border border-blue-500/30">
+              <span className="text-xs font-extrabold text-white tracking-wider">TECH-SELECT</span>
+              <span
+                className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border transition-colors ${
+                  colorPalette === "amber"
+                    ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
+                    : "bg-blue-500/15 text-cyan-300 border-blue-500/30"
+                }`}
+              >
                 פורטל פנימי
               </span>
             </div>
@@ -257,12 +304,76 @@ export const HoursTrackerPage: React.FC = () => {
           </div>
         </div>
 
-        {/* User Status & Actions */}
-        <div className="flex items-center gap-3 sm:gap-4">
+        {/* User Status, Palette Switcher & Actions */}
+        <div className="flex items-center gap-2.5 sm:gap-3.5">
+          {/* Palette Switcher Button */}
+          <div className="relative">
+            <button
+              onClick={() => setShowPaletteMenu(!showPaletteMenu)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-slate-200 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all duration-200 ease-out hover:scale-[1.03] active:scale-[0.97] cursor-pointer shadow-sm"
+              title="החלף פלטת צבעים"
+            >
+              <Palette className={`w-3.5 h-3.5 ${colorPalette === "amber" ? "text-amber-400" : "text-cyan-400"}`} />
+              <span className="hidden md:inline text-slate-400 text-[11px]">ערכה:</span>
+              <span className="font-semibold text-xs text-white">
+                {colorPalette === "cyan" ? "Cyber Cyan" : "Obsidian Amber"}
+              </span>
+              <ChevronDown className="w-3 h-3 text-slate-400" />
+            </button>
+
+            {showPaletteMenu && (
+              <div className="absolute left-0 mt-2 w-60 p-2.5 rounded-2xl bg-[#0d111d]/95 border border-white/15 backdrop-blur-2xl shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150 text-right">
+                <p className="text-[10px] text-slate-400 px-2 py-1 font-semibold mb-1">בחר פלטת צבעים מודרנית:</p>
+
+                <button
+                  onClick={() => handlePaletteChange("cyan")}
+                  className={`w-full p-2.5 rounded-xl text-right text-xs flex items-center justify-between transition-all duration-200 mb-1.5 cursor-pointer border ${
+                    colorPalette === "cyan"
+                      ? "bg-blue-600/30 border-cyan-400/50 text-white font-bold"
+                      : "bg-white/[0.02] border-transparent hover:bg-white/5 text-slate-300"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-3.5 h-3.5 rounded-full bg-gradient-to-r from-blue-500 to-cyan-400 ring-2 ring-cyan-400/40 shrink-0" />
+                    <div>
+                      <p className="font-semibold text-white">Cyber Cyan</p>
+                      <p className="text-[10px] text-slate-400">כחול נייבי עמוק, סייאן וקובלט</p>
+                    </div>
+                  </div>
+                  {colorPalette === "cyan" && <Check className="w-4 h-4 text-cyan-400 shrink-0 mr-1" />}
+                </button>
+
+                <button
+                  onClick={() => handlePaletteChange("amber")}
+                  className={`w-full p-2.5 rounded-xl text-right text-xs flex items-center justify-between transition-all duration-200 cursor-pointer border ${
+                    colorPalette === "amber"
+                      ? "bg-amber-600/30 border-amber-400/50 text-white font-bold"
+                      : "bg-white/[0.02] border-transparent hover:bg-white/5 text-slate-300"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-3.5 h-3.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-400 ring-2 ring-amber-400/40 shrink-0" />
+                    <div>
+                      <p className="font-semibold text-white">Obsidian Amber</p>
+                      <p className="text-[10px] text-slate-400">גרפיט פחם עמוק, ענבר וזהב</p>
+                    </div>
+                  </div>
+                  {colorPalette === "amber" && <Check className="w-4 h-4 text-amber-400 shrink-0 mr-1" />}
+                </button>
+              </div>
+            )}
+          </div>
+
           {(account || serverUser) ? (
             <>
               <div className="flex items-center gap-2.5 text-right bg-white/5 border border-white/10 rounded-full py-1 px-3 sm:px-4">
-                <div className="w-6 h-6 rounded-full bg-blue-600/30 text-blue-300 flex items-center justify-center text-xs font-bold border border-blue-400/40">
+                <div
+                  className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border ${
+                    colorPalette === "amber"
+                      ? "bg-amber-600/30 text-amber-300 border-amber-400/40"
+                      : "bg-blue-600/30 text-blue-300 border-blue-400/40"
+                  }`}
+                >
                   {displayName.charAt(0)}
                 </div>
                 <div className="hidden sm:block">
@@ -274,11 +385,11 @@ export const HoursTrackerPage: React.FC = () => {
               <button
                 onClick={handleLogout}
                 disabled={loading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white bg-white/5 hover:bg-red-500/20 border border-white/10 hover:border-red-500/40 transition-all cursor-pointer active:scale-95"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-slate-300 hover:text-white bg-white/5 hover:bg-red-500/20 border border-white/10 hover:border-red-500/40 transition-all duration-200 cursor-pointer hover:scale-[1.03] active:scale-[0.97]"
                 title="התנתק מחשבון Microsoft 365"
               >
                 <LogOut className="w-3.5 h-3.5 text-red-400" />
-                <span>התנתק</span>
+                <span className="hidden sm:inline">התנתק</span>
               </button>
             </>
           ) : (
@@ -290,9 +401,9 @@ export const HoursTrackerPage: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="relative z-10 flex-1 flex flex-col items-center justify-center p-4 sm:p-8 md:p-12">
-        <div className={`w-full ${(account || serverUser) ? "max-w-4xl" : "max-w-lg"} transition-all`}>
+      {/* Main Content Area - Generous Breathing Spacing */}
+      <main className="relative z-10 flex-1 flex flex-col items-center justify-start py-8 sm:py-12 md:py-14 px-4 sm:px-8 md:px-12">
+        <div className={`w-full ${(account || serverUser) ? "max-w-4xl" : "max-w-lg"} transition-all space-y-6`}>
           {/* Missing System Configuration Screen */}
           {missingConfig && (
             <div className="p-6 sm:p-8 rounded-3xl bg-amber-950/20 border border-amber-500/30 backdrop-blur-xl text-right shadow-2xl">

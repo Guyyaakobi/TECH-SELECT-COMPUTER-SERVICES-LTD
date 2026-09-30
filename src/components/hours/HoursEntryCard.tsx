@@ -511,7 +511,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       )}
 
       {/* Action Buttons: "אשר והזן" / "ערוך" */}
-      <div className="flex flex-col sm:flex-row items-center gap-2 pt-1 border-t border-white/10">
+      <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2 border-t border-white/10">
         <button
           onClick={() => {
             if (!draft.fileId && !draft.fileName) {
@@ -524,7 +524,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             if (onConfirm) onConfirm(draft.id);
           }}
           disabled={isConfirming || !draft.isReadyForConfirmation}
-          className="w-full sm:flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 cursor-pointer active:scale-98 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          className="w-full sm:flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 cursor-pointer transition-all duration-250 ease-out hover:scale-[1.02] hover:shadow-cyan-500/30 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
         >
           <CheckCircle2 className={`w-4 h-4 ${isConfirming ? "animate-spin" : ""}`} />
           <span>{isConfirming ? "מזין שורה לקובץ..." : "אשר והזן"}</span>
@@ -532,7 +532,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
 
         <button
           onClick={() => setIsEditing(!isEditing)}
-          className="w-full sm:w-auto py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-300 hover:text-white transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+          className="w-full sm:w-auto py-2.5 px-3.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-300 hover:text-white transition-all duration-200 ease-out hover:scale-[1.02] hover:border-white/20 active:scale-[0.98] cursor-pointer flex items-center justify-center gap-1.5"
         >
           <Edit3 className="w-3.5 h-3.5" />
           <span>{isEditing ? "בטל עריכה" : "ערוך שדות"}</span>
