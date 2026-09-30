@@ -1174,6 +1174,62 @@ export async function findMonthTarget(
 }
 
 /**
+ * Resolves the correct driveId for a fileId across all Document Libraries in the SharePoint site.
+ */
+export async function resolveDriveForItem(
+  fileId: string,
+  preferredDriveId?: string,
+  env?: any
+): Promise<string> {
+  const { siteId, driveId: defaultDriveId } = await resolveSharePointDrive(env);
+  const candidates = [preferredDriveId, defaultDriveId].filter(Boolean) as string[];
+
+  // 1. Try candidates first
+  for (const dId of candidates) {
+    try {
+      const checkRes = await fetchGraph(
+        `https://graph.microsoft.com/v1.0/drives/${dId}/items/${fileId}?$select=id,name`,
+        { method: "GET" },
+        env
+      );
+      if (checkRes.ok) {
+        return dId;
+      }
+    } catch {
+      // continue
+    }
+  }
+
+  // 2. If not found in candidates, search across all site drives
+  try {
+    const allDrivesRes = await fetchGraph(
+      `https://graph.microsoft.com/v1.0/sites/${siteId}/drives?$select=id,name`,
+      { method: "GET" },
+      env
+    );
+    if (allDrivesRes.ok) {
+      const allDrivesData: any = await allDrivesRes.json();
+      const drivesList: any[] = allDrivesData.value || [];
+      for (const drive of drivesList) {
+        if (candidates.includes(drive.id)) continue;
+        const itemCheck = await fetchGraph(
+          `https://graph.microsoft.com/v1.0/drives/${drive.id}/items/${fileId}?$select=id,name`,
+          { method: "GET" },
+          env
+        );
+        if (itemCheck.ok) {
+          return drive.id;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[resolveDriveForItem] Error checking drives:", err);
+  }
+
+  return preferredDriveId || defaultDriveId;
+}
+
+/**
  * 4. readSheetStructure(fileId) – open the workbook:
  * - If there is an Excel Table -> return table name, headers, last 5 rows.
  * - Otherwise -> read the used range, detect the header row, the columns, the last data row,
@@ -1181,8 +1237,12 @@ export async function findMonthTarget(
  *   and the exact address of the next empty row (above any totals row).
  * - Detect the formats used in existing rows (date format, time format, hours as decimal or hh:mm).
  */
-export async function readSheetStructure(fileId: string, env?: any): Promise<SheetStructureResult> {
-  const { driveId } = await resolveSharePointDrive(env);
+export async function readSheetStructure(
+  fileId: string,
+  env?: any,
+  explicitDriveId?: string
+): Promise<SheetStructureResult> {
+  const driveId = await resolveDriveForItem(fileId, explicitDriveId, env);
 
   // 1. Check for Excel Tables first
   const tablesUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables?$top=10`;
@@ -1466,46 +1526,52 @@ export async function writeRows(
   fileId: string,
   rows: Record<string, any>[],
   userContext?: { name?: string; email?: string },
-  env?: any
+  env?: any,
+  explicitDriveId?: string
 ): Promise<WriteRowsResult> {
   if (!rows || rows.length === 0) {
     throw new Error("לא סופקו שורות לכתיבה");
   }
 
-  const { driveId } = await resolveSharePointDrive(env);
+  const driveId = await resolveDriveForItem(fileId, explicitDriveId, env);
   const now = Date.now();
   const entryId = `entry_${now}_${Math.random().toString(36).substring(2, 8)}`;
   const userName = userContext?.name || userContext?.email || "עובד מערכת";
 
-  // 1. Create a workbook session (persistChanges: true)
-  const sessionUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/createSession`;
-  const sessionRes = await fetchGraph(
-    sessionUrl,
-    {
-      method: "POST",
-      body: JSON.stringify({ persistChanges: true }),
-    },
-    env
-  );
-
-  if (!sessionRes.ok) {
-    const err = await sessionRes.text().catch(() => "");
-    throw new Error(`שגיאה בפתיחת Workbook Session ב-Excel (${sessionRes.status}): ${err}`);
-  }
-
-  const sessionData: any = await sessionRes.json();
-  const sessionId = sessionData?.id;
-  if (!sessionId) {
-    throw new Error("לא התקבל workbook-session-id משרת Microsoft Graph");
-  }
-
-  const sessionHeaders = {
-    "workbook-session-id": sessionId,
-  };
+  // 1. Attempt to create a workbook session, with seamless fallback to session-less writes
+  let sessionHeaders: Record<string, string> = {};
+  let sessionId: string | null = null;
 
   try {
-    // 2. Read current sheet structure under this session
-    const structure = await readSheetStructure(fileId, env);
+    const sessionUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/createSession`;
+    const sessionRes = await fetchGraph(
+      sessionUrl,
+      {
+        method: "POST",
+        body: JSON.stringify({ persistChanges: true }),
+      },
+      env
+    );
+
+    if (sessionRes.ok) {
+      const sessionData: any = await sessionRes.json();
+      sessionId = sessionData?.id || null;
+      if (sessionId) {
+        sessionHeaders = { "workbook-session-id": sessionId };
+      }
+    } else {
+      const errText = await sessionRes.text().catch(() => "");
+      console.warn(
+        `[writeRows] createSession returned ${sessionRes.status} (${errText}). Proceeding with direct session-less write.`
+      );
+    }
+  } catch (sessErr) {
+    console.warn("[writeRows] createSession exception, proceeding session-less:", sessErr);
+  }
+
+  try {
+    // 2. Read current sheet structure under this drive
+    const structure = await readSheetStructure(fileId, env, driveId);
     const headers = structure.headers;
 
     // Map rows into matrix of values according to headers
@@ -1642,12 +1708,14 @@ export async function writeRows(
       writtenValues: rowValuesMatrix,
     };
   } finally {
-    // 3. Always close the workbook session in finally block
-    try {
-      const closeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/closeSession`;
-      await fetchGraph(closeUrl, { method: "POST", headers: sessionHeaders }, env);
-    } catch (closeErr) {
-      console.warn("[writeRows] Error closing workbook session:", closeErr);
+    // 3. Close the workbook session if one was created
+    if (sessionId) {
+      try {
+        const closeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/closeSession`;
+        await fetchGraph(closeUrl, { method: "POST", headers: sessionHeaders }, env);
+      } catch (closeErr) {
+        console.warn("[writeRows] Error closing workbook session:", closeErr);
+      }
     }
   }
 }
@@ -1664,9 +1732,10 @@ export async function findDuplicates(
     start?: string;
     duration?: string | number;
   },
-  env?: any
+  env?: any,
+  explicitDriveId?: string
 ): Promise<DuplicateCheckResult> {
-  const structure = await readSheetStructure(fileId, env);
+  const structure = await readSheetStructure(fileId, env, explicitDriveId);
   const headers = structure.headers;
   const rows = structure.last5Rows; // we can also fetch all rows from sheet or table
 
@@ -1759,7 +1828,8 @@ export async function undoRow(
   fileId: string,
   rowAddressOrEntryId: string,
   userContext?: { name?: string; email?: string },
-  env?: any
+  env?: any,
+  explicitDriveId?: string
 ): Promise<UndoRowResult> {
   const now = Date.now();
   const TEN_MINUTES_MS = 10 * 60 * 1000;
@@ -1786,27 +1856,33 @@ export async function undoRow(
     );
   }
 
-  const { driveId } = await resolveSharePointDrive(env);
+  const driveId = await resolveDriveForItem(fileId, explicitDriveId, env);
 
-  // 1. Open Workbook session
-  const sessionUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/createSession`;
-  const sessionRes = await fetchGraph(
-    sessionUrl,
-    {
-      method: "POST",
-      body: JSON.stringify({ persistChanges: true }),
-    },
-    env
-  );
+  // 1. Open Workbook session if supported, otherwise fallback to session-less
+  let sessionHeaders: Record<string, string> = {};
+  let sessionId: string | null = null;
 
-  if (!sessionRes.ok) {
-    const err = await sessionRes.text().catch(() => "");
-    throw new Error(`שגיאה בפתיחת Workbook Session לביטול שורה (${sessionRes.status}): ${err}`);
+  try {
+    const sessionUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/createSession`;
+    const sessionRes = await fetchGraph(
+      sessionUrl,
+      {
+        method: "POST",
+        body: JSON.stringify({ persistChanges: true }),
+      },
+      env
+    );
+
+    if (sessionRes.ok) {
+      const sessionData: any = await sessionRes.json();
+      sessionId = sessionData?.id || null;
+      if (sessionId) {
+        sessionHeaders = { "workbook-session-id": sessionId };
+      }
+    }
+  } catch (sessErr) {
+    console.warn("[undoRow] createSession exception, proceeding session-less:", sessErr);
   }
-
-  const sessionData: any = await sessionRes.json();
-  const sessionId = sessionData.id;
-  const sessionHeaders = { "workbook-session-id": sessionId };
 
   try {
     // Delete/clear the row based on whether it was a table or plain range

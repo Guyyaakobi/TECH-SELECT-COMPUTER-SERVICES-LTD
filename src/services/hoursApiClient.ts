@@ -162,6 +162,7 @@ export interface HoursAssistantEntryDraft {
   customerName: string;
   customerFolder?: string;
   fileId?: string;
+  driveId?: string;
   fileName?: string;
   filePath?: string;
   webUrl?: string;

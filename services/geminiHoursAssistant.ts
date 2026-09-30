@@ -15,6 +15,7 @@ export interface HoursAssistantEntryDraft {
   customerName: string;
   customerFolder?: string;
   fileId?: string;
+  driveId?: string;
   fileName?: string;
   filePath?: string;
   webUrl?: string;
@@ -313,6 +314,7 @@ export async function processAssistantChat(
         };
       }
       targetDraft.fileId = mt.fileId;
+      targetDraft.driveId = mt.driveId;
       targetDraft.fileName = mt.fileName;
       targetDraft.filePath = mt.filePath;
       targetDraft.webUrl = mt.webUrl;
@@ -327,7 +329,7 @@ export async function processAssistantChat(
       תיאור: targetDraft.description,
     };
 
-    const writeRes = await writeRows(targetDraft.fileId, [rowPayload], user, activeEnv);
+    const writeRes = await writeRows(targetDraft.fileId, [rowPayload], user, activeEnv, targetDraft.driveId);
     const rowNumMatch = (writeRes.rowAddress || "").match(/\d+/);
     const targetRow = rowNumMatch ? parseInt(rowNumMatch[0], 10) : 1;
 
@@ -765,6 +767,7 @@ MANDATORY WORKFLOW:
 
             // Auto-enrich target month file and duplicates if possible
             let fileId: string | undefined = undefined;
+            let driveId: string | undefined = undefined;
             let fileName: string | undefined = undefined;
             let filePath: string | undefined = undefined;
             let webUrl: string | undefined = undefined;
@@ -781,12 +784,13 @@ MANDATORY WORKFLOW:
                 );
                 if (mt.found && mt.fileId) {
                   fileId = mt.fileId;
+                  driveId = mt.driveId;
                   fileName = mt.fileName;
                   filePath = mt.filePath;
                   webUrl = mt.webUrl;
 
                   const struct = await withSafeTimeout(
-                    readSheetStructure(fileId, activeEnv),
+                    readSheetStructure(fileId, activeEnv, driveId),
                     12000,
                     { totalDataRows: 0, nextEmptyRowAddress: "Row 2" } as any
                   );
@@ -795,7 +799,7 @@ MANDATORY WORKFLOW:
 
                   // Check duplicates
                   const dup = await withSafeTimeout(
-                    findDuplicates(fileId, { employee: user.name, date }, activeEnv),
+                    findDuplicates(fileId, { employee: user.name, date }, activeEnv, driveId),
                     10000,
                     { hasDuplicates: false, duplicates: [] }
                   );
@@ -821,6 +825,7 @@ MANDATORY WORKFLOW:
               customerName,
               customerFolder: customerName,
               fileId,
+              driveId,
               fileName,
               filePath,
               webUrl,
@@ -850,8 +855,9 @@ MANDATORY WORKFLOW:
         } else if (name === "write_rows") {
           const fileId = String(args.fileId || "");
           const rows: any[] = Array.isArray(args.rows) ? args.rows : [];
+          const matchingDraft = collectedDrafts.find((d) => d.fileId === fileId);
           const writeRes = await withSafeTimeout(
-            writeRows(fileId, rows, user, activeEnv),
+            writeRows(fileId, rows, user, activeEnv, matchingDraft?.driveId),
             30000,
             { success: false, rowAddress: "", webUrl: "" } as any
           );
