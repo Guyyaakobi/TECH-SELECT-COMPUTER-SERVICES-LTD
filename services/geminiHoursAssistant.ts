@@ -86,15 +86,15 @@ export interface AssistantChatResult {
 // In-memory store for written entries eligible for 10-minute undo in the session
 const sessionWrittenEntries = new Map<string, WrittenEntryResult>();
 
-// Clean up expired entries every 5 minutes
-setInterval(() => {
+// Clean up expired entries lazily during request execution (avoids global scope timers in Cloudflare Workers)
+function cleanExpiredEntries(): void {
   const now = Date.now();
   for (const [key, val] of sessionWrittenEntries.entries()) {
     if (val.expiresAt < now) {
       sessionWrittenEntries.delete(key);
     }
   }
-}, 5 * 60 * 1000);
+}
 
 /**
  * Format today's date and context in Asia/Jerusalem
@@ -260,6 +260,7 @@ export async function processAssistantChat(
   params: AssistantChatParams,
   env?: any
 ): Promise<AssistantChatResult> {
+  cleanExpiredEntries();
   const activeEnv = env || process.env;
   const { user, message, audio, history = [], action, cardId, activeDrafts = [] } = params;
 
