@@ -438,10 +438,10 @@ function drawVectorFallbackPage(doc: jsPDF, data: ReportPdfData, pageNum: number
   const companyName = data.companyName || data.report.companyName || 'ארגון בבדיקה';
   const contactPerson = data.contactPerson || data.report.contactPerson || 'מנהל';
   const role = data.role || data.report.role || 'הנהלה';
-  const monthlyHours = data.report.financialAnalysis?.estimatedMonthlyHoursSaved || data.report.roi?.monthlyHoursSaved || 240;
-  const rawYearly = data.report.financialAnalysis?.estimatedYearlySavingsNIS || data.report.roi?.estimatedAnnualFinancialSavingsNIS || (monthlyHours * 100 * 12);
+  const monthlyHours = (data.report as any)?.financialAnalysis?.estimatedMonthlyHoursSaved || data.report.roi?.monthlyHoursSaved || 240;
+  const rawYearly = (data.report as any)?.financialAnalysis?.estimatedYearlySavingsNIS || data.report.roi?.estimatedAnnualFinancialSavingsNIS || (monthlyHours * 100 * 12);
   const yearlySavingsNIS = typeof rawYearly === 'number' ? rawYearly.toLocaleString() : String(rawYearly);
-  const payback = data.report.financialAnalysis?.paybackPeriodMonths || data.report.roi?.paybackMonths || 2.8;
+  const payback = (data.report as any)?.financialAnalysis?.paybackPeriodMonths || data.report.roi?.paybackMonths || 2.8;
 
   // Header Banner
   doc.setFillColor(11, 15, 25);

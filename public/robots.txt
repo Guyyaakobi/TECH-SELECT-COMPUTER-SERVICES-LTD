@@ -3,6 +3,7 @@
 
 User-agent: *
 Allow: /
+Disallow: /t/
 
 # Google Search & Google Gemini / AI Overviews
 User-agent: Googlebot

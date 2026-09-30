@@ -4,6 +4,7 @@ import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import { jsPDF } from "jspdf";
+import { hoursAuthMiddleware } from "./server/hoursAuthMiddleware";
 
 // Lazy Gemini client helper with required headers
 function getGeminiClient(): GoogleGenAI {
@@ -4273,6 +4274,26 @@ ${!isAteraCustomer ? `
         return res.json({ success: true, message: "Logged" });
       }
     });
+
+    // ==========================================
+    // 8. API Route: Internal Hours Tracking (Microsoft 365 Auth Protected)
+    // ==========================================
+    const hoursRouter = express.Router();
+    // Protect ALL /api/hours routes with Microsoft 365 Entra ID token validation
+    hoursRouter.use(hoursAuthMiddleware);
+
+    // GET /api/hours/me: returns authenticated user info (req.user)
+    hoursRouter.get("/me", (req, res) => {
+      const user = (req as any).user;
+      return res.json({
+        name: user?.name,
+        email: user?.email,
+        oid: user?.oid,
+        ...user,
+      });
+    });
+
+    app.use("/api/hours", hoursRouter);
 
     // Vite middleware for development vs static files for production
     if (process.env.NODE_ENV !== "production") {

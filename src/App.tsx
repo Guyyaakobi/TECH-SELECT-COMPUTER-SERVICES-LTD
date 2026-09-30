@@ -26,6 +26,8 @@ import { GeminiSkyGlow } from './components/GeminiSkyGlow';
 import { ArrowLeft, ArrowRight, ChevronRight, ChevronLeft, Layers } from 'lucide-react';
 import { LanguageProvider, useLanguage } from './context/LanguageContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { RANDOM_SLUG } from './config/hoursConfig';
+import { HoursTrackerPage } from './components/hours/HoursTrackerPage';
 
 function MainApp() {
   const { lang, isHe, setLang } = useLanguage();
@@ -467,6 +469,32 @@ function MainApp() {
 }
 
 export default function App() {
+  const [isHoursRoute, setIsHoursRoute] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const cleanPath = window.location.pathname.replace(/\/+$/, '').toLowerCase();
+    const targetPath = `/t/${RANDOM_SLUG}`.toLowerCase();
+    return cleanPath === targetPath;
+  });
+
+  useEffect(() => {
+    const handleLocationChange = () => {
+      const cleanPath = window.location.pathname.replace(/\/+$/, '').toLowerCase();
+      const targetPath = `/t/${RANDOM_SLUG}`.toLowerCase();
+      setIsHoursRoute(cleanPath === targetPath);
+    };
+
+    window.addEventListener('popstate', handleLocationChange);
+    window.addEventListener('hashchange', handleLocationChange);
+    return () => {
+      window.removeEventListener('popstate', handleLocationChange);
+      window.removeEventListener('hashchange', handleLocationChange);
+    };
+  }, []);
+
+  if (isHoursRoute) {
+    return <HoursTrackerPage />;
+  }
+
   return (
     <ThemeProvider>
       <LanguageProvider>
