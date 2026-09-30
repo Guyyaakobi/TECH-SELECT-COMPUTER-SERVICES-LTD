@@ -1080,169 +1080,111 @@ export async function findMonthTarget(
   const custData: any = await custChildrenRes.json();
   const custItems: any[] = custData.value || [];
 
-  // Accumulate all candidate files and items
-  const availableFiles: Array<{ fileId: string; fileName: string; webUrl?: string }> = [];
-  let hoursItems: any[] = [...custItems];
-
-  // A. Check files directly in customer folder / library root
-  for (const item of custItems) {
-    if (isExcelDriveItem(item)) {
-      recordFileDrive(item.id, driveId);
-      availableFiles.push({
-        fileId: item.id,
-        fileName: item.name,
-        webUrl: item.webUrl,
-      });
-    }
-  }
-
-  // B. Check if there is also a subfolder named "שעות עבודה" or containing "שעות"
+  // Locate the folder "שעות עבודה" (or folder containing "שעות")
   const hoursFolder = custItems.find(
     (item) => Boolean(item.folder) && (item.name === hoursFolderName || item.name.includes("שעות"))
   );
 
-  if (hoursFolder) {
-    try {
-      const hoursChildrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${hoursFolder.id}/children?$top=200`;
-      const hoursChildrenRes = await fetchGraph(hoursChildrenUrl, { method: "GET" }, env);
-      if (hoursChildrenRes.ok) {
-        const hoursData: any = await hoursChildrenRes.json();
-        const subItems: any[] = hoursData.value || [];
-        hoursItems = [...subItems, ...hoursItems];
-        for (const item of subItems) {
-          if (isExcelDriveItem(item)) {
-            recordFileDrive(item.id, driveId);
-            if (!availableFiles.some((f) => f.fileId === item.id)) {
-              availableFiles.push({
-                fileId: item.id,
-                fileName: item.name,
-                webUrl: item.webUrl,
+  let targetFolderId = hoursFolder ? hoursFolder.id : null;
+  let targetFolderItems: any[] = [];
+
+  if (targetFolderId) {
+    // Read ONLY inside "שעות עבודה"
+    const hoursChildrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${targetFolderId}/children?$top=200`;
+    const hoursChildrenRes = await fetchGraph(hoursChildrenUrl, { method: "GET" }, env);
+    if (hoursChildrenRes.ok) {
+      const hoursData: any = await hoursChildrenRes.json();
+      targetFolderItems = hoursData.value || [];
+    }
+  } else {
+    // Fallback: if no explicit subfolder found, inspect customer items directly
+    targetFolderItems = custItems;
+  }
+
+  // Collect ONLY Excel files from inside "שעות עבודה"
+  const candidateExcelFiles: any[] = [];
+  for (const item of targetFolderItems) {
+    if (isExcelDriveItem(item)) {
+      candidateExcelFiles.push(item);
+    } else if (item.folder) {
+      // Month subfolders inside "שעות עבודה" (e.g. "2026-09" or "ספטמבר 2026")
+      try {
+        const subUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${item.id}/children?$top=50`;
+        const subRes = await fetchGraph(subUrl, { method: "GET" }, env);
+        if (subRes.ok) {
+          const subData: any = await subRes.json();
+          for (const subItem of subData.value || []) {
+            if (isExcelDriveItem(subItem)) {
+              candidateExcelFiles.push({
+                ...subItem,
+                parentFolderName: item.name,
               });
             }
           }
         }
+      } catch (err) {
+        // ignore subfolder read errors
       }
-    } catch (err) {
-      console.warn(`[findMonthTarget] Error reading subfolder ${hoursFolder.name}:`, err);
     }
   }
 
-  const existingNames = hoursItems.map((i) => i.name);
+  // SORT candidate Excel files: NEWEST FIRST! (by lastModifiedDateTime descending)
+  candidateExcelFiles.sort((a, b) => {
+    const timeA = a.lastModifiedDateTime ? new Date(a.lastModifiedDateTime).getTime() : 0;
+    const timeB = b.lastModifiedDateTime ? new Date(b.lastModifiedDateTime).getTime() : 0;
+    return timeB - timeA;
+  });
 
-  // 3. DETECT naming pattern from existing items
-  let detectedPattern = "YYYY-MM"; // default
-  for (const name of existingNames) {
-    if (/\b\d{4}[-.]\d{2}\b/.test(name)) {
-      detectedPattern = "YYYY-MM";
-      break;
-    } else if (/\b\d{2}[.]\d{4}\b/.test(name)) {
-      detectedPattern = "MM.YYYY";
-      break;
-    } else if (/\b\d{2}[-]\d{4}\b/.test(name)) {
-      detectedPattern = "MM-YYYY";
-      break;
-    } else if (/\b\d{2}[-.]\d{2}\b/.test(name)) {
-      detectedPattern = "MM-YY";
-      break;
-    } else if (Object.values(HEBREW_MONTHS).some((arr) => arr.some((h) => name.includes(h)))) {
-      detectedPattern = "HEBREW_MONTH_YYYY";
-      break;
-    }
-  }
-
-  const matchedItem = matchMonthItem(hoursItems, year, month, customerFolder.name);
-
-  // If NOT found: return clear "not found" with existing names. NEVER create files!
-  if (!matchedItem) {
-    return {
-      found: false,
-      message: `לא נמצא קובץ או תיקייה עבור חודש ${mm}/${year} בתיקיית "${hoursFolderName}" של ${customerFolder.name}.`,
-      customerName: customerFolder.name,
-      requestedMonth: ym,
-      detectedPattern,
-      existingItems: existingNames,
-      availableFiles,
-    };
-  }
-
-  // Case A: matched item is a folder -> find the .xlsx inside
-  if (matchedItem.folder) {
-    const folderChildrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${matchedItem.id}/children?$top=50`;
-    const folderRes = await fetchGraph(folderChildrenUrl, { method: "GET" }, env);
-    if (!folderRes.ok) {
-      const err = await folderRes.text().catch(() => "");
-      throw new Error(`שגיאה בקריאת תיקיית חודש ${matchedItem.name}: ${err}`);
-    }
-    const folderData: any = await folderRes.json();
-    const folderItems: any[] = folderData.value || [];
-
-    // Find Excel file inside
-    const xlsxFile = folderItems.find((i) => isExcelDriveItem(i));
-    if (!xlsxFile) {
-      return {
-        found: false,
-        message: `נמצאה תיקיית חודש "${matchedItem.name}", אך לא נמצא בתוכה קובץ Excel.`,
-        customerName: customerFolder.name,
-        requestedMonth: ym,
-        detectedPattern,
-        existingItems: folderItems.map((i) => i.name),
-        availableFiles,
-      };
-    }
-
-    recordFileDrive(xlsxFile.id, driveId);
-    if (!availableFiles.some((f) => f.fileId === xlsxFile.id)) {
-      availableFiles.unshift({
-        fileId: xlsxFile.id,
-        fileName: xlsxFile.name,
-        webUrl: xlsxFile.webUrl,
+  // Populate availableFiles with all files from "שעות עבודה" (ordered newest to oldest) for manual selection
+  const availableFiles: Array<{ fileId: string; fileName: string; webUrl?: string }> = [];
+  for (const f of candidateExcelFiles) {
+    recordFileDrive(f.id, driveId);
+    if (!availableFiles.some((x) => x.fileId === f.id)) {
+      availableFiles.push({
+        fileId: f.id,
+        fileName: f.name,
+        webUrl: f.webUrl,
       });
     }
+  }
 
+  const existingNames = candidateExcelFiles.map((i) => i.name);
+
+  // If no Excel files found inside "שעות עבודה"
+  if (candidateExcelFiles.length === 0) {
     return {
-      found: true,
+      found: false,
+      message: `לא נמצאו קבצי Excel בתיקיית "${hoursFolderName}" של ${customerFolder.name}.`,
       customerName: customerFolder.name,
       requestedMonth: ym,
-      targetType: "month_folder_file",
-      fileId: xlsxFile.id,
-      fileName: xlsxFile.name,
-      filePath: `${customerFolder.name}/${hoursFolderName}/${matchedItem.name}/${xlsxFile.name}`,
-      webUrl: xlsxFile.webUrl,
-      driveId,
-      detectedPattern,
-      existingItems: existingNames,
-      availableFiles,
+      existingItems: targetFolderItems.map((i) => i.name),
+      availableFiles: [],
     };
   }
 
-  // Case B: matched item is directly an Excel file
-  if (isExcelDriveItem(matchedItem)) {
-    recordFileDrive(matchedItem.id, driveId);
+  // "ותמיד שיקח את הקובץ הכי חדש":
+  // Check if a file specifically matches the current target month; otherwise take the absolute newest file!
+  const monthMatch = matchMonthItem(candidateExcelFiles, year, month, customerFolder.name);
+  const chosenFile = monthMatch || candidateExcelFiles[0];
 
-    return {
-      found: true,
-      customerName: customerFolder.name,
-      requestedMonth: ym,
-      targetType: "file",
-      fileId: matchedItem.id,
-      fileName: matchedItem.name,
-      filePath: `${customerFolder.name}/${hoursFolderName}/${matchedItem.name}`,
-      webUrl: matchedItem.webUrl,
-      driveId,
-      detectedPattern,
-      existingItems: existingNames,
-      availableFiles,
-    };
-  }
+  recordFileDrive(chosenFile.id, driveId);
+
+  const folderPrefix = chosenFile.parentFolderName
+    ? `${customerFolder.name}/${hoursFolderName}/${chosenFile.parentFolderName}`
+    : `${customerFolder.name}/${hoursFolderName}`;
 
   return {
-    found: false,
-    message: `נמצא פריט תואם "${matchedItem.name}" אך אינו קובץ Excel או תיקייה.`,
+    found: true,
     customerName: customerFolder.name,
     requestedMonth: ym,
-    detectedPattern,
+    targetType: "file",
+    fileId: chosenFile.id,
+    fileName: chosenFile.name,
+    filePath: `${folderPrefix}/${chosenFile.name}`,
+    webUrl: chosenFile.webUrl,
+    driveId,
     existingItems: existingNames,
-    availableFiles,
+    availableFiles, // All files from "שעות עבודה" sorted newest to oldest!
   };
 }
 
