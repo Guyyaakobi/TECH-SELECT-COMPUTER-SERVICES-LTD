@@ -2743,6 +2743,56 @@ function isStatusHeader(norm: string): boolean {
 }
 
 /**
+ * Resolve the technician's first name and formatted author prefix (e.g. "גיא כתב: " / "ודים כתב: ")
+ */
+export function getAuthorPrefix(userName?: string, userEmail?: string): string {
+  const raw = (userName || "").trim();
+  const email = (userEmail || "").trim().toLowerCase();
+
+  let firstName = "";
+  if (
+    raw.includes("גיא") ||
+    raw.toLowerCase().includes("guy") ||
+    email.startsWith("guy") ||
+    email.startsWith("g@")
+  ) {
+    firstName = "גיא";
+  } else if (
+    raw.includes("ודים") ||
+    raw.toLowerCase().includes("vadim") ||
+    email.startsWith("vadim") ||
+    email.startsWith("v@")
+  ) {
+    firstName = "ודים";
+  } else if (raw) {
+    firstName = raw.split(/\s+/)[0];
+  } else if (email) {
+    firstName = email.split("@")[0].split(".")[0];
+  }
+
+  if (!firstName) return "";
+  return `${firstName} כתב: `;
+}
+
+/**
+ * Prefix the technical description with who wrote it (e.g. "גיא כתב: ..."), avoiding duplicate prefixes.
+ */
+export function prefixDescriptionWithAuthor(desc: any, userName?: string, userEmail?: string): string {
+  const cleanDesc = String(desc || "").trim();
+  if (!cleanDesc) return "";
+
+  // If already prefixed with "[שם] כתב", do not add again
+  if (/^[\u0590-\u05FF\w\s]+ (?:כתב|wrote)\s*[:\-–—]?\s*/i.test(cleanDesc)) {
+    return cleanDesc;
+  }
+
+  const prefix = getAuthorPrefix(userName, userEmail);
+  if (!prefix) return cleanDesc;
+
+  return `${prefix}${cleanDesc}`;
+}
+
+/**
  * Intelligent semantic mapper from Excel column header to row data value.
  * Fills ALL columns in ANY tab (ביקור באתר, טיקטים, פרוייקטים) according to header name and formats.
  */
@@ -2773,6 +2823,9 @@ export function resolveCellValueForHeader(
     if (isHoursHeader(normHeader)) {
       return formatHoursForSheet(directVal, structure.formats.hoursFormat);
     }
+    if (isDescriptionHeader(normHeader)) {
+      return prefixDescriptionWithAuthor(directVal, userContext?.name, userContext?.email);
+    }
     return directVal;
   }
 
@@ -2785,6 +2838,9 @@ export function resolveCellValueForHeader(
         }
         if (isHoursHeader(normHeader)) {
           return formatHoursForSheet(val, structure.formats.hoursFormat);
+        }
+        if (isDescriptionHeader(normHeader)) {
+          return prefixDescriptionWithAuthor(val, userContext?.name, userContext?.email);
         }
         return val;
       }
@@ -2980,7 +3036,7 @@ export function resolveCellValueForHeader(
 
   // L. DESCRIPTION / WORK PERFORMED (תיאור / פירוט פעילות)
   if (isDescriptionHeader(normHeader)) {
-    return (
+    const rawVal =
       rowObj["תיאור"] ||
       rowObj["תיאור פעילות"] ||
       rowObj["תיאור הפעילות"] ||
@@ -2994,8 +3050,8 @@ export function resolveCellValueForHeader(
       rowObj["תיאור הטיפול"] ||
       rowObj["description"] ||
       rowObj["details"] ||
-      "תמיכה ושירות מחשוב"
-    );
+      "תמיכה ושירות מחשוב";
+    return prefixDescriptionWithAuthor(rawVal, userContext?.name, userContext?.email);
   }
 
   // M. NOTES (הערות)

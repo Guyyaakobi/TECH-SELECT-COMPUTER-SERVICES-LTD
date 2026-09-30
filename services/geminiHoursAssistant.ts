@@ -19,6 +19,7 @@ import {
   calculateStartTime,
   suggestStartEndTimes,
   getHebrewDay,
+  prefixDescriptionWithAuthor,
 } from "./graphHours";
 import { AuthenticatedUser } from "../server/hoursAuthMiddleware";
 
@@ -129,6 +130,8 @@ export function buildEnrichedRowPayload(params: {
     customerName ||
     "פרויקט שוטף";
 
+  const prefixedDesc = prefixDescriptionWithAuthor(desc, userName);
+
   return {
     תאריך: date,
     date: date,
@@ -189,26 +192,26 @@ export function buildEnrichedRowPayload(params: {
     durationHours: hours,
     durationMinutes: minutes,
 
-    תיאור: desc,
-    "תיאור פעילות": desc,
-    "תיאור הפעילות": desc,
-    "תיאור התקלה": desc,
-    "תיאור תקלה": desc,
-    "תיאור הטיפול": desc,
-    פירוט: desc,
-    "פירוט עבודה": desc,
-    "פירוט פעילות": desc,
-    "פירוט הטיפול": desc,
-    "פירוט הקריאה": desc,
-    "מהות הקריאה": desc,
-    "מהות הטיפול": desc,
-    "מה בוצע": desc,
-    פעילות: desc,
-    נושא: desc,
-    description: desc,
-    details: desc,
-    summary: desc,
-    task: desc,
+    תיאור: prefixedDesc,
+    "תיאור פעילות": prefixedDesc,
+    "תיאור הפעילות": prefixedDesc,
+    "תיאור התקלה": prefixedDesc,
+    "תיאור תקלה": prefixedDesc,
+    "תיאור הטיפול": prefixedDesc,
+    פירוט: prefixedDesc,
+    "פירוט עבודה": prefixedDesc,
+    "פירוט פעילות": prefixedDesc,
+    "פירוט הטיפול": prefixedDesc,
+    "פירוט הקריאה": prefixedDesc,
+    "מהות הקריאה": prefixedDesc,
+    "מהות הטיפול": prefixedDesc,
+    "מה בוצע": prefixedDesc,
+    פעילות: prefixedDesc,
+    נושא: prefixedDesc,
+    description: prefixedDesc,
+    details: prefixedDesc,
+    summary: prefixedDesc,
+    task: prefixedDesc,
 
     "מספר טיקט": effectiveTicket,
     "מס' טיקט": effectiveTicket,
@@ -869,6 +872,11 @@ EXTRACTION RULES:
        * Remote support / phone calls / tickets / daily maintenance ("דיברתי", "התחברתי", "טלפון", "מרחוק", "איפוס סיסמה", "תמיכה") -> "tickets" or matching support tab.
        * Project work / setup / migration / rollout ("פרויקט", "שדרוג שרת", "מיגרציה", "הקמה") -> "project" or matching project tab.
   5. Description (ניסוח מקצועי ברמת איש IT בכיר / איש פיתוח בכיר - קריטי וסופר חשוב ללקוח):
+     - זיהוי מחבר הדיווח (קריטי): התחל תמיד את תיאור הפעילות בשם הטכנאי שכתב את הדיווח, לפי שם העובד המחובר (Employee name), בפורמט:
+       "[שם פרטי] כתב: [התיאור המקצועי המלא]"
+       לדוגמה: אם שם העובד המחובר הוא גיא (Guy) -> התחל ב: "גיא כתב: איתור תקלה פיזית..."
+       אם שם העובד המחובר הוא ודים (Vadim) -> התחל ב: "ודים כתב: תמיכה מרחוק במשתמשת..."
+       כך שבקובץ האקסל ודוח השעות יידעו תמיד בדיוק מי הטכנאי שהזין וביצע את המידע.
      - כאשר אתה מקבל את המידע והתיאור מהטכנאי, נסח אותו ברמה מקצועית גבוהה ביותר, בדיוק כפי שאיש IT בכיר (Senior Systems Engineer) או מהנדס תוכנה/פיתוח בכיר (Senior Software Engineer) כותב עבור לקוחות ודוחות חיוב:
      - שימוש במינוח טכנולוגי מדויק ומקצועי (כגון: Active Directory, DNS, DHCP, RAID Rebuild, Group Policy, Endpoint Security, Exchange Online, Network Latency, Firewall Rules, Data Integrity, API, Backup & Recovery, Switch Port, וכו').
      - שמירה מלאה וקפדנית על כל הפרטים והעובדות שהטכנאי ציין (שמות שרתים, שמות מחשבים, רכיבים, שמות משתמשים/אנשי קשר, בדיקות שבוצעו) — אל תחסוך במילים, אל תקצר ואל תשמיט שום שלב!
