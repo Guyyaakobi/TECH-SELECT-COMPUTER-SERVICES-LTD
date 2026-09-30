@@ -19,10 +19,10 @@ export async function onRequestGet(context: any): Promise<Response> {
   const env: any = context.env || {};
   const corsHeaders = getCorsHeaders(request);
 
-  // Optional auth extraction: attach user token if provided
-  const authHeader = request.headers.get("Authorization") || request.headers.get("authorization");
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    env.userToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+  // Auth gate
+  const auth = await authenticateHoursRequest(request, env);
+  if ("errorResponse" in auth) {
+    return auth.errorResponse;
   }
 
   const url = new URL(request.url);
@@ -48,10 +48,10 @@ export async function onRequestPost(context: any): Promise<Response> {
   const env: any = context.env || {};
   const corsHeaders = getCorsHeaders(request);
 
-  // Optional auth extraction: attach user token if provided
-  const authHeader = request.headers.get("Authorization") || request.headers.get("authorization");
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    env.userToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+  // Auth gate
+  const auth = await authenticateHoursRequest(request, env);
+  if ("errorResponse" in auth) {
+    return auth.errorResponse;
   }
 
   try {

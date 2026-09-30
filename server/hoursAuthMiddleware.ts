@@ -75,31 +75,11 @@ export async function validateAzureToken(token: string): Promise<AuthenticatedUs
     `https://sts.windows.net/${tenantId}/`,
   ];
 
-  // 3. Strict allowed single-tenant audiences:
-  // Supports App Client ID, exposed api:// scopes, and standard Microsoft Graph resource tokens (User.Read)
-  const allowedAudiences: string[] = [
-    "00000003-0000-0000-c000-000000000000",
-    "https://graph.microsoft.com",
-    "https://graph.microsoft.com/",
-  ];
-
-  const candidateClientIds = [
-    clientId,
-    process.env.AZURE_CLIENT_ID,
-    process.env.CLIENT_ID,
-    process.env.HOURS_GRAPH_CLIENT_ID,
-    process.env.AZURE_API_AUDIENCE,
-  ].filter(Boolean) as string[];
-
-  for (const cid of candidateClientIds) {
-    const clean = cid.trim();
-    if (clean && !clean.includes("~")) {
-      if (!allowedAudiences.includes(clean)) allowedAudiences.push(clean);
-      if (!allowedAudiences.includes(`api://${clean}`)) allowedAudiences.push(`api://${clean}`);
-      if (!allowedAudiences.includes(`api://${clean}/access_as_user`)) {
-        allowedAudiences.push(`api://${clean}/access_as_user`);
-      }
-    }
+  // 3. Strict allowed audiences: AZURE_CLIENT_ID OR "api://" + AZURE_CLIENT_ID
+  const allowedAudiences: string[] = [];
+  if (clientId) {
+    allowedAudiences.push(clientId);
+    allowedAudiences.push(`api://${clientId}`);
   }
 
   // 4. Verify signature, header, and expiry via jose
@@ -218,18 +198,17 @@ export async function hoursAuthMiddleware(req: Request, res: Response, next: Nex
     // Verify token with hardened rules
     const user = await validateAzureToken(token);
 
-    // Expose validated user on req.user and raw token on req.userToken
+    // Expose validated user on req.user
     req.user = user;
-    (req as any).userToken = token;
     next();
   } catch (err: any) {
     // Log the exact reason server-side (bad audience / issuer / expired / signature / bad tid)
     const exactReason = err?.message || "unknown token verification failure";
     console.warn(`[HOURS AUTH 401] reason: ${exactReason}`);
 
+    // NEVER expose the exact reason to the client
     res.status(401).json({
       error: "Unauthorized",
-      reason: exactReason,
     });
   }
 }
