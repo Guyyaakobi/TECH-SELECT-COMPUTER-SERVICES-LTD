@@ -874,6 +874,45 @@ export function recordFileDrive(fileId: string, driveId: string) {
 }
 
 /**
+ * Check if a SharePoint DriveItem is an Excel workbook or spreadsheet.
+ * Supports:
+ * - Extension: .xlsx, .xlsm, .xls, .xlsb
+ * - Graph file facet with mimeType (spreadsheetml / ms-excel)
+ * - Files without extension but with file facet
+ * - Ignores temporary Excel lock files (~$*)
+ */
+export function isExcelDriveItem(item: any): boolean {
+  if (!item) return false;
+  const name = (item.name || "").trim();
+  if (name.startsWith("~$")) return false; // Ignore lock files
+  const lower = name.toLowerCase();
+  if (
+    lower.endsWith(".xlsx") ||
+    lower.endsWith(".xlsm") ||
+    lower.endsWith(".xls") ||
+    lower.endsWith(".xlsb")
+  ) {
+    return true;
+  }
+  // Check Graph API file facet & mimeType
+  if (item.file) {
+    const mime = (item.file.mimeType || "").toLowerCase();
+    if (
+      mime.includes("spreadsheet") ||
+      mime.includes("excel") ||
+      mime.includes("officedocument")
+    ) {
+      return true;
+    }
+    // If it has a file facet and no extension
+    if (!name.includes(".")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Matches an item from the hours folder for the requested year & month.
  * Handles patterns such as:
  * - "אסיו ספטמבר.xlsx"
@@ -961,8 +1000,8 @@ export function matchMonthItem(
       }
     }
 
-    // 6. Direct Excel file bonus (.xlsx) or folder
-    if (rawName.endsWith(".xlsx")) {
+    // 6. Direct Excel file bonus (.xlsx, file facet) or folder
+    if (isExcelDriveItem(item)) {
       score += 10;
     } else if (item.folder) {
       score += 8;
@@ -1047,7 +1086,7 @@ export async function findMonthTarget(
 
   // A. Check files directly in customer folder / library root
   for (const item of custItems) {
-    if (item.name.toLowerCase().endsWith(".xlsx") && !item.name.startsWith("~$")) {
+    if (isExcelDriveItem(item)) {
       recordFileDrive(item.id, driveId);
       availableFiles.push({
         fileId: item.id,
@@ -1071,7 +1110,7 @@ export async function findMonthTarget(
         const subItems: any[] = hoursData.value || [];
         hoursItems = [...subItems, ...hoursItems];
         for (const item of subItems) {
-          if (item.name.toLowerCase().endsWith(".xlsx") && !item.name.startsWith("~$")) {
+          if (isExcelDriveItem(item)) {
             recordFileDrive(item.id, driveId);
             if (!availableFiles.some((f) => f.fileId === item.id)) {
               availableFiles.push({
@@ -1137,12 +1176,12 @@ export async function findMonthTarget(
     const folderData: any = await folderRes.json();
     const folderItems: any[] = folderData.value || [];
 
-    // Find .xlsx file inside
-    const xlsxFile = folderItems.find((i) => i.name.toLowerCase().endsWith(".xlsx") && !i.name.startsWith("~$"));
+    // Find Excel file inside
+    const xlsxFile = folderItems.find((i) => isExcelDriveItem(i));
     if (!xlsxFile) {
       return {
         found: false,
-        message: `נמצאה תיקיית חודש "${matchedItem.name}", אך לא נמצא בתוכה קובץ Excel (.xlsx).`,
+        message: `נמצאה תיקיית חודש "${matchedItem.name}", אך לא נמצא בתוכה קובץ Excel.`,
         customerName: customerFolder.name,
         requestedMonth: ym,
         detectedPattern,
@@ -1176,8 +1215,8 @@ export async function findMonthTarget(
     };
   }
 
-  // Case B: matched item is directly an .xlsx file
-  if (matchedItem.name.toLowerCase().endsWith(".xlsx")) {
+  // Case B: matched item is directly an Excel file
+  if (isExcelDriveItem(matchedItem)) {
     recordFileDrive(matchedItem.id, driveId);
 
     return {
