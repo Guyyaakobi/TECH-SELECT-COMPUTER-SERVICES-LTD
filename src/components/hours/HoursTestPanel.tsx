@@ -381,13 +381,31 @@ export const HoursTestPanel: React.FC<HoursTestPanelProps> = ({ currentUser }) =
                   <span className="flex-1 font-semibold">{diagnosticsError}</span>
                 </div>
                 <div className="text-[11px] text-red-300/90 bg-black/40 p-2.5 rounded border border-red-500/20 space-y-1">
-                  <p>מנוע התיעוד מוגדר לפעול אך ורק באמצעות משתני HOURS_GRAPH (ללא שום שימוש ב-CLIENT_ID/SECRET):</p>
+                  <p>מנוע התיעוד מוגדר לפעול באמצעות משתני Microsoft Graph הבאים:</p>
                   <ul className="list-disc list-inside font-mono text-[10px] space-y-0.5 text-slate-300">
                     <li>AZURE_TENANT_ID</li>
-                    <li>HOURS_GRAPH_CLIENT_ID</li>
-                    <li>HOURS_GRAPH_CLIENT_SECRET</li>
+                    <li>HOURS_GRAPH_CLIENT_ID (או AZURE_CLIENT_ID)</li>
+                    <li>HOURS_GRAPH_CLIENT_SECRET (ערך ה-Secret ולא ה-Secret ID)</li>
                   </ul>
                 </div>
+              </div>
+            )}
+
+            {diagnosticsData?.error && (
+              <div className="p-3.5 rounded-xl bg-amber-950/40 border border-amber-500/40 text-xs text-amber-200 space-y-2">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0 text-amber-400 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-semibold text-amber-300">סטטוס חיבור שרת ל-Microsoft Graph: שגיאה בקבלת טוקן</p>
+                    <p className="text-[11px] text-amber-200/90 mt-1">{diagnosticsData.error}</p>
+                  </div>
+                </div>
+                {diagnosticsData.recommendation && (
+                  <div className="text-[11px] text-amber-300/90 bg-black/40 p-2.5 rounded border border-amber-500/20">
+                    <p className="font-bold mb-0.5">הנחיית תיקון:</p>
+                    <p>{diagnosticsData.recommendation}</p>
+                  </div>
+                )}
               </div>
             )}
 

@@ -4309,6 +4309,38 @@ ${!isAteraCustomer ? `
       });
     });
 
+    // 8. GET /api/hours/diagnostics: Public/Admin token diagnostics & active env vars (Safe - no secrets exposed)
+    hoursRouter.get("/diagnostics", async (req, res) => {
+      try {
+        const forceRefresh = req.query.refresh === "true";
+        const env = {
+          ...process.env,
+          userToken: (req as any).userToken || req.headers.authorization?.replace(/^Bearer\s+/i, ""),
+        };
+        const result = await getGraphDiagnostics(env, forceRefresh);
+        return res.json(result);
+      } catch (err: any) {
+        console.error("[GET /api/hours/diagnostics] Error:", err);
+        return res.status(500).json({ error: err?.message || "שגיאה בבדיקת אבחון Graph" });
+      }
+    });
+
+    // 8.1 POST /api/hours/diagnostics/refresh: clear token cache & fetch fresh token
+    hoursRouter.post(["/diagnostics/refresh", "/diagnostics"], async (req, res) => {
+      try {
+        clearGraphTokenCache();
+        const env = {
+          ...process.env,
+          userToken: (req as any).userToken || req.headers.authorization?.replace(/^Bearer\s+/i, ""),
+        };
+        const result = await getGraphDiagnostics(env, true);
+        return res.json(result);
+      } catch (err: any) {
+        console.error("[POST /api/hours/diagnostics/refresh] Error:", err);
+        return res.status(500).json({ error: err?.message || "שגיאה ברענון טוקן Graph" });
+      }
+    });
+
     // Protect subsequent /api/hours routes with Microsoft 365 Entra ID token validation
     hoursRouter.use(hoursAuthMiddleware);
 
@@ -4323,16 +4355,23 @@ ${!isAteraCustomer ? `
       });
     });
 
+    // Helper to supply environment with active user Bearer token for seamless dual-mode auth
+    const getRequestEnv = (req: any) => ({
+      ...process.env,
+      userToken: (req as any).userToken,
+    });
+
     // 1. GET /api/hours/customers: auto-detect structure (folders/libraries) & list customers (10m cache) or search if ?q=...
     hoursRouter.get("/customers", async (req, res) => {
       try {
+        const env = getRequestEnv(req);
         const query = req.query.q || req.query.query || req.query.search;
         const forceRefresh = req.query.refresh === "true";
         if (typeof query === "string" && query.trim() !== "") {
-          const results = await findCustomer(query.trim(), process.env);
+          const results = await findCustomer(query.trim(), env);
           return res.json({ query, results });
         }
-        const detection = await detectAndListCustomers(process.env, forceRefresh);
+        const detection = await detectAndListCustomers(env, forceRefresh);
         return res.json({
           siteId: detection.siteId,
           detectedStructure: detection.detectedStructure,
@@ -4349,8 +4388,9 @@ ${!isAteraCustomer ? `
     // 2. GET /api/hours/customers/search: fuzzy match customer
     hoursRouter.get("/customers/search", async (req, res) => {
       try {
+        const env = getRequestEnv(req);
         const query = String(req.query.q || req.query.query || "").trim();
-        const results = await findCustomer(query, process.env);
+        const results = await findCustomer(query, env);
         return res.json({ query, results });
       } catch (err: any) {
         console.error("[GET /api/hours/customers/search] Error:", err);
@@ -4361,12 +4401,13 @@ ${!isAteraCustomer ? `
     // 3. GET /api/hours/month-target: find month target file / folder in "{customer}/שעות עבודה"
     hoursRouter.get("/month-target", async (req, res) => {
       try {
+        const env = getRequestEnv(req);
         const customer = String(req.query.customer || req.query.customerId || "").trim();
         const date = String(req.query.date || req.query.month || "").trim();
         if (!customer) {
           return res.status(400).json({ error: "חסר פרמטר חובה: customer" });
         }
-        const result = await findMonthTarget(customer, date, process.env);
+        const result = await findMonthTarget(customer, date, env);
         return res.json(result);
       } catch (err: any) {
         console.error("[GET /api/hours/month-target] Error:", err);
@@ -4377,11 +4418,12 @@ ${!isAteraCustomer ? `
     // 4. GET /api/hours/sheet-structure: read table or plain range, detect formats, empty row
     hoursRouter.get("/sheet-structure", async (req, res) => {
       try {
+        const env = getRequestEnv(req);
         const fileId = String(req.query.fileId || "").trim();
         if (!fileId) {
           return res.status(400).json({ error: "חסר פרמטר חובה: fileId" });
         }
-        const structure = await readSheetStructure(fileId, process.env);
+        const structure = await readSheetStructure(fileId, env);
         return res.json(structure);
       } catch (err: any) {
         console.error("[GET /api/hours/sheet-structure] Error:", err);
@@ -4392,12 +4434,13 @@ ${!isAteraCustomer ? `
     // 5. POST /api/hours/write-rows: write rows to table or plain range with workbook session & retries
     hoursRouter.post("/write-rows", async (req, res) => {
       try {
+        const env = getRequestEnv(req);
         const { fileId, rows, driveId } = req.body || {};
         if (!fileId || !rows || !Array.isArray(rows) || rows.length === 0) {
           return res.status(400).json({ error: "נדרשים שדות חובה: fileId ומערך שורות rows" });
         }
         const user = (req as any).user;
-        const result = await writeRows(fileId, rows, user, process.env, driveId);
+        const result = await writeRows(fileId, rows, user, env, driveId);
         return res.json(result);
       } catch (err: any) {
         console.error("[POST /api/hours/write-rows] Error:", err);
@@ -4408,11 +4451,12 @@ ${!isAteraCustomer ? `
     // 6. POST /api/hours/find-duplicates: check existing rows for employee / date / start
     hoursRouter.post("/find-duplicates", async (req, res) => {
       try {
+        const env = getRequestEnv(req);
         const { fileId, employee, date, start, duration } = req.body || {};
         if (!fileId || !employee || !date) {
           return res.status(400).json({ error: "נדרשים שדות חובה: fileId, employee, date" });
         }
-        const result = await findDuplicates(fileId, { employee, date, start, duration }, process.env);
+        const result = await findDuplicates(fileId, { employee, date, start, duration }, env);
         return res.json(result);
       } catch (err: any) {
         console.error("[POST /api/hours/find-duplicates] Error:", err);
@@ -4423,47 +4467,25 @@ ${!isAteraCustomer ? `
     // 7. POST /api/hours/undo: undo row written by this tool in the last 10 minutes
     hoursRouter.post("/undo", async (req, res) => {
       try {
+        const env = getRequestEnv(req);
         const { fileId, rowAddress, entryId } = req.body || {};
         const target = rowAddress || entryId;
         if (!fileId || !target) {
           return res.status(400).json({ error: "נדרשים שדות חובה: fileId ו-rowAddress" });
         }
         const user = (req as any).user;
-        const result = await undoRow(fileId, target, user, process.env);
+        const result = await undoRow(fileId, target, user, env);
         return res.json(result);
       } catch (err: any) {
         console.error("[POST /api/hours/undo] Error:", err);
-        return res.status(400).json({ error: err?.message || "שגיאה בביטול שורה" });
-      }
-    });
-
-    // 8. GET /api/hours/diagnostics: retrieve token diagnostics & active env vars
-    hoursRouter.get("/diagnostics", async (req, res) => {
-      try {
-        const forceRefresh = req.query.refresh === "true";
-        const result = await getGraphDiagnostics(process.env, forceRefresh);
-        return res.json(result);
-      } catch (err: any) {
-        console.error("[GET /api/hours/diagnostics] Error:", err);
-        return res.status(500).json({ error: err?.message || "שגיאה בבדיקת אבחון Graph" });
-      }
-    });
-
-    // 8.1 POST /api/hours/diagnostics/refresh: clear token cache & fetch fresh token
-    hoursRouter.post(["/diagnostics/refresh", "/diagnostics"], async (req, res) => {
-      try {
-        clearGraphTokenCache();
-        const result = await getGraphDiagnostics(process.env, true);
-        return res.json(result);
-      } catch (err: any) {
-        console.error("[POST /api/hours/diagnostics/refresh] Error:", err);
-        return res.status(500).json({ error: err?.message || "שגיאה ברענון טוקן Graph" });
+        return res.status(500).json({ error: err?.message || "שגיאה בביטול שורה" });
       }
     });
 
     // 9. POST /api/hours/assistant/chat: AI Assistant (voice & text) powered by Gemini and Stage 2 Engine
     hoursRouter.post("/assistant/chat", async (req, res) => {
       try {
+        const env = getRequestEnv(req);
         const user = (req as any).user;
         const { message, audio, history, action, cardId, draftData, activeDrafts } = req.body || {};
         const result = await processAssistantChat(
@@ -4476,16 +4498,14 @@ ${!isAteraCustomer ? `
             cardId,
             draftData,
             activeDrafts,
-            env: process.env,
+            env,
           },
-          process.env
+          env
         );
         return res.json(result);
       } catch (err: any) {
         console.error("[POST /api/hours/assistant/chat] Error:", err);
-        return res.status(500).json({
-          error: err?.message || "שגיאה בעיבוד בקשת עוזר ה-AI לתיעוד שעות",
-        });
+        return res.status(500).json({ error: err?.message || "שגיאה בעיבוד בקשת עוזר ה-AI" });
       }
     });
 

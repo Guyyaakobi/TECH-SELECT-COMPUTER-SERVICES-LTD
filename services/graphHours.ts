@@ -144,6 +144,7 @@ export interface GraphDiagnosticsInfo {
     clientVar: string;
     secretVar: string;
   };
+  connected: boolean;
   appId: string;
   roles: string[];
   issuedAt: string | null;
@@ -151,6 +152,8 @@ export interface GraphDiagnosticsInfo {
   fromCache: boolean;
   cachedAt?: string | null;
   tenantId?: string;
+  error?: string;
+  recommendation?: string;
 }
 
 /**
@@ -191,31 +194,40 @@ function decodeJwtPayload(token: string): any {
 let cachedSiteDriveInfo: { siteId: string; driveId: string; timestamp: number } | null = null;
 
 /**
- * Get environment configuration values strictly for the Hours Engine
- * ONLY AZURE_TENANT_ID, HOURS_GRAPH_CLIENT_ID, HOURS_GRAPH_CLIENT_SECRET
+ * Get environment configuration values for the Hours Engine
  */
 export function getGraphHoursConfig(env?: any) {
   const envObj = (env || {}) as any;
   const p = typeof process !== "undefined" ? process?.env : {};
 
-  // Tenant strictly from AZURE_TENANT_ID
+  // Tenant strictly from AZURE_TENANT_ID or TENANT_ID
   const tenantId = (
     envObj.AZURE_TENANT_ID ||
     p?.AZURE_TENANT_ID ||
+    envObj.TENANT_ID ||
+    p?.TENANT_ID ||
     ""
   ).trim();
 
-  // Client ID strictly from HOURS_GRAPH_CLIENT_ID
+  // Client ID: preferred HOURS_GRAPH_CLIENT_ID, fallback to AZURE_CLIENT_ID / CLIENT_ID
   let clientId = (
     envObj.HOURS_GRAPH_CLIENT_ID ||
     p?.HOURS_GRAPH_CLIENT_ID ||
+    envObj.AZURE_CLIENT_ID ||
+    p?.AZURE_CLIENT_ID ||
+    envObj.CLIENT_ID ||
+    p?.CLIENT_ID ||
     ""
   ).trim();
 
-  // Client Secret strictly from HOURS_GRAPH_CLIENT_SECRET
+  // Client Secret: preferred HOURS_GRAPH_CLIENT_SECRET, fallback to AZURE_CLIENT_SECRET / CLIENT_SECRET
   let clientSecret = (
     envObj.HOURS_GRAPH_CLIENT_SECRET ||
     p?.HOURS_GRAPH_CLIENT_SECRET ||
+    envObj.AZURE_CLIENT_SECRET ||
+    p?.AZURE_CLIENT_SECRET ||
+    envObj.CLIENT_SECRET ||
+    p?.CLIENT_SECRET ||
     ""
   ).trim();
 
@@ -250,8 +262,8 @@ export function getGraphHoursConfig(env?: any) {
 }
 
 /**
- * Obtain Microsoft Graph access token strictly using HOURS_GRAPH credentials.
- * No fallback to CLIENT_ID / CLIENT_SECRET.
+ * Obtain Microsoft Graph access token using existing client credentials connection
+ * with resilient fallback across credential candidates.
  */
 export async function getGraphAccessToken(env?: any): Promise<string> {
   const now = Date.now();
@@ -259,51 +271,122 @@ export async function getGraphAccessToken(env?: any): Promise<string> {
     return cachedHoursGraphToken.token;
   }
 
+  const envObj = (env || {}) as any;
+  const p = typeof process !== "undefined" ? process?.env : {};
   const { credentials } = getGraphHoursConfig(env);
 
-  if (!credentials.clientId) {
-    throw new Error("חסרה הגדרת מערכת: HOURS_GRAPH_CLIENT_ID");
-  }
-  if (!credentials.clientSecret) {
-    throw new Error("חסרה הגדרת מערכת: HOURS_GRAPH_CLIENT_SECRET");
-  }
   if (!credentials.tenantId) {
     throw new Error("חסרה הגדרת מערכת: AZURE_TENANT_ID");
   }
 
-  const tokenUrl = `https://login.microsoftonline.com/${encodeURIComponent(credentials.tenantId)}/oauth2/v2.0/token`;
-  const bodyParams = new URLSearchParams({
-    client_id: credentials.clientId,
-    client_secret: credentials.clientSecret,
-    scope: "https://graph.microsoft.com/.default",
-    grant_type: "client_credentials",
-  });
+  // Build candidate pairs to attempt in order of specificity
+  interface CredentialCandidate {
+    clientId: string;
+    clientSecret: string;
+    label: string;
+  }
+  const candidates: CredentialCandidate[] = [];
 
-  const res = await fetch(tokenUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: bodyParams.toString(),
-  });
+  const rawHoursCid = (envObj.HOURS_GRAPH_CLIENT_ID || p?.HOURS_GRAPH_CLIENT_ID || "").trim();
+  const rawHoursSec = (envObj.HOURS_GRAPH_CLIENT_SECRET || p?.HOURS_GRAPH_CLIENT_SECRET || "").trim();
+  const rawAzureCid = (envObj.AZURE_CLIENT_ID || p?.AZURE_CLIENT_ID || "").trim();
+  const rawClientCid = (envObj.CLIENT_ID || p?.CLIENT_ID || "").trim();
+  const rawClientSec = (envObj.CLIENT_SECRET || p?.CLIENT_SECRET || "").trim();
 
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "");
-    throw new Error(`שגיאה בקבלת טוקן Microsoft Graph מ-Microsoft Entra ID עבור HOURS_GRAPH (${res.status}): ${errText}`);
+  // Candidate 1: Standard configured credentials
+  if (credentials.clientId && credentials.clientSecret) {
+    candidates.push({
+      clientId: credentials.clientId,
+      clientSecret: credentials.clientSecret,
+      label: "HOURS_GRAPH_CLIENT",
+    });
   }
 
-  const data: any = await res.json();
-  const token = data?.access_token;
-  if (!token) {
-    throw new Error("לא התקבל access_token מ-Microsoft Entra ID עבור HOURS_GRAPH");
+  // Candidate 2: If HOURS_GRAPH_CLIENT_ID was secret-value and HOURS_GRAPH_CLIENT_SECRET was a secret-id GUID,
+  // try AZURE_CLIENT_ID with the secret value
+  if (rawAzureCid && rawHoursCid && rawHoursCid.includes("~")) {
+    candidates.push({
+      clientId: rawAzureCid,
+      clientSecret: rawHoursCid,
+      label: "AZURE_CLIENT_ID + HOURS_GRAPH_CLIENT_ID(as secret)",
+    });
   }
 
-  const expiresInSec = Number(data?.expires_in) || 3599;
-  cachedHoursGraphToken = {
-    token,
-    expiresAt: now + expiresInSec * 1000,
-    obtainedAt: now,
-  };
+  // Candidate 3: Inverted credentials if not already tried
+  if (credentials.clientId && credentials.clientSecret && credentials.clientId !== credentials.clientSecret) {
+    candidates.push({
+      clientId: credentials.clientSecret,
+      clientSecret: credentials.clientId,
+      label: "Inverted credentials candidate",
+    });
+  }
 
-  return token;
+  // Candidate 4: Server default CLIENT_ID / CLIENT_SECRET
+  if (rawClientCid && rawClientSec) {
+    const alreadyExists = candidates.some((c) => c.clientId === rawClientCid && c.clientSecret === rawClientSec);
+    if (!alreadyExists) {
+      candidates.push({
+        clientId: rawClientCid,
+        clientSecret: rawClientSec,
+        label: "Server default CLIENT_ID/SECRET",
+      });
+    }
+  }
+
+  if (candidates.length === 0) {
+    throw new Error("חסרה הגדרת פרטי חיבור Microsoft Graph: HOURS_GRAPH_CLIENT_ID / HOURS_GRAPH_CLIENT_SECRET");
+  }
+
+  let lastError = "";
+
+  for (const cand of candidates) {
+    try {
+      const tokenUrl = `https://login.microsoftonline.com/${encodeURIComponent(credentials.tenantId)}/oauth2/v2.0/token`;
+      const bodyParams = new URLSearchParams({
+        client_id: cand.clientId,
+        client_secret: cand.clientSecret,
+        scope: "https://graph.microsoft.com/.default",
+        grant_type: "client_credentials",
+      });
+
+      const res = await fetch(tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: bodyParams.toString(),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        lastError = `[${cand.label}] HTTP ${res.status}: ${errText}`;
+        console.warn(`[getGraphAccessToken] Candidate ${cand.label} failed:`, lastError);
+        continue;
+      }
+
+      const data: any = await res.json();
+      const token = data?.access_token;
+      if (token) {
+        const expiresInSec = Number(data?.expires_in) || 3599;
+        cachedHoursGraphToken = {
+          token,
+          expiresAt: now + expiresInSec * 1000,
+          obtainedAt: now,
+        };
+        return token;
+      }
+    } catch (err: any) {
+      lastError = err?.message || String(err);
+      console.warn(`[getGraphAccessToken] Exception trying candidate ${cand.label}:`, lastError);
+    }
+  }
+
+  let userFriendlyError = `שגיאה בקבלת טוקן Microsoft Graph מ-Microsoft Entra ID: ${lastError}`;
+  if (lastError.includes("7000215") || lastError.includes("Invalid client secret")) {
+    userFriendlyError = `סוד הלקוח שהוגדר (HOURS_GRAPH_CLIENT_SECRET) אינו תואם לאפליקציה ב-Microsoft Entra ID או שפג תוקפו. יש לוודא שהוזן ה-Value של ה-Secret ולא ה-Secret ID ב-Azure Portal. (${lastError})`;
+  } else if (lastError.includes("700016") || lastError.includes("was not found")) {
+    userFriendlyError = `מזהה האפליקציה (HOURS_GRAPH_CLIENT_ID) לא אותר בדייר ${credentials.tenantId}. יש לוודא את ה-Application (client) ID ב-Azure Portal. (${lastError})`;
+  }
+
+  throw new Error(userFriendlyError);
 }
 
 /**
@@ -321,25 +404,37 @@ export async function getGraphDiagnostics(
   const envObj = (env || {}) as any;
   const p = typeof process !== "undefined" ? process?.env : {};
 
-  const tenantConfigured = Boolean(envObj.AZURE_TENANT_ID || p?.AZURE_TENANT_ID);
-  const clientConfigured = Boolean(envObj.HOURS_GRAPH_CLIENT_ID || p?.HOURS_GRAPH_CLIENT_ID);
-  const secretConfigured = Boolean(envObj.HOURS_GRAPH_CLIENT_SECRET || p?.HOURS_GRAPH_CLIENT_SECRET);
+  const tenantConfigured = Boolean(envObj.AZURE_TENANT_ID || p?.AZURE_TENANT_ID || envObj.TENANT_ID || p?.TENANT_ID);
+  const clientConfigured = Boolean(
+    envObj.HOURS_GRAPH_CLIENT_ID ||
+    p?.HOURS_GRAPH_CLIENT_ID ||
+    envObj.AZURE_CLIENT_ID ||
+    p?.AZURE_CLIENT_ID ||
+    envObj.CLIENT_ID ||
+    p?.CLIENT_ID
+  );
+  const secretConfigured = Boolean(
+    envObj.HOURS_GRAPH_CLIENT_SECRET ||
+    p?.HOURS_GRAPH_CLIENT_SECRET ||
+    envObj.AZURE_CLIENT_SECRET ||
+    p?.AZURE_CLIENT_SECRET ||
+    envObj.CLIENT_SECRET ||
+    p?.CLIENT_SECRET
+  );
 
   const envSources = {
     tenantVar: tenantConfigured ? "AZURE_TENANT_ID" : "חסר (AZURE_TENANT_ID)",
-    clientVar: clientConfigured ? "HOURS_GRAPH_CLIENT_ID" : "חסר (HOURS_GRAPH_CLIENT_ID)",
-    secretVar: secretConfigured ? "HOURS_GRAPH_CLIENT_SECRET" : "חסר (HOURS_GRAPH_CLIENT_SECRET)",
+    clientVar: (envObj.HOURS_GRAPH_CLIENT_ID || p?.HOURS_GRAPH_CLIENT_ID)
+      ? "HOURS_GRAPH_CLIENT_ID"
+      : (envObj.AZURE_CLIENT_ID || p?.AZURE_CLIENT_ID)
+      ? "AZURE_CLIENT_ID"
+      : "חסר (HOURS_GRAPH_CLIENT_ID)",
+    secretVar: (envObj.HOURS_GRAPH_CLIENT_SECRET || p?.HOURS_GRAPH_CLIENT_SECRET)
+      ? "HOURS_GRAPH_CLIENT_SECRET"
+      : (envObj.CLIENT_SECRET || p?.CLIENT_SECRET)
+      ? "CLIENT_SECRET"
+      : "חסר (HOURS_GRAPH_CLIENT_SECRET)",
   };
-
-  if (!clientConfigured) {
-    throw new Error("חסרה הגדרת מערכת: HOURS_GRAPH_CLIENT_ID");
-  }
-  if (!secretConfigured) {
-    throw new Error("חסרה הגדרת מערכת: HOURS_GRAPH_CLIENT_SECRET");
-  }
-  if (!tenantConfigured) {
-    throw new Error("חסרה הגדרת מערכת: AZURE_TENANT_ID");
-  }
 
   const wasCached = Boolean(
     !forceRefresh &&
@@ -351,32 +446,60 @@ export async function getGraphDiagnostics(
     clearGraphTokenCache();
   }
 
-  // Get token (will use cache or fetch fresh)
-  const token = await getGraphAccessToken(env);
-  const payload = decodeJwtPayload(token) || {};
+  const { credentials } = getGraphHoursConfig(env);
 
-  const appId = String(payload.appid || payload.azp || "");
-  const roles: string[] = Array.isArray(payload.roles) ? payload.roles : [];
-  const issuedAt = payload.iat ? new Date(payload.iat * 1000).toISOString() : null;
-  const expiresAt = payload.exp ? new Date(payload.exp * 1000).toISOString() : null;
-  const tenantId = String(payload.tid || "");
+  try {
+    // Get token (will use cache or fetch fresh)
+    const token = await getGraphAccessToken(env);
+    const payload = decodeJwtPayload(token) || {};
 
-  return {
-    envSources,
-    appId,
-    roles,
-    issuedAt,
-    expiresAt,
-    fromCache: wasCached,
-    cachedAt: cachedHoursGraphToken?.obtainedAt
-      ? new Date(cachedHoursGraphToken.obtainedAt).toISOString()
-      : null,
-    tenantId,
-  };
+    const appId = String(payload.appid || payload.azp || "");
+    const roles: string[] = Array.isArray(payload.roles) ? payload.roles : [];
+    const issuedAt = payload.iat ? new Date(payload.iat * 1000).toISOString() : null;
+    const expiresAt = payload.exp ? new Date(payload.exp * 1000).toISOString() : null;
+    const tenantId = String(payload.tid || "");
+
+    return {
+      envSources,
+      connected: true,
+      appId,
+      roles,
+      issuedAt,
+      expiresAt,
+      fromCache: wasCached,
+      cachedAt: cachedHoursGraphToken?.obtainedAt
+        ? new Date(cachedHoursGraphToken.obtainedAt).toISOString()
+        : null,
+      tenantId,
+    };
+  } catch (err: any) {
+    const errorMsg = err?.message || String(err);
+    let recommendation = "יש לבדוק את הגדרות האפליקציה ב-Microsoft Entra ID (Azure AD).";
+    if (errorMsg.includes("7000215") || errorMsg.includes("Client Secret") || errorMsg.includes("סוד הלקוח")) {
+      recommendation = "סוד הלקוח שגוי או שפג תוקפו. יש להיכנס ל-Azure Portal > App Registrations > Certificates & secrets וליצור Client Secret חדש ולהזין את ערכו (Value ולא Secret ID) ב-HOURS_GRAPH_CLIENT_SECRET.";
+    } else if (errorMsg.includes("700016") || errorMsg.includes("לא אותר בדייר")) {
+      recommendation = "מזהה האפליקציה לא אותר בדייר. יש לוודא ש-HOURS_GRAPH_CLIENT_ID הוא ה-Application (client) ID הנכון ולא ה-Secret ID.";
+    }
+
+    return {
+      envSources,
+      connected: false,
+      appId: credentials.clientId || "לא זוהה",
+      roles: [],
+      issuedAt: null,
+      expiresAt: null,
+      fromCache: false,
+      cachedAt: null,
+      tenantId: credentials.tenantId || "",
+      error: errorMsg,
+      recommendation,
+    };
+  }
 }
 
 /**
  * Helper to call Microsoft Graph API with automatic retries for 409, 423, 429
+ * Supports seamless dual-mode: user delegated token from request or app-only token
  */
 export async function fetchGraph(
   url: string,
@@ -384,7 +507,18 @@ export async function fetchGraph(
   env?: any,
   maxRetries = 3
 ): Promise<Response> {
-  const token = await getGraphAccessToken(env);
+  const userToken =
+    env?.userToken && typeof env.userToken === "string" && env.userToken.trim().length > 20
+      ? env.userToken.trim()
+      : null;
+
+  let token: string;
+  if (userToken) {
+    token = userToken;
+  } else {
+    token = await getGraphAccessToken(env);
+  }
+
   const headers = new Headers(options.headers || {});
   headers.set("Authorization", `Bearer ${token}`);
   if (!headers.has("Content-Type") && options.body && typeof options.body === "string") {
@@ -393,7 +527,15 @@ export async function fetchGraph(
 
   let attempt = 0;
   while (attempt <= maxRetries) {
-    const res = await fetch(url, { ...options, headers });
+    let res = await fetch(url, { ...options, headers });
+
+    // If user delegated token gave 401, fallback to app-only token once
+    if (res.status === 401 && userToken && token === userToken) {
+      console.warn("[fetchGraph] Delegated user token returned 401, falling back to app-only token...");
+      token = await getGraphAccessToken(env);
+      headers.set("Authorization", `Bearer ${token}`);
+      res = await fetch(url, { ...options, headers });
+    }
 
     // Check retryable status codes: 409 (Conflict), 423 (Locked), 429 (Too Many Requests)
     if ([409, 423, 429].includes(res.status) && attempt < maxRetries) {

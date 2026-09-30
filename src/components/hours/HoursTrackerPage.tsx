@@ -12,6 +12,7 @@ import {
   Palette,
   Sparkles,
   Check,
+  SlidersHorizontal,
 } from "lucide-react";
 import {
   fetchHoursConfig,
@@ -294,6 +295,20 @@ export const HoursTrackerPage: React.FC = () => {
               </div>
 
               <button
+                type="button"
+                onClick={() => setShowTestPanel(!showTestPanel)}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-all duration-200 cursor-pointer shadow-2xs shrink-0 ${
+                  showTestPanel
+                    ? "bg-blue-50 text-blue-700 border-blue-300"
+                    : "bg-white text-slate-600 hover:text-slate-900 border-slate-200 hover:bg-slate-50"
+                }`}
+                title="אבחון חיבור שרת (Microsoft Graph)"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 text-blue-600" />
+                <span className="hidden sm:inline">אבחון שרת</span>
+              </button>
+
+              <button
                 onClick={handleLogout}
                 disabled={loading}
                 className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-600 hover:text-red-600 bg-white hover:bg-red-50 border border-slate-200 hover:border-red-200 transition-all duration-200 cursor-pointer shadow-2xs shrink-0"
@@ -304,10 +319,26 @@ export const HoursTrackerPage: React.FC = () => {
               </button>
             </>
           ) : (
-            <div className="flex items-center gap-1.5 text-xs text-slate-500 bg-white border border-slate-200 px-2.5 py-1 rounded-full shadow-2xs">
-              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-              <span className="text-[11px]">נדרש זיהוי עובד</span>
-            </div>
+            <>
+              <button
+                type="button"
+                onClick={() => setShowTestPanel(!showTestPanel)}
+                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-medium border transition-all duration-200 cursor-pointer shadow-2xs shrink-0 ${
+                  showTestPanel
+                    ? "bg-blue-50 text-blue-700 border-blue-300"
+                    : "bg-white text-slate-600 hover:text-slate-900 border-slate-200 hover:bg-slate-50"
+                }`}
+                title="אבחון חיבור שרת (Microsoft Graph)"
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 text-blue-600" />
+                <span className="text-[11px]">אבחון</span>
+              </button>
+
+              <div className="flex items-center gap-1.5 text-xs text-slate-500 bg-white border border-slate-200 px-2.5 py-1 rounded-full shadow-2xs">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                <span className="text-[11px]">נדרש זיהוי עובד</span>
+              </div>
+            </>
           )}
         </div>
       </header>
@@ -428,6 +459,33 @@ export const HoursTrackerPage: React.FC = () => {
           </div>
         )}
       </main>
+
+      {/* Diagnostics / Test Panel Modal Overlay */}
+      {showTestPanel && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
+          <div className="w-full max-w-4xl bg-slate-900 text-slate-100 rounded-3xl border border-slate-700 shadow-2xl p-4 sm:p-6 max-h-[90vh] overflow-y-auto relative text-right">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal className="w-5 h-5 text-blue-400" />
+                <h3 className="font-bold text-sm sm:text-base text-white">לוח אבחון שרת ובדיקות מנוע שעות</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowTestPanel(false)}
+                className="px-3 py-1.5 text-xs rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 cursor-pointer transition-colors"
+              >
+                סגור פאנל
+              </button>
+            </div>
+            <HoursTestPanel
+              currentUser={{
+                name: displayName,
+                email: userEmail,
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

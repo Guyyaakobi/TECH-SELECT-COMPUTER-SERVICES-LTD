@@ -31,7 +31,9 @@ export async function fetchHoursApi<T = any>(
 
     if (!res.ok) {
       const errorBody = await res.json().catch(() => ({}));
-      const message = errorBody?.error || `שגיאת שרת (${res.status})`;
+      const message = errorBody?.reason
+        ? `${errorBody.error}: ${errorBody.reason}`
+        : errorBody?.error || `שגיאת שרת (${res.status})`;
       throw new Error(message);
     }
 
@@ -136,6 +138,7 @@ export interface HoursDiagnosticsData {
     clientVar: string;
     secretVar: string;
   };
+  connected?: boolean;
   appId: string;
   roles: string[];
   issuedAt: string | null;
@@ -143,6 +146,8 @@ export interface HoursDiagnosticsData {
   fromCache: boolean;
   cachedAt?: string | null;
   tenantId?: string;
+  error?: string;
+  recommendation?: string;
 }
 
 /**
