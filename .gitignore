@@ -4,6 +4,7 @@ build/
 coverage/
 .DS_Store
 *.log
+.wrangler/
 .env*
 !.env.example
 
