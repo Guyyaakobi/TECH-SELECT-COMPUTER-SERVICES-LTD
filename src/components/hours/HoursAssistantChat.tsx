@@ -46,6 +46,47 @@ interface HoursAssistantChatProps {
   };
 }
 
+function getFriendlyHebrewErrorMessage(err: any): string {
+  const raw = String(err?.message || err || "").toLowerCase();
+  if (raw.includes("unauthorized") || raw.includes("401") || raw.includes("אימות") || raw.includes("token")) {
+    return "לא זוהתה הרשאת גישה פעילה או שפג תוקף החיבור מול Microsoft 365. נא לרענן את העמוד כדי להתחבר מחדש.";
+  }
+  if (raw.includes("forbidden") || raw.includes("403") || raw.includes("accessdenied")) {
+    return "אין הרשאה מתאימה לביצוע הפעולה או לקריאת הקובץ ב-SharePoint.";
+  }
+  if (raw.includes("עתידי") || raw.includes("בעתיד")) {
+    return "לא ניתן לדווח שעות עבור תאריך עתידי.";
+  }
+  if (raw.includes("0.25") || raw.includes("12 שעות")) {
+    return "משך הזמן המדווח חייב להיות בין 15 דקות ל-12 שעות (0.25 - 12 שעות).";
+  }
+  if (raw.includes("10 דקות") || raw.includes("מרגע הכתיבה")) {
+    return "חלפו יותר מ-10 דקות מרגע הכתיבה, לא ניתן לבטל את השורה באופן אוטומטי.";
+  }
+  if (raw.includes("עובד אחר")) {
+    return "לא ניתן לבטל שורה זו: השורה שייכת לעובד אחר.";
+  }
+  if (raw.includes("עודכנו") || raw.includes("שונו")) {
+    return "תוכן השורה ב-Excel עודכן או שונה מאז כתיבתה, ולכן לא ניתן לבטלה.";
+  }
+  if (raw.includes("קובץ excel תקין") || raw.includes(".xlsx")) {
+    return "קובץ היעד שנמצא ב-SharePoint אינו קובץ Excel תקין (.xlsx).";
+  }
+  if (raw.includes("locked") || raw.includes("423") || raw.includes("resourceislocked")) {
+    return "קובץ השעות נעול כרגע לעריכה על ידי משתמש אחר ב-SharePoint. נא להמתין מספר שניות ולנסות שוב.";
+  }
+  if (raw.includes("429") || raw.includes("throttled") || raw.includes("too many requests")) {
+    return "עומס בקשות זמני מול שרתי Microsoft. נא להמתין מספר שניות ולנסות שוב.";
+  }
+  if (raw.includes("לא נמצא קובץ שעות")) {
+    return "לא נמצא קובץ שעות מתאים עבור הלקוח לחודש המבוקש ב-SharePoint.";
+  }
+  if (raw.includes("אישור מפורש")) {
+    return "נדרש אישור מפורש לפני הזנת הנתונים לקובץ.";
+  }
+  return "אירעה שגיאה בביצוע הפעולה מול קובץ השעות. נא לנסות שוב.";
+}
+
 export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentUser }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
 
@@ -177,7 +218,18 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
       setRecordingSeconds(0);
 
       recordingTimerRef.current = setInterval(() => {
-        setRecordingSeconds((prev) => prev + 1);
+        setRecordingSeconds((prev) => {
+          if (prev >= 119) {
+            // Auto stop recording at 2 minutes (120 seconds max)
+            if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+              try {
+                mediaRecorderRef.current.stop();
+              } catch (_) {}
+            }
+            return 120;
+          }
+          return prev + 1;
+        });
       }, 1000);
     } catch (err: any) {
       console.error("[HoursVoice] Mic access error:", err);
@@ -252,11 +304,11 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
     }
   };
 
-  // Format recording timer: 00:07
+  // Format recording timer: 00:07 / 02:00
   const formatRecordingTime = (secs: number) => {
     const mins = Math.floor(secs / 60);
     const remainder = secs % 60;
-    return `${mins < 10 ? "0" + mins : mins}:${remainder < 10 ? "0" + remainder : remainder}`;
+    return `${mins < 10 ? "0" + mins : mins}:${remainder < 10 ? "0" + remainder : remainder} / 02:00`;
   };
 
   // Send Audio payload to backend
@@ -292,23 +344,19 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
         },
         history,
         activeDrafts,
+        writtenEntries,
       });
 
       handleChatResponse(res, true);
     } catch (err: any) {
       console.error("[handleSendAudio] Error:", err);
-      const rawMsg = err?.message || "";
-      const isAuthErr = rawMsg.toLowerCase().includes("unauthorized") || rawMsg.includes("401") || rawMsg.includes("אימות");
-      const errorText = isAuthErr
-        ? "🔒 לא זוהתה הרשאת גישה פעילה או שפג תוקף החיבור ל-Microsoft 365. אנא רענן את העמוד כדי לחדש את החיבור."
-        : `שגיאה בעיבוד ההקלטה: ${rawMsg || "נא לנסות שוב"}`;
-
+      const friendlyMsg = getFriendlyHebrewErrorMessage(err);
       setMessages((prev) => [
         ...prev,
         {
           id: `err_${Date.now()}`,
           role: "model",
-          text: errorText,
+          text: friendlyMsg,
           timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
         },
       ]);
@@ -370,23 +418,19 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
         message: text,
         history,
         activeDrafts,
+        writtenEntries,
       });
 
       handleChatResponse(res, false);
     } catch (err: any) {
       console.error("[handleSendText] Error:", err);
-      const rawMsg = err?.message || "";
-      const isAuthErr = rawMsg.toLowerCase().includes("unauthorized") || rawMsg.includes("401") || rawMsg.includes("אימות");
-      const errorText = isAuthErr
-        ? "🔒 לא זוהתה הרשאת גישה פעילה או שפג תוקף החיבור מול Microsoft 365. אנא רענן את העמוד כדי לחדש את החיבור."
-        : `שגיאה: ${rawMsg || "נא לנסות שוב"}`;
-
+      const friendlyMsg = getFriendlyHebrewErrorMessage(err);
       setMessages((prev) => [
         ...prev,
         {
           id: `err_${Date.now()}`,
           role: "model",
-          text: errorText,
+          text: friendlyMsg,
           timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
         },
       ]);
@@ -464,21 +508,19 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
         action: "confirm_entry",
         cardId,
         activeDrafts,
+        writtenEntries,
       });
 
       handleChatResponse(res, false);
     } catch (err: any) {
       console.error("[handleConfirmEntry] Error:", err);
-      const rawMsg = err?.message || "";
-      const isAuthErr = rawMsg.toLowerCase().includes("unauthorized") || rawMsg.includes("401");
+      const friendlyMsg = getFriendlyHebrewErrorMessage(err);
       setMessages((prev) => [
         ...prev,
         {
           id: `err_${Date.now()}`,
           role: "model",
-          text: isAuthErr
-            ? "🔒 לא זוהתה הרשאת גישה פעילה או שפג תוקף החיבור מול Microsoft 365. נא לרענן את העמוד כדי לחדש את החיבור."
-            : `שגיאה בהזנת שורה: ${rawMsg || "נא לנסות שוב"}`,
+          text: friendlyMsg,
           timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
         },
       ]);
@@ -493,25 +535,37 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
       setLoading(true);
       setLoadingStep("מבטל שורה מגיליון ה-Excel...");
 
+      const targetEntry = writtenEntries.find((w) => w.id === cardId);
+      const undoData = targetEntry
+        ? {
+            driveId: targetEntry.driveId,
+            itemId: targetEntry.itemId || targetEntry.fileId,
+            fileId: targetEntry.fileId,
+            rowAddress: targetEntry.rowAddress,
+            writtenValues: targetEntry.writtenValues,
+            writtenAt: targetEntry.writtenAt,
+            sheetName: targetEntry.sheetName,
+          }
+        : undefined;
+
       const res = await apiAssistantChat({
         action: "undo_entry",
         cardId,
         activeDrafts,
+        undoData,
+        writtenEntries,
       });
 
       handleChatResponse(res, false);
     } catch (err: any) {
       console.error("[handleUndoEntry] Error:", err);
-      const rawMsg = err?.message || "";
-      const isAuthErr = rawMsg.toLowerCase().includes("unauthorized") || rawMsg.includes("401");
+      const friendlyMsg = getFriendlyHebrewErrorMessage(err);
       setMessages((prev) => [
         ...prev,
         {
           id: `err_${Date.now()}`,
           role: "model",
-          text: isAuthErr
-            ? "🔒 לא זוהתה הרשאת גישה פעילה או שפג תוקף החיבור מול Microsoft 365. נא לרענן את העמוד כדי לחדש את החיבור."
-            : `שגיאה בביטול שורה: ${rawMsg || "נא לנסות שוב"}`,
+          text: friendlyMsg,
           timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
         },
       ]);
@@ -589,7 +643,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
               }
             }}
             disabled={loading || isRecording}
-            placeholder={isRecording ? "מקליט כעת..." : "Ask Gemini..."}
+            placeholder={isRecording ? "מקליט כעת (עד 2 דקות)..." : "תאר את שעות העבודה או הקלט הודעה קולית..."}
             className="flex-1 bg-transparent text-slate-800 placeholder-slate-400 text-sm focus:outline-none py-1"
           />
 
@@ -870,7 +924,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
               }
             }}
             disabled={loading || isRecording}
-            placeholder={isRecording ? "מקליט כעת..." : "Ask Gemini..."}
+            placeholder={isRecording ? "מקליט כעת (עד 2 דקות)..." : "תאר את שעות העבודה או הקלט הודעה קולית..."}
             className="flex-1 bg-transparent text-slate-800 placeholder-slate-400 text-sm focus:outline-none py-1"
           />
 

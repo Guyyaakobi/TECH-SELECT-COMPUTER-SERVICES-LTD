@@ -32,6 +32,7 @@ interface ServerUserInfo {
   name: string;
   email: string;
   oid: string;
+  isAdmin?: boolean;
 }
 
 export const HoursTrackerPage: React.FC = () => {
@@ -211,6 +212,9 @@ export const HoursTrackerPage: React.FC = () => {
               name: currentAccount.name || "עובד Tech-Select",
               email: currentAccount.username || "",
               oid: currentAccount.localAccountId || currentAccount.homeAccountId,
+              isAdmin: ["g@tech-select.co.il"].includes(
+                (currentAccount.username || "").toLowerCase()
+              ),
             });
           }
         }
@@ -433,31 +437,33 @@ export const HoursTrackerPage: React.FC = () => {
                 }}
               />
 
-              {/* Stage 2 Technical Test Panel (hidden by default behind subtle toggle) */}
-              <div className="w-full mt-6 flex flex-col items-center">
-                <button
-                  onClick={() => setShowTestPanel(!showTestPanel)}
-                  className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-white hover:bg-slate-100 border border-slate-200 text-[11px] text-slate-500 hover:text-slate-800 transition-colors cursor-pointer shadow-xs"
-                >
-                  <span>מצב בדיקה טכני (Stage 2)</span>
-                  {showTestPanel ? (
-                    <ChevronUp className="w-3.5 h-3.5" />
-                  ) : (
-                    <ChevronDown className="w-3.5 h-3.5" />
-                  )}
-                </button>
+              {/* Stage 2 Technical Test Panel (visible ONLY to admins) */}
+              {serverUser?.isAdmin && (
+                <div className="w-full mt-6 flex flex-col items-center">
+                  <button
+                    onClick={() => setShowTestPanel(!showTestPanel)}
+                    className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-white hover:bg-slate-100 border border-slate-200 text-[11px] text-slate-500 hover:text-slate-800 transition-colors cursor-pointer shadow-xs"
+                  >
+                    <span>מצב בדיקה טכני (Stage 2)</span>
+                    {showTestPanel ? (
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    ) : (
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    )}
+                  </button>
 
-                {showTestPanel && (
-                  <div className="w-full mt-4 bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-                    <HoursTestPanel
-                      currentUser={{
-                        name: displayName,
-                        email: userEmail,
-                      }}
-                    />
-                  </div>
-                )}
-              </div>
+                  {showTestPanel && (
+                    <div className="w-full mt-4 bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                      <HoursTestPanel
+                        currentUser={{
+                          name: displayName,
+                          email: userEmail,
+                        }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>

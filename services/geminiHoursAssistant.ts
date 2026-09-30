@@ -3,12 +3,21 @@ import {
   findCustomer,
   findMonthTarget,
   readSheetStructure,
+  inspectWorkbookFile,
+  chooseTargetWorksheet,
+  mapHeadersToSemanticFields,
+  classifyWorksheet,
+  WorkbookInspectionResult,
+  InspectedWorksheet,
+  TabSemanticType,
+  StandardColumnField,
   findDuplicates,
   writeRows,
   undoRow,
   CustomerFolder,
   calculateEndTime,
   calculateStartTime,
+  suggestStartEndTimes,
   getHebrewDay,
 } from "./graphHours";
 import { AuthenticatedUser } from "../server/hoursAuthMiddleware";
@@ -29,7 +38,26 @@ export interface HoursAssistantEntryDraft {
   durationFormatted: string; // e.g. "15 דקות (0.25 שעה)"
   startTime?: string;
   endTime?: string;
-  workType: "ביקור באתר" | "טיקטים" | "פרוייקטים";
+  isTimeSuggested?: boolean;
+  workType: string;
+  targetTabName?: string;
+  detectedTabType?: TabSemanticType;
+  availableTabs?: Array<{
+    name: string;
+    detectedType: TabSemanticType;
+    isSelected: boolean;
+  }>;
+  needsUserTabChoice?: boolean;
+  tabChoiceReason?: string;
+  headers?: string[];
+  unmappedFields?: string[];
+  columnMapping?: Array<{
+    field: string;
+    label: string;
+    headerName?: string;
+    isExists: boolean;
+    value?: any;
+  }>;
   contactPerson?: string;
   ticketNumber?: string;
   description: string;
@@ -79,16 +107,11 @@ export function buildEnrichedRowPayload(params: {
     calculatedStartTime = calculateStartTime(calculatedEndTime, minutes);
   }
 
-  // Provide realistic business-hour start & end times for EVERY tab so columns are never empty
-  if (!calculatedStartTime) {
-    if (workType === "ביקור באתר" || workType.includes("ביקור") || workType.includes("אתר")) {
-      calculatedStartTime = "09:00";
-    } else if (workType === "טיקטים" || workType.includes("טיקט") || workType.includes("קריא") || workType.includes("תמיכ")) {
-      calculatedStartTime = "10:00";
-    } else {
-      calculatedStartTime = "09:00";
-    }
-    calculatedEndTime = calculateEndTime(calculatedStartTime, minutes || 30);
+  // If neither start nor end time was provided, suggest from report time rounded to 15 min
+  if (!calculatedStartTime && !calculatedEndTime) {
+    const suggested = suggestStartEndTimes(minutes || 30);
+    calculatedStartTime = suggested.startTime;
+    calculatedEndTime = suggested.endTime;
   }
 
   if (!calculatedEndTime && calculatedStartTime) {
@@ -247,6 +270,9 @@ export interface WrittenEntryResult {
   webUrl: string;
   targetRow: number | string;
   rowAddress: string;
+  driveId?: string;
+  itemId?: string;
+  writtenValues?: any[][];
   entryId: string;
   customerName: string;
   date: string;
@@ -274,6 +300,16 @@ export interface AssistantChatParams {
   cardId?: string;
   draftData?: any;
   activeDrafts?: HoursAssistantEntryDraft[];
+  undoData?: {
+    driveId?: string;
+    itemId?: string;
+    fileId?: string;
+    rowAddress: string;
+    writtenValues?: any[][];
+    writtenAt?: number;
+    sheetName?: string;
+  };
+  writtenEntries?: WrittenEntryResult[];
   env?: any;
 }
 
@@ -285,19 +321,6 @@ export interface AssistantChatResult {
   undoneCardIds: string[];
   isConfirmed: boolean;
   suggestedAction?: "confirm" | "clarify" | "undo" | "none";
-}
-
-// In-memory store for written entries eligible for 10-minute undo in the session
-const sessionWrittenEntries = new Map<string, WrittenEntryResult>();
-
-// Clean up expired entries lazily during request execution (avoids global scope timers in Cloudflare Workers)
-function cleanExpiredEntries(): void {
-  const now = Date.now();
-  for (const [key, val] of sessionWrittenEntries.entries()) {
-    if (val.expiresAt < now) {
-      sessionWrittenEntries.delete(key);
-    }
-  }
 }
 
 /**
@@ -426,10 +449,10 @@ export function roundToQuarterHour(input: string | number): {
 }
 
 /**
- * Infer Work Type matching Excel tabs: "ביקור באתר", "טיקטים", "פרוייקטים"
+ * Infer Work Type semantic category: "tickets", "onsite", "project"
  */
-export function inferWorkType(text: string): "ביקור באתר" | "טיקטים" | "פרוייקטים" {
-  if (!text) return "טיקטים";
+export function inferWorkType(text: string): TabSemanticType {
+  if (!text) return "tickets";
   const s = text.toLowerCase();
   if (
     s.includes("פרויקט") ||
@@ -440,7 +463,7 @@ export function inferWorkType(text: string): "ביקור באתר" | "טיקטי
     s.includes("שדרוג") ||
     s.includes("הטמעה")
   ) {
-    return "פרוייקטים";
+    return "project";
   }
   if (
     s.includes("באתר") ||
@@ -453,9 +476,9 @@ export function inferWorkType(text: string): "ביקור באתר" | "טיקטי
     s.includes("site") ||
     s.includes("visit")
   ) {
-    return "ביקור באתר";
+    return "onsite";
   }
-  return "טיקטים";
+  return "tickets";
 }
 
 /**
@@ -465,31 +488,59 @@ export async function processAssistantChat(
   params: AssistantChatParams,
   env?: any
 ): Promise<AssistantChatResult> {
-  cleanExpiredEntries();
   const activeEnv = env || process.env;
   const { user, message, audio, history = [], action, cardId, activeDrafts = [] } = params;
 
-  // 1. Direct Action: Undo written entry
+  // 1. Direct Action: Undo written entry (stateless)
   if (action === "undo_entry" && cardId) {
-    const existing = sessionWrittenEntries.get(cardId);
-    if (!existing) {
+    const existing =
+      (params.writtenEntries || []).find((w) => w.id === cardId) ||
+      (params.undoData?.itemId ? (params.undoData as any) : null);
+
+    const undoParams =
+      params.undoData ||
+      (existing
+        ? {
+            driveId: existing.driveId,
+            itemId: existing.itemId || existing.fileId,
+            fileId: existing.fileId,
+            rowAddress: existing.rowAddress,
+            writtenValues: existing.writtenValues,
+            writtenAt: existing.writtenAt,
+            sheetName: existing.sheetName,
+          }
+        : null);
+
+    if (!undoParams || !undoParams.rowAddress) {
       return {
-        reply: "לא נמצאה רשומה לביטול או שחלפו יותר מ-10 דקות.",
+        reply: "לא נמצאו נתוני זיהוי לשורה לביטול או שפג תוקף חלון הזמן (10 דקות).",
         drafts: activeDrafts,
-        writtenEntries: Array.from(sessionWrittenEntries.values()),
+        writtenEntries: params.writtenEntries || [],
         undoneCardIds: [],
         isConfirmed: false,
       };
     }
-    const undoRes = await undoRow(existing.fileId, existing.rowAddress, user, activeEnv);
-    sessionWrittenEntries.delete(cardId);
-    return {
-      reply: `הרשומה עבור ${existing.customerName} בוטלה בהצלחה ונמחקה מקובץ ה-Excel.`,
-      drafts: activeDrafts,
-      writtenEntries: Array.from(sessionWrittenEntries.values()),
-      undoneCardIds: [cardId],
-      isConfirmed: false,
-    };
+
+    try {
+      await undoRow(undoParams, user, activeEnv);
+      const remainingWritten = (params.writtenEntries || []).filter((w) => w.id !== cardId);
+      return {
+        reply: `הרשומה עבור ${existing?.customerName || "הלקוח"} בוטלה בהצלחה ונמחקה מקובץ ה-Excel.`,
+        drafts: activeDrafts,
+        writtenEntries: remainingWritten,
+        undoneCardIds: [cardId],
+        isConfirmed: false,
+      };
+    } catch (undoErr: any) {
+      console.error("[undo_entry action] Error:", undoErr);
+      return {
+        reply: undoErr?.message || "לא ניתן לבטל את השורה מקובץ ה-Excel.",
+        drafts: activeDrafts,
+        writtenEntries: params.writtenEntries || [],
+        undoneCardIds: [],
+        isConfirmed: false,
+      };
+    }
   }
 
   // 2. Direct Action: Confirm specific entry via UI button "אשר והזן"
@@ -499,7 +550,7 @@ export async function processAssistantChat(
       return {
         reply: "לא נמצאה טיוטה להזנה.",
         drafts: activeDrafts,
-        writtenEntries: Array.from(sessionWrittenEntries.values()),
+        writtenEntries: params.writtenEntries || [],
         undoneCardIds: [],
         isConfirmed: false,
       };
@@ -512,7 +563,7 @@ export async function processAssistantChat(
         return {
           reply: `לא נמצא קובץ שעות עבור ${targetDraft.customerName} לחודש המבוקש.`,
           drafts: activeDrafts,
-          writtenEntries: Array.from(sessionWrittenEntries.values()),
+          writtenEntries: params.writtenEntries || [],
           undoneCardIds: [],
           isConfirmed: false,
         };
@@ -548,30 +599,33 @@ export async function processAssistantChat(
     const writtenItem: WrittenEntryResult = {
       id: targetDraft.id,
       fileId: targetDraft.fileId,
+      driveId: writeRes.driveId || targetDraft.driveId,
+      itemId: targetDraft.fileId,
       fileName: targetDraft.fileName || "hours.xlsx",
       filePath: targetDraft.filePath || "",
       sheetName: writeRes.sheetName || targetDraft.workType,
       webUrl: writeRes.webUrl || targetDraft.webUrl || "",
       targetRow,
       rowAddress: writeRes.rowAddress || `Row ${targetRow}`,
+      writtenValues: writeRes.writtenValues,
       entryId: writeRes.entryId || targetDraft.id,
       customerName: targetDraft.customerName,
       date: targetDraft.date,
       durationFormatted: targetDraft.durationFormatted,
       description: targetDraft.description,
       workType: targetDraft.workType,
-      writtenAt: writeRes.timestamp || Date.now(),
-      expiresAt: (writeRes.timestamp || Date.now()) + 10 * 60 * 1000,
+      writtenAt: writeRes.writtenAt || Date.now(),
+      expiresAt: (writeRes.writtenAt || Date.now()) + 10 * 60 * 1000,
       canUndo: true,
     };
 
-    sessionWrittenEntries.set(targetDraft.id, writtenItem);
     const remainingDrafts = activeDrafts.filter((d) => d.id !== cardId);
+    const updatedWrittenEntries = [writtenItem, ...(params.writtenEntries || []).filter((w) => w.id !== writtenItem.id)];
 
     return {
       reply: `נרשם בהצלחה ✓ השורה נוספה לטאב "${writtenItem.sheetName}" בקובץ ${targetDraft.fileName || ""} (שורה ${writtenItem.targetRow}).`,
       drafts: remainingDrafts,
-      writtenEntries: [writtenItem, ...Array.from(sessionWrittenEntries.values()).filter((w) => w.id !== writtenItem.id)],
+      writtenEntries: updatedWrittenEntries,
       undoneCardIds: [],
       isConfirmed: true,
     };
@@ -698,11 +752,12 @@ export async function processAssistantChat(
                 duration: { type: Type.STRING, description: "Duration e.g. '15 דקות' / '0.25 שעה'" },
                 workType: {
                   type: Type.STRING,
-                  enum: ["ביקור באתר", "טיקטים", "פרוייקטים"],
-                  description: "Work type tab in Excel: 'ביקור באתר' (on-site visit) | 'טיקטים' (tickets/support/remote) | 'פרוייקטים' (projects/setup)",
+                  description: "Target tab name or activity category (e.g. 'קריאות שירות' / 'tickets', 'ביקור באתר' / 'onsite', 'פרויקטים' / 'project' or real tab name from workbook)",
                 },
                 description: { type: Type.STRING, description: "Professional short Hebrew billing description" },
-                startTime: { type: Type.STRING, description: "Optional start time" },
+                startTime: { type: Type.STRING, description: "Start time (HH:MM)" },
+                endTime: { type: Type.STRING, description: "End time (HH:MM)" },
+                isTimeSuggested: { type: Type.BOOLEAN, description: "True if times are suggested, false if explicitly set by employee" },
                 contactPerson: { type: Type.STRING, description: "Optional contact person" },
                 ticketNumber: { type: Type.STRING, description: "Optional ticket number" },
                 isReady: { type: Type.BOOLEAN, description: "True if customer, date, duration, description are all present" },
@@ -735,8 +790,7 @@ export async function processAssistantChat(
                 date: { type: Type.STRING, description: "Date in YYYY-MM-DD or DD/MM/YYYY" },
                 workType: {
                   type: Type.STRING,
-                  enum: ["ביקור באתר", "טיקטים", "פרוייקטים"],
-                  description: "Target tab: 'ביקור באתר' | 'טיקטים' | 'פרוייקטים'",
+                  description: "Target tab name or activity category",
                 },
                 hours: { type: Type.NUMBER, description: "Duration in decimal hours (e.g. 0.5, 1.0, 1.5)" },
                 description: { type: Type.STRING, description: "Clear professional billing description" },
@@ -782,26 +836,33 @@ EXTRACTION RULES:
   1. Date: default today (${jCtx.todayIso}, Asia/Jerusalem). Understand "אתמול" (${jCtx.yesterdayIso}), "ביום ראשון", "שלשום", or explicit dates. If last month is mentioned (e.g. August, "חודש שעבר"), target last month's file (${jCtx.lastMonthYear}-${jCtx.lastMonth < 10 ? "0" + jCtx.lastMonth : jCtx.lastMonth}).
   2. Customer: call find_customer. If customer match is ambiguous (multiple options with close scores), ask the employee to choose between the options.
   3. Duration: round to 15 minutes (15 min = 0.25h, 30 min = 0.5h, 45 min = 0.75h, 60 min = 1h). If missing, ask for it!
-  4. Work type: strictly one of ["ביקור באתר", "טיקטים", "פרוייקטים"] – matches the exact tabs in the Excel file!
-     - "ביקור באתר": on-site visit / physical presence ("הייתי אצל", "ביקור", "הגעתי פיזית"). Columns in this tab include: תאריך, יום (יום בשבוע), טכנאי/עובד, שעת התחלה/הגעה, שעת סיום/עזיבה, סה״כ שעות, איש קשר, מהות הקריאה/תיאור פעילות, חתימת לקוח/אישור.
-     - "טיקטים": remote support, phone calls, tickets, daily maintenance ("דיברתי", "התחברתי", "טלפון", "מרחוק", "איפוס סיסמה", "תמיכה"). Columns in this tab include: תאריך, יום, מספר טיקט/קריאה, טכנאי/עובד, שעת התחלה, שעת סיום, סה״כ שעות, איש קשר/פונה, פירוט הטיפול.
-     - "פרוייקטים": project work, setup, migration, rollout ("פרויקט", "שדרוג שרת", "מיגרציה", "הקמה"). Columns in this tab include: תאריך, יום, פרויקט/נושא, טכנאי/עובד, שעת התחלה, שעת סיום, שעות, איש קשר, פירוט ביצוע.
+  4. Work type / Tab selection (dynamic & semantic per file):
+     - Each customer's Excel file contains its own real worksheets discovered live.
+     - Match activity semantics:
+       * On-site visit / physical presence ("הייתי אצל", "ביקור", "הגעתי פיזית") -> "onsite" or matching visit tab.
+       * Remote support / phone calls / tickets / daily maintenance ("דיברתי", "התחברתי", "טלפון", "מרחוק", "איפוס סיסמה", "תמיכה") -> "tickets" or matching support tab.
+       * Project work / setup / migration / rollout ("פרויקט", "שדרוג שרת", "מיגרציה", "הקמה") -> "project" or matching project tab.
   5. Description: rewrite as a short, clear, professional Hebrew sentence suitable for billing, faithful to what was said. Do not invent details.
   6. Contact person at customer: extract if mentioned (e.g. "דיברתי עם דניאל", "יוסי ביקש").
   7. Ticket number: extract if mentioned (e.g. "טיקט 1234", "קריאה 5678").
-  8. Start time / End time: extract if mentioned or implied (e.g. "הייתי בין 10:00 ל-12:00", "התחלתי ב-14:00"). If not mentioned, provide realistic business hours (e.g. 09:00 or 10:00 with end time based on duration).
+  8. Start time / End time (suggested and editable):
+     - If the employee didn't specify start/end times: suggest them based on duration (end = time of the report, start = end - duration, rounded to 15 minutes) and set isTimeSuggested = true.
+     - If the employee explicitly says or corrects start/end time (e.g. "התחלתי ב-10", "סיימתי ב-14:00", "הייתי בין 10:00 ל-11:30"): update startTime and endTime accordingly, recalculate duration if needed, and set isTimeSuggested = false.
+  9. Excel Tab / Work type (editable):
+     - The summary card displays the chosen tab name and allows the employee to change it (by tapping or voice: e.g. "תעביר לטאב פרויקטים", "תעביר לטאב קריאות שירות").
+     - If the employee asks to switch tabs: immediately update workType to the requested tab and re-issue propose_entries with the updated draft!
 
-CRITICAL REQUIREMENT - POPULATE ALL COLUMNS:
-Ensure ALL fields are populated so that every tab in the Excel sheet receives values for all its columns (Date, Day of week, Employee, Start time, End time, Hours, Description, Contact person, Ticket #, Signature). Never leave columns blank when data can be provided or inferred!
+CRITICAL REQUIREMENT - DYNAMIC COLUMNS PER FILE:
+Fields are mapped to the headers of the chosen worksheet by meaning. If a field has no column in the file (e.g. no ticket number column), it will NOT be written and marked as not existing in file.
 
 MANDATORY WORKFLOW:
 1. Ask ONLY for missing mandatory fields (customer, date, duration, description) – all in ONE question.
 2. If customer name is ambiguous or needs SharePoint folder matching, call find_customer.
-3. Call propose_entries directly with the extracted details (customer, date, duration, description, workType, startTime, endTime, contactPerson, ticketNumber).
-   NOTE: propose_entries AUTOMATICALLY finds the customer's month Excel file in SharePoint, inspects sheet structure, and checks duplicates. You do NOT need to call find_month_target or read_sheet_structure manually beforehand.
+3. Call propose_entries directly with the extracted details (customer, date, duration, description, workType, startTime, endTime, isTimeSuggested, contactPerson, ticketNumber).
+   NOTE: propose_entries AUTOMATICALLY finds the customer's month Excel file in SharePoint, inspects sheet structure and real tabs, and checks duplicates.
 4. Show the summary and ask "מאשר להזין?".
-5. CRITICAL RULE: NEVER call write_rows before explicit confirmation from the employee (such as "אשר והזן", "כן", "מאשר", "תזין", "מאשרת").
-6. Accept corrections in free speech ("תשנה לחצי שעה", "זה היה אצל אלקטרה") and show the summary again.
+5. CRITICAL RULE: NEVER call write_rows before explicit confirmation from the employee (such as "אשר והזן", "כן", "מאשר", "תזין", "מאשרת"). Nothing is written until confirmation!
+6. Accept corrections in free speech ("תשנה לחצי שעה", "זה היה אצל אלקטרה", "התחלתי ב-10", "תעביר לטאב פרויקטים") and show the updated summary card again via propose_entries.
 7. When the user confirms ("כן", "מאשר", "תזין"), call write_rows with all fields populated, then state "נרשם ✓" with target file and row.`;
 
   // Build Conversation Contents for Gemini
@@ -820,12 +881,16 @@ MANDATORY WORKFLOW:
   // Active drafts context if present
   let activeDraftsPrompt = "";
   if (activeDrafts.length > 0) {
-    activeDraftsPrompt = `\n[טיוטות פתוחות בממשק כרגע: ${JSON.stringify(
+    activeDraftsPrompt = `\n[טיוטות פתוחות בממשק כרגע (ניתן לשנות טאב או שעות לפי בקשת המשתמש): ${JSON.stringify(
       activeDrafts.map((d) => ({
         id: d.id,
         customerName: d.customerName,
         date: d.date,
         duration: d.durationFormatted,
+        durationMinutes: d.durationMinutes,
+        startTime: d.startTime,
+        endTime: d.endTime,
+        isTimeSuggested: d.isTimeSuggested,
         workType: d.workType,
         description: d.description,
         fileId: d.fileId,
@@ -995,8 +1060,44 @@ MANDATORY WORKFLOW:
             const date = String(raw.date || jCtx.todayIso).trim();
             const rawDuration = raw.duration || "";
             const { minutes, hours, formatted } = roundToQuarterHour(rawDuration);
-            const workType = (raw.workType as any) || inferWorkType(raw.description || "");
-            const desc = String(raw.description || "").trim();
+
+            // Find matching active draft if this is an update to an existing draft
+            const matchingActiveDraft = (activeDrafts || []).find(
+              (d) =>
+                (raw.id && d.id === raw.id) ||
+                (d.customerName && customerName && d.customerName.toLowerCase() === customerName.toLowerCase())
+            );
+
+            // Work type / semantic tab request
+            const rawWorkType = String(raw.workType || matchingActiveDraft?.targetTabName || matchingActiveDraft?.workType || "").trim();
+            const desc = String(raw.description || matchingActiveDraft?.description || "").trim();
+            const inferredCategory = inferWorkType(desc);
+
+            // Calculate or suggest Start and End Times
+            let startTime = String(raw.startTime || "").trim();
+            let endTime = String(raw.endTime || "").trim();
+            let isTimeSuggested = false;
+
+            if (startTime && endTime) {
+              isTimeSuggested = Boolean(raw.isTimeSuggested ?? false);
+            } else if (startTime && !endTime) {
+              endTime = calculateEndTime(startTime, minutes || 30);
+              isTimeSuggested = false;
+            } else if (!startTime && endTime) {
+              startTime = calculateStartTime(endTime, minutes || 30);
+              isTimeSuggested = false;
+            } else if (matchingActiveDraft?.startTime && matchingActiveDraft?.endTime && !matchingActiveDraft.isTimeSuggested) {
+              // Preserve user's explicitly adjusted time from earlier in conversation
+              startTime = matchingActiveDraft.startTime;
+              endTime = matchingActiveDraft.endTime;
+              isTimeSuggested = false;
+            } else {
+              // Employee didn't say start/end: suggest from duration and report time rounded to 15 min
+              const suggested = suggestStartEndTimes(minutes || 30);
+              startTime = suggested.startTime;
+              endTime = suggested.endTime;
+              isTimeSuggested = true;
+            }
 
             const missingFields: string[] = [];
             if (!customerName) missingFields.push("לקוח");
@@ -1005,18 +1106,30 @@ MANDATORY WORKFLOW:
             if (!desc) missingFields.push("תיאור");
 
             const isReady = missingFields.length === 0;
-            const draftId = `card_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+            const draftId = matchingActiveDraft?.id || `card_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
-            // Auto-enrich target month file and duplicates if possible
-            let fileId: string | undefined = undefined;
-            let driveId: string | undefined = undefined;
-            let fileName: string | undefined = undefined;
-            let filePath: string | undefined = undefined;
-            let webUrl: string | undefined = undefined;
-            let targetRow: number | string | undefined = undefined;
+            // Auto-enrich target month file, worksheets and duplicates
+            let fileId: string | undefined = matchingActiveDraft?.fileId;
+            let driveId: string | undefined = matchingActiveDraft?.driveId;
+            let fileName: string | undefined = matchingActiveDraft?.fileName;
+            let filePath: string | undefined = matchingActiveDraft?.filePath;
+            let webUrl: string | undefined = matchingActiveDraft?.webUrl;
+            let targetRow: number | string | undefined = matchingActiveDraft?.targetRow;
             let duplicateWarning: string | null = null;
             let mappedRow: Record<string, any> | undefined = undefined;
-            let availableFiles: Array<{ fileId: string; fileName: string; webUrl?: string }> = [];
+            let availableFiles: Array<{ fileId: string; fileName: string; webUrl?: string }> =
+              matchingActiveDraft?.availableFiles || [];
+
+            let targetTabName: string = matchingActiveDraft?.targetTabName || rawWorkType || "שעות";
+            let detectedTabType: TabSemanticType = matchingActiveDraft?.detectedTabType || inferredCategory;
+            let availableTabs: Array<{ name: string; detectedType: TabSemanticType; isSelected: boolean }> =
+              matchingActiveDraft?.availableTabs || [];
+            let needsUserTabChoice = matchingActiveDraft?.needsUserTabChoice ?? false;
+            let tabChoiceReason = matchingActiveDraft?.tabChoiceReason || "";
+            let tabHeaders: string[] = matchingActiveDraft?.headers || [];
+            let unmappedFields: string[] = matchingActiveDraft?.unmappedFields || [];
+            let columnMapping: Array<{ field: string; label: string; headerName?: string; isExists: boolean; value?: any }> =
+              matchingActiveDraft?.columnMapping || [];
 
             try {
               if (customerName) {
@@ -1035,13 +1148,95 @@ MANDATORY WORKFLOW:
                   filePath = mt.filePath;
                   webUrl = mt.webUrl;
 
-                  const struct = await withSafeTimeout(
-                    readSheetStructure(fileId, activeEnv, driveId),
-                    12000,
-                    { totalDataRows: 0, nextEmptyRowAddress: "Row 2" } as any
+                  // Inspect file worksheets & classification per-file (cached by itemId + lastModified)
+                  const inspection = await withSafeTimeout(
+                    inspectWorkbookFile(fileId, activeEnv, driveId, customerName),
+                    15000,
+                    null
                   );
-                  const rowNumMatch = (struct.nextEmptyRowAddress || "").match(/\d+/);
-                  targetRow = rowNumMatch ? parseInt(rowNumMatch[0], 10) : struct.totalDataRows + 2;
+
+                  if (inspection && inspection.worksheets.length > 0) {
+                    const choice = chooseTargetWorksheet(inspection, {
+                      preferredTabName: rawWorkType,
+                      entryDescription: desc,
+                      entryType: inferredCategory,
+                    });
+
+                    const chosenTab = choice.selectedTab;
+                    targetTabName = chosenTab.name;
+                    detectedTabType = chosenTab.detectedType;
+                    availableTabs = choice.availableTabs;
+                    needsUserTabChoice = choice.needsUserChoice;
+                    tabChoiceReason = choice.choiceReason;
+                    tabHeaders = chosenTab.headers;
+                    unmappedFields = chosenTab.unmappedFields;
+
+                    // Build column mapping:
+                    columnMapping = [
+                      {
+                        field: "date",
+                        label: "תאריך",
+                        headerName: chosenTab.fieldToColIndex.date !== undefined ? chosenTab.headers[chosenTab.fieldToColIndex.date] : undefined,
+                        isExists: chosenTab.fieldToColIndex.date !== undefined,
+                        value: date,
+                      },
+                      {
+                        field: "employee",
+                        label: "עובד / טכנאי",
+                        headerName: chosenTab.fieldToColIndex.employee !== undefined ? chosenTab.headers[chosenTab.fieldToColIndex.employee] : undefined,
+                        isExists: chosenTab.fieldToColIndex.employee !== undefined,
+                        value: user.name,
+                      },
+                      {
+                        field: "duration",
+                        label: "משך / שעות",
+                        headerName: chosenTab.fieldToColIndex.duration_hours !== undefined ? chosenTab.headers[chosenTab.fieldToColIndex.duration_hours] : undefined,
+                        isExists: chosenTab.fieldToColIndex.duration_hours !== undefined,
+                        value: formatted,
+                      },
+                      {
+                        field: "startTime",
+                        label: "שעת התחלה",
+                        headerName: chosenTab.fieldToColIndex.start_time !== undefined ? chosenTab.headers[chosenTab.fieldToColIndex.start_time] : undefined,
+                        isExists: chosenTab.fieldToColIndex.start_time !== undefined,
+                        value: startTime,
+                      },
+                      {
+                        field: "endTime",
+                        label: "שעת סיום",
+                        headerName: chosenTab.fieldToColIndex.end_time !== undefined ? chosenTab.headers[chosenTab.fieldToColIndex.end_time] : undefined,
+                        isExists: chosenTab.fieldToColIndex.end_time !== undefined,
+                        value: endTime,
+                      },
+                      {
+                        field: "description",
+                        label: "תיאור חיוב",
+                        headerName: chosenTab.fieldToColIndex.description !== undefined ? chosenTab.headers[chosenTab.fieldToColIndex.description] : undefined,
+                        isExists: chosenTab.fieldToColIndex.description !== undefined,
+                        value: desc,
+                      },
+                      {
+                        field: "contactPerson",
+                        label: "איש קשר",
+                        headerName: chosenTab.fieldToColIndex.contact_person !== undefined ? chosenTab.headers[chosenTab.fieldToColIndex.contact_person] : undefined,
+                        isExists: chosenTab.fieldToColIndex.contact_person !== undefined,
+                        value: raw.contactPerson || matchingActiveDraft?.contactPerson,
+                      },
+                      {
+                        field: "ticketNumber",
+                        label: "מספר קריאה",
+                        headerName: chosenTab.fieldToColIndex.ticket_number !== undefined ? chosenTab.headers[chosenTab.fieldToColIndex.ticket_number] : undefined,
+                        isExists: chosenTab.fieldToColIndex.ticket_number !== undefined,
+                        value: raw.ticketNumber || matchingActiveDraft?.ticketNumber,
+                      },
+                    ];
+
+                    const offset = chosenTab.headerRowIndex !== undefined ? chosenTab.headerRowIndex + 2 : 2;
+                    targetRow = chosenTab.totalDataRows + offset;
+                  } else {
+                    targetTabName = rawWorkType || "שעות";
+                    targetRow = matchingActiveDraft?.targetRow || 2;
+                  }
 
                   // Check duplicates
                   const dup = await withSafeTimeout(
@@ -1059,12 +1254,12 @@ MANDATORY WORKFLOW:
                     hours,
                     minutes,
                     formatted,
-                    workType,
+                    workType: targetTabName,
                     desc,
-                    startTime: raw.startTime,
-                    endTime: raw.endTime,
-                    contactPerson: raw.contactPerson,
-                    ticketNumber: raw.ticketNumber,
+                    startTime,
+                    endTime,
+                    contactPerson: raw.contactPerson || matchingActiveDraft?.contactPerson,
+                    ticketNumber: raw.ticketNumber || matchingActiveDraft?.ticketNumber,
                     customerName,
                   });
                 }
@@ -1087,10 +1282,20 @@ MANDATORY WORKFLOW:
               durationMinutes: minutes,
               durationHours: hours,
               durationFormatted: formatted,
-              startTime: raw.startTime,
-              contactPerson: raw.contactPerson,
-              ticketNumber: raw.ticketNumber,
-              workType,
+              startTime,
+              endTime,
+              isTimeSuggested,
+              contactPerson: raw.contactPerson || matchingActiveDraft?.contactPerson,
+              ticketNumber: raw.ticketNumber || matchingActiveDraft?.ticketNumber,
+              workType: targetTabName,
+              targetTabName,
+              detectedTabType,
+              availableTabs,
+              needsUserTabChoice,
+              tabChoiceReason,
+              headers: tabHeaders,
+              unmappedFields,
+              columnMapping,
               description: desc,
               duplicateWarning,
               isReadyForConfirmation: isReady,
@@ -1107,6 +1312,27 @@ MANDATORY WORKFLOW:
             entries: enriched,
           };
         } else if (name === "write_rows") {
+          // Stage 4 Safety: Enforce that write_rows can ONLY be executed with an explicit user confirmation
+          const rawUserMsg = (message || "").trim();
+          const isExplicitConfirmAction = action === "confirm_entry" || action === "confirm_all";
+          const isExplicitConfirmMessage =
+            /^(כן|מאשר|תאשר|תזין|תרשום|אישור|אשר|מאושר|נכון|מדויק|מדויק תזין|סבבה תרשום|סבבה|yes|confirm|approve)$/i.test(rawUserMsg) ||
+            /(מאשר|תזין|תרשום את זה|תאשר את זה|תכניס לקובץ)/.test(rawUserMsg);
+          const isUserConfirmed = isExplicitConfirmAction || isExplicitConfirmMessage;
+
+          if (!isUserConfirmed) {
+            toolResult = {
+              error: "פעולת כתיבה נדחתה על ידי השרת: לא התקבל אישור מפורש מהמשתמש ('כן' / 'מאשר' / לחיצה על כפתור). עליך להציג את פרטי הדיווח כטיוטה באמצעות propose_entries ולבקש את אישור המשתמש לפני הכתיבה.",
+            };
+            responseParts.push({
+              functionResponse: {
+                name,
+                response: toolResult,
+              },
+            });
+            continue;
+          }
+
           const fileId = String(args.fileId || "");
           const rawRows: any[] = Array.isArray(args.rows) ? args.rows : [];
           const matchingDraft = collectedDrafts.find((d) => d.fileId === fileId);
@@ -1125,7 +1351,7 @@ MANDATORY WORKFLOW:
                   : typeof r.שעות === "number"
                   ? r.שעות
                   : matchingDraft?.durationHours || 1,
-              workType: r.workType || r["סוג עבודה"] || matchingDraft?.workType || "טיקטים",
+              workType: r.workType || r["סוג עבודה"] || matchingDraft?.targetTabName || matchingDraft?.workType || "שעות",
               desc: r.description || r.תיאור || matchingDraft?.description || "",
               startTime: r.startTime || r["שעת התחלה"] || matchingDraft?.startTime,
               endTime: r.endTime || r["שעת סיום"] || matchingDraft?.endTime,
@@ -1146,29 +1372,31 @@ MANDATORY WORKFLOW:
           const rowNumMatch = (writeRes.rowAddress || "").match(/\d+/);
           const targetRow = rowNumMatch ? parseInt(rowNumMatch[0], 10) : 1;
 
-          // Create written entry records
+          // Create written entry records (stateless, kept in client session state)
           for (let i = 0; i < rows.length; i++) {
             const r = rows[i];
             const writtenItem: WrittenEntryResult = {
-              id: `written_${Date.now()}_${i}`,
+              id: matchingDraft?.id || `written_${Date.now()}_${i}`,
               fileId,
-              fileName: "hours.xlsx",
-              filePath: "",
-              sheetName: writeRes.sheetName || firstRowWorkType || "טיקטים",
-              webUrl: writeRes.webUrl || "",
+              driveId: writeRes.driveId || matchingDraft?.driveId,
+              itemId: fileId,
+              fileName: matchingDraft?.fileName || "hours.xlsx",
+              filePath: matchingDraft?.filePath || "",
+              sheetName: writeRes.sheetName || firstRowWorkType || matchingDraft?.targetTabName || "שעות",
+              webUrl: writeRes.webUrl || matchingDraft?.webUrl || "",
               targetRow,
               rowAddress: writeRes.rowAddress || `Row ${targetRow}`,
+              writtenValues: writeRes.writtenValues,
               entryId: writeRes.entryId || `entry_${Date.now()}`,
-              customerName: r.customer || r.לקוח || "לקוח",
+              customerName: r.customer || r.לקוח || matchingDraft?.customerName || "לקוח",
               date: r.date || r.תאריך || jCtx.todayIso,
               durationFormatted: `${r.hours || r.משך || r.שעות || ""} שעות`,
               description: r.description || r.תיאור || "",
-              workType: r.workType || r["סוג עבודה"] || firstRowWorkType || "טיקטים",
-              writtenAt: writeRes.timestamp || Date.now(),
-              expiresAt: (writeRes.timestamp || Date.now()) + 10 * 60 * 1000,
+              workType: r.workType || r["סוג עבודה"] || firstRowWorkType || matchingDraft?.targetTabName || "שעות",
+              writtenAt: writeRes.writtenAt || Date.now(),
+              expiresAt: (writeRes.writtenAt || Date.now()) + 10 * 60 * 1000,
               canUndo: true,
             };
-            sessionWrittenEntries.set(writtenItem.id, writtenItem);
             newWrittenEntries.push(writtenItem);
           }
 
@@ -1180,8 +1408,17 @@ MANDATORY WORKFLOW:
         } else if (name === "undo_row") {
           const fileId = String(args.fileId || "");
           const rowAddress = String(args.rowAddress || "");
+          const matchingWritten = (params.writtenEntries || []).find((w) => w.fileId === fileId || w.rowAddress === rowAddress);
           const undoRes = await withSafeTimeout(
-            undoRow(fileId, rowAddress, user, activeEnv),
+            undoRow({
+              driveId: matchingWritten?.driveId,
+              itemId: fileId,
+              fileId,
+              rowAddress,
+              writtenValues: matchingWritten?.writtenValues,
+              writtenAt: matchingWritten?.writtenAt,
+              sheetName: matchingWritten?.sheetName,
+            }, user, activeEnv),
             15000,
             { success: false } as any
           );
@@ -1223,14 +1460,18 @@ MANDATORY WORKFLOW:
       ? "הכנתי את פרטי הדיווח בכרטיס למטה. מאשר להזין?"
       : "במה תרצה שאתעד שעות עבורך?";
 
+  const effectiveWritten = [
+    ...newWrittenEntries,
+    ...(params.writtenEntries || []).filter(
+      (w) => !newWrittenEntries.some((nw) => nw.id === w.id)
+    ),
+  ];
+
   return {
     reply: cleanReply || defaultReply,
     transcript: userTranscript,
     drafts: collectedDrafts,
-    writtenEntries:
-      newWrittenEntries.length > 0
-        ? newWrittenEntries
-        : Array.from(sessionWrittenEntries.values()),
+    writtenEntries: effectiveWritten,
     undoneCardIds: [],
     isConfirmed,
     suggestedAction: isConfirmed

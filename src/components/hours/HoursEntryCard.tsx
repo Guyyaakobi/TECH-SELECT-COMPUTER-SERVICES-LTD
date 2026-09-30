@@ -22,6 +22,7 @@ import {
   Check,
   RefreshCw,
   FolderOpen,
+  User,
 } from "lucide-react";
 import {
   HoursAssistantEntryDraft,
@@ -52,10 +53,46 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   const [editCustomer, setEditCustomer] = useState(draft?.customerName || "");
   const [editDate, setEditDate] = useState(draft?.date || "");
   const [editDuration, setEditDuration] = useState(draft?.durationFormatted || "");
-  const [editWorkType, setEditWorkType] = useState<"ביקור באתר" | "טיקטים" | "פרוייקטים">(
-    (draft?.workType as any) || "טיקטים"
+  const [editStartTime, setEditStartTime] = useState(draft?.startTime || "");
+  const [editEndTime, setEditEndTime] = useState(draft?.endTime || "");
+  const [editWorkType, setEditWorkType] = useState<string>(
+    draft?.targetTabName || draft?.workType || ""
   );
   const [editDescription, setEditDescription] = useState(draft?.description || "");
+
+  // Sync state when draft updates from assistant (e.g. voice corrections)
+  useEffect(() => {
+    if (!draft) return;
+    setEditCustomer(draft.customerName || "");
+    setEditDate(draft.date || "");
+    setEditDuration(draft.durationFormatted || "");
+    setEditStartTime(draft.startTime || "");
+    setEditEndTime(draft.endTime || "");
+    setEditWorkType(draft.targetTabName || draft.workType || "");
+    setEditDescription(draft.description || "");
+  }, [
+    draft?.customerName,
+    draft?.date,
+    draft?.durationFormatted,
+    draft?.startTime,
+    draft?.endTime,
+    draft?.workType,
+    draft?.targetTabName,
+    draft?.description,
+  ]);
+
+  // Quick helper to calculate end time from start time and minutes
+  const calcEndTimeFromDuration = (startTimeStr: string, durationMinutes: number) => {
+    if (!startTimeStr) return "";
+    const match = startTimeStr.match(/^(\d{1,2}):(\d{2})/);
+    if (!match) return "";
+    const hours = parseInt(match[1], 10);
+    const mins = parseInt(match[2], 10);
+    const total = hours * 60 + mins + (durationMinutes || 30);
+    const endH = Math.floor(total / 60) % 24;
+    const endM = total % 60;
+    return `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
+  };
 
   // File selector state
   const [isSelectingFile, setIsSelectingFile] = useState(!draft?.fileId && !draft?.fileName);
@@ -129,6 +166,9 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       customerName: editCustomer.trim(),
       date: editDate.trim(),
       durationFormatted: editDuration.trim(),
+      startTime: editStartTime.trim() || draft.startTime,
+      endTime: editEndTime.trim() || draft.endTime,
+      isTimeSuggested: false,
       workType: editWorkType,
       description: editDescription.trim(),
       isReadyForConfirmation: Boolean(
@@ -148,9 +188,14 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   };
 
   const getWorkTypeIcon = (wt: string) => {
-    if (wt === "ביקור באתר" || wt === "באתר") return <MapPin className="w-3.5 h-3.5 text-amber-400" />;
-    if (wt === "פרוייקטים" || wt === "פרויקטים") return <FolderKanban className="w-3.5 h-3.5 text-purple-400" />;
-    return <Ticket className="w-3.5 h-3.5 text-cyan-400" />;
+    const s = (wt || "").toLowerCase();
+    if (s.includes("ביקור") || s.includes("אתר") || s.includes("onsite") || s.includes("visit")) {
+      return <MapPin className="w-3.5 h-3.5 text-amber-500" />;
+    }
+    if (s.includes("פרויקט") || s.includes("פרוייקט") || s.includes("project")) {
+      return <FolderKanban className="w-3.5 h-3.5 text-purple-500" />;
+    }
+    return <Ticket className="w-3.5 h-3.5 text-blue-500" />;
   };
 
   // ==========================================
@@ -326,25 +371,72 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             </div>
           </div>
 
-          <div>
-            <label className="block text-[11px] text-slate-600 font-medium mb-1">סוג עבודה (טאב באקסל):</label>
-            <div className="grid grid-cols-3 gap-1.5">
-              {(["ביקור באתר", "טיקטים", "פרוייקטים"] as const).map((wt) => (
-                <button
-                  key={wt}
-                  type="button"
-                  onClick={() => setEditWorkType(wt)}
-                  className={`py-1.5 px-2 rounded-lg text-xs font-semibold border flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-xs ${
-                    editWorkType === wt
-                      ? "bg-blue-600 text-white border-blue-600"
-                      : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
-                  }`}
-                >
-                  {getWorkTypeIcon(wt)}
-                  <span>{wt}</span>
-                </button>
-              ))}
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[11px] text-slate-600 font-medium mb-1">שעת התחלה:</label>
+              <input
+                type="time"
+                value={editStartTime}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setEditStartTime(val);
+                  if (val && draft?.durationMinutes) {
+                    setEditEndTime(calcEndTimeFromDuration(val, draft.durationMinutes));
+                  }
+                }}
+                className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-mono text-slate-800 focus:outline-none focus:border-blue-500 shadow-xs"
+                dir="ltr"
+              />
             </div>
+            <div>
+              <label className="block text-[11px] text-slate-600 font-medium mb-1">שעת סיום:</label>
+              <input
+                type="time"
+                value={editEndTime}
+                onChange={(e) => setEditEndTime(e.target.value)}
+                className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-mono text-slate-800 focus:outline-none focus:border-blue-500 shadow-xs"
+                dir="ltr"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[11px] text-slate-600 font-medium mb-1">טאב באקסל (מתוך הקובץ):</label>
+            {draft.availableTabs && draft.availableTabs.length > 0 ? (
+              <div
+                className={`grid gap-1.5 ${
+                  draft.availableTabs.length <= 2
+                    ? "grid-cols-2"
+                    : draft.availableTabs.length === 3
+                    ? "grid-cols-3"
+                    : "grid-cols-2 sm:grid-cols-4"
+                }`}
+              >
+                {draft.availableTabs.map((t) => (
+                  <button
+                    key={t.name}
+                    type="button"
+                    onClick={() => setEditWorkType(t.name)}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold border flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-xs ${
+                      editWorkType === t.name
+                        ? "bg-blue-600 text-white border-blue-600 font-bold"
+                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {getWorkTypeIcon(t.name)}
+                    <span className="truncate">{t.name}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <input
+                type="text"
+                value={editWorkType}
+                onChange={(e) => setEditWorkType(e.target.value)}
+                className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-500 shadow-xs"
+                placeholder="שם הטאב באקסל"
+              />
+            )}
           </div>
 
           <div>
@@ -375,8 +467,76 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
         </div>
       ) : (
         <>
+          {/* Item 2: TAB IN THE SUMMARY - Always prominent & 1-tap change */}
+          <div className="mb-3 p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 shadow-xs">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-slate-600 text-[11px] font-semibold flex items-center gap-1.5">
+                <FolderKanban className="w-3.5 h-3.5 text-blue-600" />
+                טאב בקובץ:
+              </span>
+              <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-md border border-blue-200/60 inline-flex items-center gap-1">
+                {getWorkTypeIcon(draft.targetTabName || draft.workType)}
+                {draft.targetTabName || draft.workType}
+              </span>
+            </div>
+
+            {/* Tap or voice to change tab - Built strictly from this file's real data tabs */}
+            {draft.availableTabs && draft.availableTabs.length > 0 ? (
+              <div
+                className={`grid gap-1.5 ${
+                  draft.availableTabs.length <= 2
+                    ? "grid-cols-2"
+                    : draft.availableTabs.length === 3
+                    ? "grid-cols-3"
+                    : "grid-cols-2 sm:grid-cols-4"
+                }`}
+              >
+                {draft.availableTabs.map((tab) => {
+                  const currentName = draft.targetTabName || draft.workType;
+                  const isSelected = currentName === tab.name;
+                  return (
+                    <button
+                      key={tab.name}
+                      type="button"
+                      onClick={() => {
+                        if (onUpdateDraft) {
+                          onUpdateDraft({
+                            ...draft,
+                            workType: tab.name,
+                            targetTabName: tab.name,
+                            availableTabs: draft.availableTabs?.map((t) => ({
+                              ...t,
+                              isSelected: t.name === tab.name,
+                            })),
+                          });
+                        }
+                      }}
+                      className={`py-1.5 px-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-all ${
+                        isSelected
+                          ? "bg-blue-600 text-white shadow-xs border border-blue-600 font-bold"
+                          : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
+                      }`}
+                      title={`העבר לטאב ${tab.name}`}
+                    >
+                      {getWorkTypeIcon(tab.name)}
+                      <span className="truncate">{tab.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-xs font-bold text-blue-700 bg-white p-2 rounded-lg border border-slate-200 flex items-center gap-1.5">
+                {getWorkTypeIcon(draft.targetTabName || draft.workType)}
+                <span>{draft.targetTabName || draft.workType}</span>
+              </div>
+            )}
+            <span className="text-[9px] text-slate-400 mt-1.5 block text-center">
+              * לחץ על טאב לשינוי מיידי או אמור בקולך (לדוגמה: "תעביר לטאב פרויקטים")
+            </span>
+          </div>
+
           {/* Read-only Grid of Details */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs mb-3">
+          <div className="grid grid-cols-2 gap-2 text-xs mb-3">
             <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 shadow-xs">
               <span className="text-slate-500 block text-[10px] flex items-center gap-1">
                 <Calendar className="w-3 h-3 text-blue-500" />
@@ -395,12 +555,100 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
               </span>
             </div>
 
-            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 shadow-xs col-span-2 sm:col-span-1">
-              <span className="text-slate-500 block text-[10px] flex items-center gap-1">
-                {getWorkTypeIcon(draft.workType)}
-                סוג עבודה (טאב באקסל)
+            {/* Item 1: SUGGESTED START/END TIMES (editable, marked 'משוער') */}
+            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 shadow-xs col-span-2">
+              <div className="flex items-center justify-between gap-1 mb-1.5">
+                <span className="text-slate-600 text-[11px] font-semibold flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-blue-500" />
+                  שעות פעילות:
+                </span>
+                {draft.isTimeSuggested && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 shadow-2xs flex items-center gap-0.5">
+                    <Sparkles className="w-2.5 h-2.5 text-amber-600" />
+                    משוער
+                  </span>
+                )}
+              </div>
+
+              {/* Editable Start/End Time Inputs (tap to edit) */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-white p-1.5 rounded-lg border border-slate-200 flex items-center justify-between gap-1 shadow-2xs">
+                  <span className="text-[10px] text-slate-500 font-medium">התחלה:</span>
+                  <input
+                    type="time"
+                    value={draft.startTime || ""}
+                    onChange={(e) => {
+                      const newStart = e.target.value;
+                      const durationM = draft.durationMinutes || 30;
+                      const newEnd = newStart ? calcEndTimeFromDuration(newStart, durationM) : draft.endTime;
+                      if (onUpdateDraft) {
+                        onUpdateDraft({
+                          ...draft,
+                          startTime: newStart,
+                          endTime: newEnd,
+                          isTimeSuggested: false,
+                        });
+                      }
+                    }}
+                    className="text-xs font-mono font-bold text-slate-800 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 rounded px-1 cursor-pointer"
+                    dir="ltr"
+                    title="הקש לשינוי שעת התחלה"
+                  />
+                </div>
+
+                <div className="bg-white p-1.5 rounded-lg border border-slate-200 flex items-center justify-between gap-1 shadow-2xs">
+                  <span className="text-[10px] text-slate-500 font-medium">סיום:</span>
+                  <input
+                    type="time"
+                    value={draft.endTime || ""}
+                    onChange={(e) => {
+                      const newEnd = e.target.value;
+                      if (onUpdateDraft) {
+                        onUpdateDraft({
+                          ...draft,
+                          endTime: newEnd,
+                          isTimeSuggested: false,
+                        });
+                      }
+                    }}
+                    className="text-xs font-mono font-bold text-slate-800 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 rounded px-1 cursor-pointer"
+                    dir="ltr"
+                    title="הקש לשינוי שעת סיום"
+                  />
+                </div>
+              </div>
+              <span className="text-[9px] text-slate-400 mt-1 block">
+                * ניתן לשנות בלחיצה או בקולך (לדוגמה: "התחלתי ב-10")
               </span>
-              <span className="font-semibold text-slate-800 mt-0.5 block">{draft.workType}</span>
+            </div>
+
+            {/* Contact Person & Ticket Number with "לא קיים בקובץ" support */}
+            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 shadow-xs">
+              <span className="text-slate-500 block text-[10px] flex items-center gap-1">
+                <User className="w-3 h-3 text-blue-500" />
+                איש קשר
+              </span>
+              <span className="text-xs font-semibold mt-0.5 block">
+                {draft.unmappedFields && draft.unmappedFields.includes("contact_person") ? (
+                  <span className="text-slate-400 font-normal italic text-[11px]">לא קיים בקובץ</span>
+                ) : (
+                  <span className="text-slate-800">{draft.contactPerson || "לא צוין"}</span>
+                )}
+              </span>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 shadow-xs">
+              <span className="text-slate-500 block text-[10px] flex items-center gap-1">
+                <Ticket className="w-3 h-3 text-blue-500" />
+                מספר קריאה / טיקט
+              </span>
+              <span className="text-xs font-semibold mt-0.5 block">
+                {draft.unmappedFields && draft.unmappedFields.includes("ticket_number") ? (
+                  <span className="text-slate-400 font-normal italic text-[11px]">לא קיים בקובץ</span>
+                ) : (
+                  <span className="text-slate-800 font-mono">{draft.ticketNumber || "ללא טיקט"}</span>
+                )}
+              </span>
             </div>
           </div>
 

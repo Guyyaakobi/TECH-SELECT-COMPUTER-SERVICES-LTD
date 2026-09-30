@@ -5,6 +5,19 @@ export interface AuthenticatedUser {
   name: string;
   email: string;
   oid: string;
+  isAdmin?: boolean;
+}
+
+export function isHoursAdmin(email?: string, env?: any): boolean {
+  if (!email) return false;
+  const p = typeof process !== "undefined" ? process?.env : {};
+  const envObj = (env || {}) as any;
+  const rawAdmins = envObj.HOURS_ADMIN_EMAILS || p?.HOURS_ADMIN_EMAILS || "g@tech-select.co.il";
+  const adminEmails = rawAdmins
+    .split(",")
+    .map((e: string) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return adminEmails.includes(email.trim().toLowerCase());
 }
 
 // Augment Express Request type
@@ -321,6 +334,7 @@ export async function hoursAuthMiddleware(req: Request, res: Response, next: Nex
     const user = await validateAzureToken(token);
 
     // Expose validated user on req.user
+    user.isAdmin = isHoursAdmin(user.email, process.env);
     req.user = user;
     next();
   } catch (err: any) {

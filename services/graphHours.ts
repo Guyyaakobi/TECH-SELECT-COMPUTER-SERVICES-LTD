@@ -52,6 +52,60 @@ export interface MonthTargetResult {
   availableFiles?: Array<{ fileId: string; fileName: string; webUrl?: string }>;
 }
 
+export type TabSemanticType = "tickets" | "onsite" | "project" | "other_or_summary";
+
+export type StandardColumnField =
+  | "date"
+  | "day_of_week"
+  | "employee"
+  | "start_time"
+  | "end_time"
+  | "duration_hours"
+  | "description"
+  | "contact_person"
+  | "ticket_number"
+  | "signature_or_approval"
+  | "notes";
+
+export interface InspectedWorksheet {
+  sheetId: string;
+  name: string; // real raw worksheet name in file (e.g. "קריאות שירות")
+  normalizedName: string;
+  visibility?: string;
+  isTable: boolean;
+  tableName?: string;
+  tableId?: string;
+  hasHeaderRow: boolean;
+  headerRowIndex: number;
+  headers: string[]; // actual raw headers in the file
+  recentRows: any[][]; // up to 3 recent data rows
+  totalDataRows: number;
+  detectedType: TabSemanticType;
+  typeConfidence: number;
+  typeReason: string;
+  isDataTab: boolean; // false for summary/pivot/chart/no-headers
+  fieldToColIndex: Partial<Record<StandardColumnField, number>>;
+  colIndexToField: Array<StandardColumnField | null>;
+  unmappedFields: StandardColumnField[];
+  formats: {
+    dateFormat?: string;
+    timeFormat?: string;
+    hoursFormat?: "decimal" | "hh:mm";
+    dayFormat?: "short" | "full";
+    formulaColumns: number[];
+  };
+}
+
+export interface WorkbookInspectionResult {
+  fileId: string;
+  fileName: string;
+  driveId: string;
+  lastModified: string;
+  worksheets: InspectedWorksheet[];
+  dataTabs: InspectedWorksheet[];
+  inspectedAt: number;
+}
+
 export interface SheetStructureResult {
   fileId: string;
   isTable: boolean;
@@ -73,6 +127,13 @@ export interface SheetStructureResult {
     hoursFormat?: "decimal" | "hh:mm";
     formulaColumns: number[]; // column indices containing formulas
   };
+  detectedType?: TabSemanticType;
+  availableTabs?: Array<{
+    name: string;
+    detectedType: TabSemanticType;
+    isSelected: boolean;
+  }>;
+  unmappedFields?: string[];
 }
 
 export function columnLetterToIndex(letter: string): number {
@@ -98,13 +159,26 @@ export function indexToColumnLetter(index: number): string {
 
 export interface WriteRowsResult {
   success: boolean;
+  driveId: string;
+  itemId: string;
+  fileId: string;
   rowAddress: string;
   sheetName?: string;
   webUrl?: string;
   entryId: string;
   timestamp: number;
-  fileId: string;
-  writtenValues: any[];
+  writtenAt: number;
+  writtenValues: any[][];
+}
+
+export interface UndoRowParams {
+  driveId?: string;
+  itemId?: string;
+  fileId?: string;
+  rowAddress: string;
+  writtenValues?: any[][];
+  writtenAt?: number;
+  sheetName?: string;
 }
 
 export interface UndoRowResult {
@@ -127,21 +201,6 @@ export interface DuplicateCheckResult {
     rawValues: any[];
   }>;
 }
-
-export interface UndoLogEntry {
-  entryId: string;
-  user: string;
-  fileId: string;
-  rowAddress: string;
-  timestamp: number;
-  isTable: boolean;
-  tableId?: string;
-  rowIndex?: number;
-  sheetId?: string;
-}
-
-// Global server-side undo log (in-memory)
-const undoLog: UndoLogEntry[] = [];
 
 // Customers cache (10 minutes TTL)
 interface CustomersCache {
@@ -1266,70 +1325,807 @@ export async function resolveDriveForItem(
 }
 
 /**
- * Matches an Excel worksheet by workType:
- * "ביקור באתר" -> tab containing "ביקור", "באתר", "site", "visit"
- * "טיקטים" -> tab containing "טיקט", "קריאות", "תמיכה", "שוטף", "ticket", "helpdesk"
- * "פרוייקטים" -> tab containing "פרוייקט", "פרויקט", "project"
+ * Normalize tab name before comparing:
+ * - trim, remove surrounding quotes/parentheses/brackets
+ * - ignore customer name inside tab name
+ * - ignore punctuation/dashes/underscores
+ * - normalize Hebrew spelling ("פרוייקטים" = "פרויקטים")
+ * - lowercase English
+ */
+export function normalizeTabName(rawName: string, customerName?: string): string {
+  if (!rawName) return "";
+  let name = String(rawName).trim();
+
+  // Remove surrounding quotes, brackets, parentheses
+  name = name.replace(/^["'\[\(«]+|["'\]\)»]+$/g, "").trim();
+
+  // If customer name provided, remove customer name and surrounding separators
+  if (customerName) {
+    const custClean = customerName.trim();
+    if (custClean) {
+      const escaped = custClean.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const custRegex = new RegExp(`(^|\\s|[-_:/])(${escaped})(\\s*[-_:/]*)`, "gi");
+      name = name.replace(custRegex, " ").trim();
+      const custRegexEnd = new RegExp(`(\\s*[-_:/]*\\s*)(${escaped})($|\\s)`, "gi");
+      name = name.replace(custRegexEnd, " ").trim();
+    }
+  }
+
+  // Remove year numbers e.g. 2024..2030
+  name = name.replace(/\b(202[0-9]|203[0-9])\b/g, "").trim();
+
+  // Replace punctuation/dashes/underscores with space
+  name = name.replace(/[-_:|/\\.,;~`"'!@#$%^&*()_+={}\[\]<>?]/g, " ");
+
+  // Normalize Hebrew spelling: "פרוייקט" -> "פרויקט"
+  name = name.replace(/פרוייקט/g, "פרויקט");
+  // Remove niqqud
+  name = name.replace(/[\u0591-\u05C7]/g, "");
+
+  // Collapse whitespace
+  name = name.replace(/\s+/g, " ").trim().toLowerCase();
+
+  return name;
+}
+
+/**
+ * 2. CLASSIFY TABS BY MEANING (not by exact name)
+ * - Evaluates BOTH normalized tab name and headers
+ * - Returns: "tickets" | "onsite" | "project" | "other_or_summary"
+ * - Marks summary/pivot/chart/no-header tabs as isDataTab: false
+ */
+export function classifyWorksheet(
+  rawName: string,
+  headers: string[],
+  customerName?: string
+): {
+  detectedType: TabSemanticType;
+  confidence: number;
+  typeReason: string;
+  isDataTab: boolean;
+} {
+  const normName = normalizeTabName(rawName, customerName);
+  const normHeaders = (headers || []).map((h) => String(h || "").trim().toLowerCase());
+
+  // Check if summary/pivot/chart/hidden/overview tab
+  const summaryKeywords = [
+    "סיכום", "ריכוז", "סהכ", "סה״כ", "סה\"כ", "דשבורד", "לוח בקרה",
+    "גרף", "גרפים", "טבלת ציר", "חיוב", "חשבונית", "נתונים כלליים",
+    "summary", "totals", "pivot", "dashboard", "chart", "overview", "invoice", "stats"
+  ];
+
+  const isSummaryName = summaryKeywords.some((kw) => normName.includes(kw));
+
+  // Check if header row contains basic data row signals (date or employee or hours)
+  const hasDateHeader = normHeaders.some((h) =>
+    h.includes("תאריך") || h.includes("ת. ביצוע") || h.includes("תאריך עבודה") || h.includes("date")
+  );
+  const hasHoursHeader = normHeaders.some((h) =>
+    h.includes("שעות") || h.includes("סה\"כ") || h.includes("סה״כ") || h.includes("משך") || h.includes("hours") || h.includes("duration")
+  );
+  const hasEmployeeHeader = normHeaders.some((h) =>
+    h.includes("טכנאי") || h.includes("עובד") || h.includes("מבצע") || h.includes("שם") || h.includes("tech") || h.includes("engineer")
+  );
+
+  const hasEssentialWorkHeaders = (hasDateHeader && (hasHoursHeader || hasEmployeeHeader)) || (hasHoursHeader && hasEmployeeHeader);
+
+  if (isSummaryName || !hasEssentialWorkHeaders) {
+    if (!hasEssentialWorkHeaders) {
+      return {
+        detectedType: "other_or_summary",
+        confidence: 0.9,
+        typeReason: "הגיליון אינו מכיל כותרות שדות עבודה (תאריך, עובד, שעות)",
+        isDataTab: false,
+      };
+    }
+    if (isSummaryName) {
+      return {
+        detectedType: "other_or_summary",
+        confidence: 0.95,
+        typeReason: `טאב סיכום/ריכוז לפי שם הגיליון ("${rawName}")`,
+        isDataTab: false,
+      };
+    }
+  }
+
+  let ticketsScore = 0;
+  let onsiteScore = 0;
+  let projectScore = 0;
+
+  const ticketsReasons: string[] = [];
+  const onsiteReasons: string[] = [];
+  const projectReasons: string[] = [];
+
+  // Tab Name Signals
+  const ticketsNameTerms = [
+    "טיקט", "טיקטים", "קריאה", "קריאות", "תמיכה", "שוטף", "מרחוק", "מוקד",
+    "טלפוני", "ריטיינר", "שירות", "ticket", "tickets", "support", "remote", "helpdesk", "service"
+  ];
+  for (const term of ticketsNameTerms) {
+    if (normName.includes(term)) {
+      ticketsScore += 4;
+      ticketsReasons.push(`שם הטאב מכיל "${term}"`);
+      break;
+    }
+  }
+
+  const onsiteNameTerms = [
+    "ביקור", "ביקורים", "באתר", "הגעה", "שטח", "אתר", "פיזי",
+    "onsite", "on site", "site", "visit", "visits", "field"
+  ];
+  for (const term of onsiteNameTerms) {
+    if (normName.includes(term)) {
+      onsiteScore += 4;
+      onsiteReasons.push(`שם הטאב מכיל "${term}"`);
+      break;
+    }
+  }
+
+  const projectNameTerms = [
+    "פרויקט", "פרויקטים", "הקמה", "מיגרציה", "שדרוג", "פיתוח", "תשתית",
+    "project", "projects", "setup", "migration", "infrastructure", "rollout"
+  ];
+  for (const term of projectNameTerms) {
+    if (normName.includes(term)) {
+      projectScore += 4;
+      projectReasons.push(`שם הטאב מכיל "${term}"`);
+      break;
+    }
+  }
+
+  // Header Signals
+  for (const h of normHeaders) {
+    // Tickets headers:
+    if (h.includes("קריאה") || h.includes("טיקט") || h.includes("ticket") || h.includes("מס' קריאה") || h.includes("פונה") || h.includes("caller")) {
+      ticketsScore += 2.5;
+      ticketsReasons.push(`כותרת "${h}"`);
+    }
+
+    // Onsite headers:
+    if (
+      h.includes("הגעה") || h.includes("עזיבה") || h.includes("כניסה") || h.includes("יציאה") ||
+      h.includes("arrival") || h.includes("departure") ||
+      h.includes("חתימ") || h.includes("חתימת") || h.includes("אישור לקוח") || h.includes("signature") ||
+      h.includes("נסיעה") || h.includes("חניה") || h.includes("קמ") || h.includes("קילומטראז")
+    ) {
+      onsiteScore += 2.5;
+      onsiteReasons.push(`כותרת "${h}"`);
+    }
+
+    // Project headers:
+    if (
+      h.includes("שם פרויקט") || h.includes("שם הפרויקט") || h.includes("נושא") || h.includes("משימה") ||
+      h.includes("אבן דרך") || h.includes("תוצר") || h.includes("פירוט ביצוע") || h.includes("שלב") ||
+      h.includes("task") || h.includes("milestone") || (h.includes("פרויקט") && !normName.includes("פרויקט"))
+    ) {
+      projectScore += 2.5;
+      projectReasons.push(`כותרת "${h}"`);
+    }
+  }
+
+  if (onsiteScore > ticketsScore && onsiteScore > projectScore) {
+    return {
+      detectedType: "onsite",
+      confidence: Math.min(0.99, 0.6 + onsiteScore * 0.05),
+      typeReason: `סווג כביקור באתר (${onsiteReasons.slice(0, 3).join(", ")})`,
+      isDataTab: true,
+    };
+  }
+
+  if (projectScore > ticketsScore && projectScore > onsiteScore) {
+    return {
+      detectedType: "project",
+      confidence: Math.min(0.99, 0.6 + projectScore * 0.05),
+      typeReason: `סווג כפרויקט (${projectReasons.slice(0, 3).join(", ")})`,
+      isDataTab: true,
+    };
+  }
+
+  if (ticketsScore > 0 || hasEssentialWorkHeaders) {
+    return {
+      detectedType: "tickets",
+      confidence: Math.min(0.99, 0.6 + ticketsScore * 0.05),
+      typeReason: ticketsReasons.length > 0
+        ? `סווג כקריאות שירות/תמיכה (${ticketsReasons.slice(0, 3).join(", ")})`
+        : "סווג כטאב שעות שוטף/קריאות שירות",
+      isDataTab: true,
+    };
+  }
+
+  return {
+    detectedType: "other_or_summary",
+    confidence: 0.5,
+    typeReason: "לא זוהה סוג נתונים מוגדר",
+    isDataTab: false,
+  };
+}
+
+/**
+ * 4. Map fields to the headers of the chosen tab by meaning, tolerant to wording differences
+ */
+export function mapHeadersToSemanticFields(headers: string[]): {
+  fieldToColIndex: Partial<Record<StandardColumnField, number>>;
+  colIndexToField: Array<StandardColumnField | null>;
+  unmappedFields: StandardColumnField[];
+} {
+  const fieldToColIndex: Partial<Record<StandardColumnField, number>> = {};
+  const colIndexToField: Array<StandardColumnField | null> = new Array(headers.length).fill(null);
+  const assignedCols = new Set<number>();
+
+  function matchField(field: StandardColumnField, testFn: (header: string, index: number) => boolean) {
+    if (fieldToColIndex[field] !== undefined) return;
+    for (let i = 0; i < headers.length; i++) {
+      if (assignedCols.has(i)) continue;
+      const h = String(headers[i] || "").trim().toLowerCase();
+      if (testFn(h, i)) {
+        fieldToColIndex[field] = i;
+        colIndexToField[i] = field;
+        assignedCols.add(i);
+        break;
+      }
+    }
+  }
+
+  // 1. Date (תאריך)
+  matchField("date", (h) =>
+    h === "תאריך" || h === "ת. ביצוע" || h === "תאריך עבודה" || h === "תאריך ביצוע" ||
+    h === "תאריך פעילות" || h === "תאריך קריאה" || h === "date" || h === "work date" ||
+    (h.includes("תאריך") && !h.includes("עד") && !h.includes("סיום"))
+  );
+
+  // 2. Day of week (יום בשבוע)
+  matchField("day_of_week", (h) =>
+    h === "יום" || h === "יום בשבוע" || h === "יום עבודה" || h === "יום מלא" ||
+    h === "day" || h === "weekday"
+  );
+
+  // 3. Employee (טכנאי / עובד)
+  matchField("employee", (h) =>
+    h === "טכנאי" || h === "שם טכנאי" || h === "שם הטכנאי" || h === "עובד" ||
+    h === "שם עובד" || h === "מבצע" || h === "מטפל" || h === "איש צוות" ||
+    h === "איש שירות" || h === "איש מחשוב" || h === "technician" || h === "tech" ||
+    h === "employee" || h === "engineer" || h.includes("טכנאי") || h.includes("עובד")
+  );
+
+  // 4. Start time (שעת התחלה / שעת הגעה)
+  matchField("start_time", (h) =>
+    h === "שעת התחלה" || h === "התחלה" || h === "משעה" || h === "שעה מה" ||
+    h === "שעת הגעה" || h === "הגעה" || h === "שעת כניסה" || h === "כניסה" ||
+    h === "start" || h === "start time" || h === "arrival" || h.includes("התחלה") || h.includes("הגעה")
+  );
+
+  // 5. End time (שעת סיום / שעת עזיבה)
+  matchField("end_time", (h) =>
+    h === "שעת סיום" || h === "סיום" || h === "עד שעה" || h === "שעה עד" ||
+    h === "שעת עזיבה" || h === "עזיבה" || h === "שעת יציאה" || h === "יציאה" ||
+    h === "end" || h === "end time" || h === "departure" || h.includes("סיום") || h.includes("עזיבה")
+  );
+
+  // 6. Duration hours (סה"כ שעות / משך)
+  matchField("duration_hours", (h) =>
+    h === "סה\"כ" || h === "סה״כ" || h === "סה\"כ שעות" || h === "סה״כ שעות" ||
+    h === "שעות" || h === "משך" || h === "משך זמן" || h === "סה\"כ זמן" ||
+    h === "סה״כ זמן" || h === "זמן" || h === "כמות שעות" || h === "hours" ||
+    h === "total hours" || h === "duration" || h.includes("סה\"כ") || h.includes("סה״כ") || h.includes("שעות")
+  );
+
+  // 7. Description (תיאור / מהות הקריאה)
+  matchField("description", (h) =>
+    h === "תיאור" || h === "תיאור פעילות" || h === "מהות הקריאה" || h === "מהות הפעילות" ||
+    h === "מהות" || h === "פירוט" || h === "פירוט הטיפול" || h === "פירוט ביצוע" || h === "נושא" ||
+    h === "מה בוצע" || h === "פעילות" || h === "description" || h === "details" ||
+    h === "summary" || h === "task" || h.includes("תיאור") || h.includes("מהות") || h.includes("פירוט") ||
+    h.includes("details") || h.includes("task") || h.includes("description") || h.includes("summary")
+  );
+
+  // 8. Ticket number (מספר קריאה / טיקט)
+  matchField("ticket_number", (h) =>
+    !h.includes("מהות") && !h.includes("פירוט") && !h.includes("תיאור") && !h.includes("תאריך") && (
+      h === "מספר קריאה" || h === "מס' קריאה" || h === "מספר טיקט" || h === "מס' טיקט" ||
+      h === "מספר" || h === "קריאה" || h === "טיקט" || h === "קריאה #" || h === "ticket" || h === "ticket #" ||
+      h === "ticket number" || h === "call #" || h === "incident" || h.includes("מספר קריאה") || h.includes("מס' קריאה") ||
+      h.includes("מספר טיקט") || h.includes("מס' טיקט") || h.startsWith("קריאה") || h.startsWith("טיקט")
+    )
+  );
+
+  // 9. Contact person (איש קשר / פונה)
+  matchField("contact_person", (h) =>
+    h === "איש קשר" || h === "פונה" || h === "שם הפונה" || h === "נציג לקוח" ||
+    h === "נציג" || h === "פנה" || h === "contact" || h === "contact person" ||
+    h === "caller" || h.includes("איש קשר") || h.includes("פונה")
+  );
+
+  // 10. Signature / Approval (חתימה / אישור)
+  matchField("signature_or_approval", (h) =>
+    h === "חתימה" || h === "חתימת לקוח" || h === "אישור לקוח" || h === "אישור" ||
+    h === "חתימת הנציג" || h === "signature" || h === "sign" || h.includes("חתימ") || h.includes("אישור")
+  );
+
+  // 11. Notes / Status (הערות / סטטוס)
+  matchField("notes", (h) =>
+    h === "הערות" || h === "הערה" || h === "סטטוס" || h === "notes" || h === "comments" || h === "status"
+  );
+
+  const allStandardFields: StandardColumnField[] = [
+    "date",
+    "day_of_week",
+    "employee",
+    "start_time",
+    "end_time",
+    "duration_hours",
+    "description",
+    "contact_person",
+    "ticket_number",
+    "signature_or_approval",
+    "notes",
+  ];
+
+  const unmappedFields = allStandardFields.filter((f) => fieldToColIndex[f] === undefined);
+
+  return { fieldToColIndex, colIndexToField, unmappedFields };
+}
+
+// In-memory workbook inspection cache per file: itemId + lastModified (never across customers)
+const fileWorkbookCache = new Map<string, { result: WorkbookInspectionResult; expiresAt: number }>();
+
+export function clearFileWorkbookCache(fileId?: string): void {
+  if (fileId) {
+    for (const key of fileWorkbookCache.keys()) {
+      if (key.startsWith(fileId)) fileWorkbookCache.delete(key);
+    }
+  } else {
+    fileWorkbookCache.clear();
+  }
+}
+
+/**
+ * 1. READ EACH FILE AS IT IS
+ * - Reads ALL worksheets: name, header row, and 3 recent data rows each.
+ * - Caches per file (by itemId + lastModified), never across customers.
+ */
+export async function inspectWorkbookFile(
+  fileId: string,
+  env?: any,
+  explicitDriveId?: string,
+  customerName?: string
+): Promise<WorkbookInspectionResult> {
+  const driveId = await resolveDriveForItem(fileId, explicitDriveId, env);
+
+  // Get file metadata for lastModifiedDateTime
+  let lastModified = "";
+  let fileName = "hours.xlsx";
+
+  try {
+    const itemUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}?$select=id,name,lastModifiedDateTime,webUrl`;
+    const itemRes = await fetchGraph(itemUrl, { method: "GET" }, env);
+    if (itemRes.ok) {
+      const itemData: any = await itemRes.json();
+      lastModified = itemData.lastModifiedDateTime || "";
+      fileName = itemData.name || fileName;
+    }
+  } catch (itemErr) {
+    console.warn("[inspectWorkbookFile] item metadata warning:", itemErr);
+  }
+
+  const cacheKey = `${fileId}:${lastModified}`;
+  const cached = fileWorkbookCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.result;
+  }
+
+  // Fetch all worksheets from Excel workbook
+  const sheetsUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets?$top=50`;
+  const sheetsRes = await fetchGraph(sheetsUrl, { method: "GET" }, env);
+  if (!sheetsRes.ok) {
+    const err = await sheetsRes.text().catch(() => "");
+    throw new Error(`שגיאה בקריאת גליונות עבודה מקובץ Excel (${sheetsRes.status}): ${err}`);
+  }
+
+  const sheetsData: any = await sheetsRes.json();
+  const rawSheets: any[] = sheetsData.value || [];
+  if (rawSheets.length === 0) {
+    throw new Error("קובץ ה-Excel ריק מגיליונות עבודה");
+  }
+
+  const inspectedSheets: InspectedWorksheet[] = [];
+
+  for (const sheet of rawSheets) {
+    // Ignore hidden sheets
+    if (sheet.visibility && sheet.visibility !== "Visible") {
+      continue;
+    }
+
+    const sheetId = sheet.id;
+    const sheetName = sheet.name || "";
+    const normalizedName = normalizeTabName(sheetName, customerName);
+
+    // A. Check for Excel Table
+    let isTable = false;
+    let tableId: string | undefined = undefined;
+    let tableName: string | undefined = undefined;
+    let headers: string[] = [];
+    let recentRows: any[][] = [];
+    let totalDataRows = 0;
+    let formats: any = { formulaColumns: [] };
+    let hasHeaderRow = false;
+    let headerRowIndex = 0;
+
+    try {
+      const tablesUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/tables?$top=5`;
+      const tablesRes = await fetchGraph(tablesUrl, { method: "GET" }, env);
+      if (tablesRes.ok) {
+        const tablesData: any = await tablesRes.json();
+        const tables: any[] = tablesData.value || [];
+        if (tables.length > 0) {
+          isTable = true;
+          const table = tables[0];
+          tableId = table.id;
+          tableName = table.name;
+
+          // Header row range
+          const headerUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${tableId}/headerRowRange`;
+          const headerRes = await fetchGraph(headerUrl, { method: "GET" }, env);
+          if (headerRes.ok) {
+            const hData: any = await headerRes.json();
+            headers = (hData?.values?.[0] || []).map((h: any) => String(h || "").trim());
+            hasHeaderRow = headers.length > 0;
+          }
+
+          // Data rows (up to 3 recent data rows)
+          const rowsUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${tableId}/rows?$top=100`;
+          const rowsRes = await fetchGraph(rowsUrl, { method: "GET" }, env);
+          if (rowsRes.ok) {
+            const rData: any = await rowsRes.json();
+            const all = (rData.value || []).map((r: any) => r.values?.[0] || []);
+            totalDataRows = all.length;
+            recentRows = all.slice(-3);
+            formats = detectRowFormats(headers, all);
+          }
+        }
+      }
+    } catch (tblErr) {
+      console.warn(`[inspectWorkbookFile] table check error for ${sheetName}:`, tblErr);
+    }
+
+    // B. Plain Range if no table found
+    if (!isTable) {
+      try {
+        const usedUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/usedRange`;
+        const usedRes = await fetchGraph(usedUrl, { method: "GET" }, env);
+        if (usedRes.ok) {
+          const uData: any = await usedRes.json();
+          const values: any[][] = uData.values || [];
+          const formulas: any[][] = uData.formulas || [];
+
+          // Detect header row in first 15 rows
+          const headerKeywords = [
+            "תאריך", "יום", "עובד", "טכנאי", "מבצע", "שעה", "שעות", "משך", "התחלה", "סיום", "הגעה", "עזיבה",
+            "סהכ", "סה״כ", "סה\"כ", "איש קשר", "קשר", "נציג", "פונה", "קריאה", "טיקט", "מהות",
+            "תיאור", "פירוט", "נושא", "פרויקט", "פרוייקט", "חתימה", "אישור", "סטטוס", "הערות",
+            "date", "day", "employee", "technician", "start", "end", "hours", "duration", "contact", "ticket"
+          ];
+
+          let bestScore = -1;
+          for (let r = 0; r < Math.min(values.length, 15); r++) {
+            const row = values[r] || [];
+            const textCols = row.filter((c: any) => typeof c === "string" && c.trim().length > 0);
+            let score = 0;
+            for (const c of textCols) {
+              const lower = normalizeCustomerString(String(c)).toLowerCase();
+              if (headerKeywords.some((k) => lower.includes(k))) score++;
+            }
+            if (score > bestScore && score >= 2) {
+              bestScore = score;
+              headerRowIndex = r;
+              headers = row.map((c: any) => String(c || "").trim());
+              hasHeaderRow = true;
+            } else if (bestScore < 2 && textCols.length >= 3 && textCols.length > headers.length) {
+              headerRowIndex = r;
+              headers = row.map((c: any) => String(c || "").trim());
+              hasHeaderRow = true;
+            }
+          }
+
+          // Trim trailing empty headers
+          let lastCol = headers.length - 1;
+          while (lastCol >= 0 && !headers[lastCol]) lastCol--;
+          if (lastCol >= 0) headers = headers.slice(0, lastCol + 1);
+
+          // Data rows below header row
+          const dataRows: any[][] = [];
+          for (let r = headerRowIndex + 1; r < values.length; r++) {
+            const row = values[r] || [];
+            const isRowEmpty = row.every((c: any) => c === null || c === "" || c === undefined);
+            if (isRowEmpty) continue;
+            // Check if totals row
+            const isTotals = row.some((c: any) =>
+              typeof c === "string" && ["סה״כ", "סה\"כ", "סך הכל", "סיכום", "total"].some((k) => c.toLowerCase().includes(k))
+            );
+            if (isTotals) break;
+            dataRows.push(row);
+          }
+
+          totalDataRows = dataRows.length;
+          recentRows = dataRows.slice(-3);
+          formats = detectRowFormats(headers, dataRows, formulas);
+        }
+      } catch (usedErr) {
+        console.warn(`[inspectWorkbookFile] usedRange error for ${sheetName}:`, usedErr);
+      }
+    }
+
+    // Classify worksheet
+    const classification = classifyWorksheet(sheetName, headers, customerName);
+    const semanticMapping = mapHeadersToSemanticFields(headers);
+
+    inspectedSheets.push({
+      sheetId,
+      name: sheetName,
+      normalizedName,
+      visibility: sheet.visibility || "Visible",
+      isTable,
+      tableName,
+      tableId,
+      hasHeaderRow,
+      headerRowIndex,
+      headers,
+      recentRows,
+      totalDataRows,
+      detectedType: classification.detectedType,
+      typeConfidence: classification.confidence,
+      typeReason: classification.typeReason,
+      isDataTab: classification.isDataTab,
+      fieldToColIndex: semanticMapping.fieldToColIndex,
+      colIndexToField: semanticMapping.colIndexToField,
+      unmappedFields: semanticMapping.unmappedFields,
+      formats,
+    });
+  }
+
+  const dataTabs = inspectedSheets.filter((s) => s.isDataTab);
+
+  const result: WorkbookInspectionResult = {
+    fileId,
+    fileName,
+    driveId,
+    lastModified,
+    worksheets: inspectedSheets,
+    dataTabs,
+    inspectedAt: Date.now(),
+  };
+
+  fileWorkbookCache.set(cacheKey, {
+    result,
+    expiresAt: Date.now() + 15 * 60 * 1000,
+  });
+
+  return result;
+}
+
+/**
+ * 3. CHOOSE THE TARGET TAB
+ * - Match entry type to classified tab. If exactly 1 match -> use it.
+ * - If only 1 data tab in file -> use it.
+ * - If multiple similar candidates -> flag choice and show real tab names.
+ */
+export function chooseTargetWorksheet(
+  inspection: WorkbookInspectionResult,
+  options?: {
+    preferredTabName?: string;
+    entryType?: TabSemanticType;
+    entryDescription?: string;
+  }
+): {
+  selectedTab: InspectedWorksheet;
+  needsUserChoice: boolean;
+  choiceReason: string;
+  availableTabs: Array<{
+    name: string;
+    detectedType: TabSemanticType;
+    isSelected: boolean;
+  }>;
+} {
+  const dataTabs = inspection.dataTabs;
+
+  if (dataTabs.length === 0) {
+    const fallback = inspection.worksheets[0];
+    return {
+      selectedTab: fallback,
+      needsUserChoice: false,
+      choiceReason: "לא זוהו טאבים מובנים, ברירת מחדל לגיליון הראשון",
+      availableTabs: inspection.worksheets.map((w) => ({
+        name: w.name,
+        detectedType: w.detectedType,
+        isSelected: w.sheetId === fallback?.sheetId,
+      })),
+    };
+  }
+
+  if (dataTabs.length === 1) {
+    const single = dataTabs[0];
+    return {
+      selectedTab: single,
+      needsUserChoice: false,
+      choiceReason: `קובץ זה מכיל טאב נתונים יחיד ("${single.name}")`,
+      availableTabs: [{
+        name: single.name,
+        detectedType: single.detectedType,
+        isSelected: true,
+      }],
+    };
+  }
+
+  // Explicit user tab choice (e.g. from UI button or voice "תעביר לטאב X")
+  if (options?.preferredTabName) {
+    const req = options.preferredTabName.trim().toLowerCase();
+    const exact = dataTabs.find((t) => t.name.trim().toLowerCase() === req);
+    if (exact) {
+      return {
+        selectedTab: exact,
+        needsUserChoice: false,
+        choiceReason: `נבחר הטאב "${exact.name}" לפי בקשת המשתמש`,
+        availableTabs: dataTabs.map((t) => ({
+          name: t.name,
+          detectedType: t.detectedType,
+          isSelected: t.sheetId === exact.sheetId,
+        })),
+      };
+    }
+    const normReq = normalizeTabName(options.preferredTabName);
+    const fuzzy = dataTabs.find((t) => t.normalizedName.includes(normReq) || normReq.includes(t.normalizedName));
+    if (fuzzy) {
+      return {
+        selectedTab: fuzzy,
+        needsUserChoice: false,
+        choiceReason: `נבחר הטאב "${fuzzy.name}" בהתאמה לבקשת המשתמש`,
+        availableTabs: dataTabs.map((t) => ({
+          name: t.name,
+          detectedType: t.detectedType,
+          isSelected: t.sheetId === fuzzy.sheetId,
+        })),
+      };
+    }
+  }
+
+  // Match entry type
+  let targetCategory: TabSemanticType = options?.entryType || "tickets";
+  if (!options?.entryType && options?.entryDescription) {
+    const desc = options.entryDescription.toLowerCase();
+    if (desc.includes("ביקור") || desc.includes("באתר") || desc.includes("הגעתי") || desc.includes("פיזי")) {
+      targetCategory = "onsite";
+    } else if (desc.includes("פרויקט") || desc.includes("מיגרציה") || desc.includes("הקמה") || desc.includes("שדרוג")) {
+      targetCategory = "project";
+    } else {
+      targetCategory = "tickets";
+    }
+  }
+
+  const matchingTabs = dataTabs.filter((t) => t.detectedType === targetCategory);
+
+  if (matchingTabs.length === 1) {
+    const match = matchingTabs[0];
+    return {
+      selectedTab: match,
+      needsUserChoice: false,
+      choiceReason: `נבחר טאב "${match.name}" שהותאם לסוג הפעילות (${match.typeReason})`,
+      availableTabs: dataTabs.map((t) => ({
+        name: t.name,
+        detectedType: t.detectedType,
+        isSelected: t.sheetId === match.sheetId,
+      })),
+    };
+  }
+
+  if (matchingTabs.length > 1) {
+    const bestMatch = matchingTabs[0];
+    return {
+      selectedTab: bestMatch,
+      needsUserChoice: true,
+      choiceReason: `בקובץ קיימים ${matchingTabs.length} טאבים מתאימים: ${matchingTabs.map((t) => `"${t.name}"`).join(", ")}`,
+      availableTabs: dataTabs.map((t) => ({
+        name: t.name,
+        detectedType: t.detectedType,
+        isSelected: t.sheetId === bestMatch.sheetId,
+      })),
+    };
+  }
+
+  // Fallback to first data tab
+  const defaultTab = dataTabs[0];
+  return {
+    selectedTab: defaultTab,
+    needsUserChoice: dataTabs.length > 1,
+    choiceReason: `נבחר הטאב הראשון "${defaultTab.name}"`,
+    availableTabs: dataTabs.map((t) => ({
+      name: t.name,
+      detectedType: t.detectedType,
+      isSelected: t.sheetId === defaultTab.sheetId,
+    })),
+  };
+}
+
+/**
+ * Build row values array strictly according to semantic header mapping.
+ * Unmapped fields are NOT written anywhere.
+ */
+export function buildRowValuesFromSemanticMapping(
+  rowObj: Record<string, any>,
+  targetTab: InspectedWorksheet
+): any[] {
+  const { headers, fieldToColIndex, formats } = targetTab;
+  const values: any[] = new Array(headers.length).fill("");
+
+  if (fieldToColIndex.date !== undefined) {
+    const rawDate = rowObj.date || rowObj["תאריך"] || "";
+    values[fieldToColIndex.date] = formatDateForSheet(rawDate, formats.dateFormat);
+  }
+
+  if (fieldToColIndex.day_of_week !== undefined) {
+    const rawDate = rowObj.date || rowObj["תאריך"] || "";
+    const formatType = formats.dayFormat === "full" ? "full" : "short";
+    values[fieldToColIndex.day_of_week] = getHebrewDay(rawDate, formatType) || "";
+  }
+
+  if (fieldToColIndex.employee !== undefined) {
+    values[fieldToColIndex.employee] = rowObj.userName || rowObj.employee || rowObj["עובד"] || rowObj["טכנאי"] || "";
+  }
+
+  if (fieldToColIndex.start_time !== undefined) {
+    values[fieldToColIndex.start_time] = rowObj.startTime || rowObj["שעת התחלה"] || "";
+  }
+
+  if (fieldToColIndex.end_time !== undefined) {
+    values[fieldToColIndex.end_time] = rowObj.endTime || rowObj["שעת סיום"] || "";
+  }
+
+  if (fieldToColIndex.duration_hours !== undefined) {
+    const rawDuration = rowObj.hours ?? rowObj.durationHours ?? rowObj["שעות"] ?? rowObj["משך"] ?? 0;
+    if (formats.hoursFormat === "hh:mm") {
+      const mins = Math.round(Number(rawDuration) * 60) || 0;
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      values[fieldToColIndex.duration_hours] = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    } else {
+      values[fieldToColIndex.duration_hours] = typeof rawDuration === "number" ? rawDuration : Number(rawDuration) || 0;
+    }
+  }
+
+  if (fieldToColIndex.description !== undefined) {
+    values[fieldToColIndex.description] = rowObj.desc || rowObj.description || rowObj["תיאור"] || "";
+  }
+
+  if (fieldToColIndex.contact_person !== undefined) {
+    values[fieldToColIndex.contact_person] = rowObj.contactPerson || rowObj["איש קשר"] || "";
+  }
+
+  if (fieldToColIndex.ticket_number !== undefined) {
+    values[fieldToColIndex.ticket_number] = rowObj.ticketNumber || rowObj["מספר קריאה"] || rowObj["מספר טיקט"] || "";
+  }
+
+  if (fieldToColIndex.signature_or_approval !== undefined) {
+    const contact = rowObj.contactPerson || rowObj["איש קשר"];
+    values[fieldToColIndex.signature_or_approval] = contact ? `אושר ע"י ${contact}` : "אושר במקום";
+  }
+
+  if (fieldToColIndex.notes !== undefined) {
+    values[fieldToColIndex.notes] = rowObj.notes || rowObj["הערות"] || "הושלם בהצלחה";
+  }
+
+  return values;
+}
+
+/**
+ * Backward-compatible helper that delegates to chooseTargetWorksheet
  */
 export function matchWorksheetByWorkType(sheets: any[], workType?: string): any {
   if (!sheets || sheets.length === 0) return null;
   if (!workType) return sheets[0];
-
   const wt = workType.trim().toLowerCase();
-
-  // 1. Exact name match
   const exact = sheets.find((s) => (s.name || "").trim().toLowerCase() === wt);
   if (exact) return exact;
-
-  // 2. Specific workType tab keywords
-  if (wt.includes("ביקור") || wt.includes("באתר") || wt.includes("site") || wt.includes("visit")) {
-    const found = sheets.find((s) => {
-      const name = (s.name || "").toLowerCase();
-      return name.includes("ביקור") || name.includes("באתר") || name.includes("site") || name.includes("visit") || name.includes("שטח");
-    });
-    if (found) return found;
-  }
-
-  if (
-    wt.includes("טיקט") ||
-    wt.includes("ticket") ||
-    wt.includes("קריא") ||
-    wt.includes("תמיכ") ||
-    wt.includes("טלפון") ||
-    wt.includes("מרחוק")
-  ) {
-    const found = sheets.find((s) => {
-      const name = (s.name || "").toLowerCase();
-      return (
-        name.includes("טיקט") ||
-        name.includes("ticket") ||
-        name.includes("קריא") ||
-        name.includes("תמיכ") ||
-        name.includes("שוטף") ||
-        name.includes("ריטיינר") ||
-        name.includes("helpdesk")
-      );
-    });
-    if (found) return found;
-  }
-
-  if (wt.includes("פרויקט") || wt.includes("פרוייקט") || wt.includes("project")) {
-    const found = sheets.find((s) => {
-      const name = (s.name || "").toLowerCase();
-      return name.includes("פרויקט") || name.includes("פרוייקט") || name.includes("project");
-    });
-    if (found) return found;
-  }
-
-  // 3. Fallback: substring match
-  const partial = sheets.find((s) => {
-    const name = (s.name || "").toLowerCase();
-    return name.includes(wt) || wt.includes(name);
-  });
-  if (partial) return partial;
-
-  // 4. Default to first sheet
-  return sheets[0];
+  const norm = normalizeTabName(workType);
+  const fuzzy = sheets.find((s) => normalizeTabName(s.name || "").includes(norm) || norm.includes(normalizeTabName(s.name || "")));
+  return fuzzy || sheets[0];
 }
 
 /**
@@ -1690,6 +2486,27 @@ export function calculateStartTime(endTime: string, durationMinutes: number): st
   const startH = Math.floor(totalMins / 60) % 24;
   const startM = totalMins % 60;
   return `${String(startH).padStart(2, "0")}:${String(startM).padStart(2, "0")}`;
+}
+
+/**
+ * Suggest start and end times based on report time and duration rounded to 15 minutes.
+ * e.g. end = current report time rounded to 15 min, start = end - duration.
+ */
+export function suggestStartEndTimes(durationMinutes: number): {
+  startTime: string;
+  endTime: string;
+} {
+  const now = new Date();
+  const currentTotalM = now.getHours() * 60 + now.getMinutes();
+  const roundedEndM = Math.round(currentTotalM / 15) * 15;
+  const clampedEndM = Math.max(15, Math.min(23 * 60 + 45, roundedEndM));
+  const effectiveMinutes = durationMinutes || 15;
+  const clampedStartM = Math.max(0, clampedEndM - effectiveMinutes);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return {
+    startTime: `${pad(Math.floor(clampedStartM / 60))}:${pad(clampedStartM % 60)}`,
+    endTime: `${pad(Math.floor(clampedEndM / 60))}:${pad(clampedEndM % 60)}`,
+  };
 }
 
 function formatDateForSheet(dateStr: any, targetFormat?: string): string {
@@ -2197,7 +3014,61 @@ export async function writeRows(
     throw new Error("לא סופקו שורות לכתיבה");
   }
 
+  // Stage 4 Safety Validations: date not in future, duration 0.25-12 hours
+  const todayIso = new Date().toISOString().split("T")[0];
+  for (const row of rows) {
+    const rawDate = String(row.date || row["תאריך"] || row["תאריך עבודה"] || "").trim();
+    if (rawDate) {
+      let isoDate = "";
+      const matchIso = rawDate.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+      if (matchIso) {
+        isoDate = `${matchIso[1]}-${matchIso[2].padStart(2, "0")}-${matchIso[3].padStart(2, "0")}`;
+      } else {
+        const matchDmy = rawDate.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+        if (matchDmy) {
+          isoDate = `${matchDmy[3]}-${matchDmy[2].padStart(2, "0")}-${matchDmy[1].padStart(2, "0")}`;
+        }
+      }
+      if (isoDate && isoDate > todayIso) {
+        throw new Error(`תאריך הדיווח (${rawDate}) אינו יכול להיות תאריך עתידי`);
+      }
+    }
+
+    const hoursVal =
+      typeof row.hours === "number"
+        ? row.hours
+        : typeof row["שעות"] === "number"
+        ? row["שעות"]
+        : typeof row["משך"] === "number"
+        ? row["משך"]
+        : typeof row.durationHours === "number"
+        ? row.durationHours
+        : row.durationMinutes
+        ? Number(row.durationMinutes) / 60
+        : null;
+
+    if (hoursVal !== null && !isNaN(hoursVal)) {
+      if (hoursVal < 0.25 || hoursVal > 12) {
+        throw new Error(`משך העבודה (${hoursVal} שעות) חייב להיות בין 0.25 ל-12 שעות`);
+      }
+    }
+  }
+
   const driveId = await resolveDriveForItem(fileId, explicitDriveId, env);
+
+  // Validate that the file is an .xlsx file
+  const itemVerifyUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}?$select=id,name,webUrl`;
+  const itemVerifyRes = await fetchGraph(itemVerifyUrl, { method: "GET" }, env);
+  let resolvedWebUrl = "";
+  if (itemVerifyRes.ok) {
+    const itemData: any = await itemVerifyRes.json();
+    const itemName = String(itemData.name || "").toLowerCase();
+    if (itemName && !itemName.endsWith(".xlsx")) {
+      throw new Error(`קובץ היעד (${itemData.name}) אינו קובץ Excel תקין (.xlsx)`);
+    }
+    resolvedWebUrl = itemData.webUrl || "";
+  }
+
   const now = Date.now();
   const entryId = `entry_${now}_${Math.random().toString(36).substring(2, 8)}`;
   const userName = userContext?.name || userContext?.email || "עובד מערכת";
@@ -2276,18 +3147,6 @@ export async function writeRows(
 
       const addRowData: any = await addRowRes.json();
       writtenRowAddress = addRowData.address || `Table:${structure.tableName}[Row]`;
-
-      // Log into server-side undo log
-      undoLog.push({
-        entryId,
-        user: userName,
-        fileId,
-        rowAddress: writtenRowAddress,
-        timestamp: now,
-        isTable: true,
-        tableId: structure.tableId,
-        rowIndex: structure.totalDataRows,
-      });
     }
     // CASE B: Plain Range
     else {
@@ -2339,36 +3198,28 @@ export async function writeRows(
       }
 
       writtenRowAddress = targetAddress;
-
-      // Log into server-side undo log
-      undoLog.push({
-        entryId,
-        user: userName,
-        fileId,
-        rowAddress: writtenRowAddress,
-        timestamp: now,
-        isTable: false,
-        sheetId,
-      });
     }
 
     // Get item webUrl
     const itemUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}?$select=webUrl`;
     const itemRes = await fetchGraph(itemUrl, { method: "GET" }, env);
-    let webUrl = "";
+    let webUrl = resolvedWebUrl;
     if (itemRes.ok) {
       const itemData: any = await itemRes.json();
-      webUrl = itemData.webUrl || "";
+      webUrl = itemData.webUrl || resolvedWebUrl || "";
     }
 
     return {
       success: true,
+      driveId,
+      itemId: fileId,
+      fileId,
       rowAddress: writtenRowAddress,
       sheetName,
       webUrl,
       entryId,
       timestamp: now,
-      fileId,
+      writtenAt: now,
       writtenValues: rowValuesMatrix,
     };
   } finally {
@@ -2485,132 +3336,166 @@ export async function findDuplicates(
 }
 
 /**
- * 7. undoRow(fileId, rowAddress) – only rows written by this tool in the last 10 minutes
- * (keep a server-side log: entryId, user, fileId, rowAddress, timestamp). Clear/delete that row only.
+ * 7. undoRow – Stateless undo without any server-side logs/in-memory store.
+ * - Receives { driveId, itemId/fileId, rowAddress, writtenValues, writtenAt, sheetName }
+ * - Re-reads the row in Excel and deletes/clears it ONLY if:
+ *   1. writtenAt is less than 10 minutes ago
+ *   2. The employee column matches the token user
+ *   3. Current values in Excel still match writtenValues
+ * - Otherwise refuses with a clear Hebrew message.
  */
 export async function undoRow(
-  fileId: string,
-  rowAddressOrEntryId: string,
-  userContext?: { name?: string; email?: string },
+  fileIdOrParams: string | UndoRowParams,
+  rowAddressOrUser?: string | { name?: string; email?: string },
+  userContextOrEnv?: { name?: string; email?: string } | any,
   env?: any,
   explicitDriveId?: string
 ): Promise<UndoRowResult> {
+  let params: UndoRowParams;
+  let user: { name?: string; email?: string } | undefined;
+  let activeEnv = env;
+
+  if (typeof fileIdOrParams === "object" && fileIdOrParams !== null) {
+    params = fileIdOrParams;
+    user = (rowAddressOrUser as any) || undefined;
+    activeEnv = userContextOrEnv || env;
+  } else {
+    params = {
+      fileId: String(fileIdOrParams || ""),
+      rowAddress: typeof rowAddressOrUser === "string" ? rowAddressOrUser : "",
+      writtenAt: Date.now(),
+    };
+    user = (userContextOrEnv as any) || undefined;
+    activeEnv = env;
+  }
+
+  const fileId = params.fileId || params.itemId;
+  if (!fileId || !params.rowAddress) {
+    throw new Error("לא סופקו מזהה קובץ או כתובת שורה לביטול");
+  }
+
   const now = Date.now();
   const TEN_MINUTES_MS = 10 * 60 * 1000;
 
-  // Find in undo log
-  const entryIdx = undoLog.findIndex((e) => {
-    const isSameFile = e.fileId === fileId;
-    const isSameTarget = e.rowAddress === rowAddressOrEntryId || e.entryId === rowAddressOrEntryId;
-    return isSameFile && isSameTarget;
-  });
-
-  if (entryIdx === -1) {
+  // 1. Time limit: writtenAt must be less than 10 minutes ago
+  if (params.writtenAt && now - params.writtenAt > TEN_MINUTES_MS) {
+    const elapsedMinutes = Math.round((now - params.writtenAt) / 60000);
     throw new Error(
-      "לא ניתן לבטל שורה זו: השורה אינה קיימת ביומן הפעולות האחרונות או שנכתבה בהפעלה אחרת"
+      `לא ניתן לבטל שורה זו: חלפו יותר מ-10 דקות מרגע הכתיבה (${elapsedMinutes} דקות)`
     );
   }
 
-  const entry = undoLog[entryIdx];
+  const driveId = await resolveDriveForItem(fileId, params.driveId || explicitDriveId, activeEnv);
 
-  // Check 10 minutes limit
-  if (now - entry.timestamp > TEN_MINUTES_MS) {
-    throw new Error(
-      `לא ניתן לבטל שורה זו: חלפו יותר מ-10 דקות מרגע הכתיבה (${Math.round((now - entry.timestamp) / 60000)} דקות)`
-    );
+  // Parse sheet name and address
+  let targetAddress = params.rowAddress.trim();
+  let targetSheet = params.sheetName ? params.sheetName.trim() : "";
+
+  if (targetAddress.includes("!")) {
+    const parts = targetAddress.split("!");
+    targetSheet = parts[0].replace(/'/g, "").trim();
+    targetAddress = parts[1].trim();
   }
 
-  const driveId = await resolveDriveForItem(fileId, explicitDriveId, env);
+  // 2. Re-read that row in Excel
+  let readUrl = "";
+  if (targetSheet) {
+    readUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${encodeURIComponent(targetSheet)}/range(address='${encodeURIComponent(targetAddress)}')`;
+  } else {
+    readUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/names/range(address='${encodeURIComponent(targetAddress)}')`;
+  }
 
-  // 1. Open Workbook session if supported, otherwise fallback to session-less
-  let sessionHeaders: Record<string, string> = {};
-  let sessionId: string | null = null;
+  let readRes = await fetchGraph(readUrl, { method: "GET" }, activeEnv);
+  if (!readRes.ok && targetSheet) {
+    const fallbackUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${encodeURIComponent(targetSheet)}/range(address='${encodeURIComponent(targetAddress)}')`;
+    readRes = await fetchGraph(fallbackUrl, { method: "GET" }, activeEnv);
+  }
 
-  try {
-    const sessionUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/createSession`;
-    const sessionRes = await fetchGraph(
-      sessionUrl,
+  if (!readRes.ok) {
+    const errText = await readRes.text().catch(() => "");
+    throw new Error(`שגיאה בקריאת השורה מקובץ ה-Excel (${readRes.status}): ${errText || "השורה אינה קיימת או שהקובץ אינו נגיש"}`);
+  }
+
+  const readData: any = await readRes.json();
+  const currentValues: any[] = readData.values?.[0] || [];
+
+  if (!currentValues || currentValues.length === 0) {
+    throw new Error("השורה ב-Excel ריקה או שכבר נמחקה");
+  }
+
+  // 3. Verify employee column matches the token user
+  const tokenUserName = normalizeCustomerString(user?.name || "");
+  const tokenUserEmail = normalizeCustomerString(user?.email || "");
+
+  if (tokenUserName || tokenUserEmail) {
+    const employeeCellMatches = currentValues.some((cell) => {
+      if (cell === null || cell === undefined) return false;
+      const cellNorm = normalizeCustomerString(String(cell));
+      return (
+        (tokenUserName && (cellNorm.includes(tokenUserName) || tokenUserName.includes(cellNorm))) ||
+        (tokenUserEmail && cellNorm.includes(tokenUserEmail))
+      );
+    });
+
+    if (!employeeCellMatches) {
+      throw new Error("לא ניתן לבטל שורה זו: השורה שייכת לעובד אחר");
+    }
+  }
+
+  // 4. Verify current values still match writtenValues
+  const expectedValues = params.writtenValues?.[0];
+  if (Array.isArray(expectedValues) && expectedValues.length > 0) {
+    let hasMismatch = false;
+    for (let i = 0; i < Math.min(expectedValues.length, currentValues.length); i++) {
+      const exp = expectedValues[i];
+      const cur = currentValues[i];
+      if (exp === null || exp === undefined || exp === "") continue;
+      const expStr = String(exp).trim();
+      const curStr = String(cur !== null && cur !== undefined ? cur : "").trim();
+      if (expStr !== curStr && !curStr.includes(expStr) && !expStr.includes(curStr)) {
+        hasMismatch = true;
+        break;
+      }
+    }
+
+    if (hasMismatch) {
+      throw new Error("לא ניתן לבטל שורה זו: תוכן השורה שונה או עודכן בקובץ מאז כתיבתה");
+    }
+  }
+
+  // 5. Delete or clear the row in Excel
+  const deleteUrl = targetSheet
+    ? `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${encodeURIComponent(targetSheet)}/range(address='${encodeURIComponent(targetAddress)}')/delete`
+    : `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/range(address='${encodeURIComponent(targetAddress)}')/delete`;
+
+  const delRes = await fetchGraph(
+    deleteUrl,
+    {
+      method: "POST",
+      body: JSON.stringify({ shift: "Up" }),
+    },
+    activeEnv
+  );
+
+  if (!delRes.ok) {
+    const clearUrl = targetSheet
+      ? `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${encodeURIComponent(targetSheet)}/range(address='${encodeURIComponent(targetAddress)}')/clear`
+      : `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/range(address='${encodeURIComponent(targetAddress)}')/clear`;
+
+    await fetchGraph(
+      clearUrl,
       {
         method: "POST",
-        body: JSON.stringify({ persistChanges: true }),
+        body: JSON.stringify({ applyTo: "Contents" }),
       },
-      env
+      activeEnv
     );
-
-    if (sessionRes.ok) {
-      const sessionData: any = await sessionRes.json();
-      sessionId = sessionData?.id || null;
-      if (sessionId) {
-        sessionHeaders = { "workbook-session-id": sessionId };
-      }
-    }
-  } catch (sessErr) {
-    console.warn("[undoRow] createSession exception, proceeding session-less:", sessErr);
   }
 
-  try {
-    // Delete/clear the row based on whether it was a table or plain range
-    if (entry.isTable && entry.tableId && entry.rowIndex !== undefined) {
-      // Delete table row by index
-      const deleteRowUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${entry.tableId}/rows/itemAt(index=${entry.rowIndex})`;
-      const delRes = await fetchGraph(
-        deleteRowUrl,
-        {
-          method: "DELETE",
-          headers: sessionHeaders,
-        },
-        env
-      );
-
-      if (!delRes.ok) {
-        // Fallback: clear range values
-        console.warn("[undoRow] table row delete returned non-ok, falling back to clear");
-      }
-    } else {
-      // Plain range: delete row and shift up or clear values
-      const sheetId = entry.sheetId;
-      const rangeAddress = entry.rowAddress;
-      const deleteRangeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${rangeAddress}')/delete`;
-      const delRes = await fetchGraph(
-        deleteRangeUrl,
-        {
-          method: "POST",
-          headers: sessionHeaders,
-          body: JSON.stringify({ shift: "Up" }),
-        },
-        env
-      );
-
-      if (!delRes.ok) {
-        // If delete fails, clear the contents of the range so data is not retained
-        const clearUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${rangeAddress}')/clear`;
-        await fetchGraph(
-          clearUrl,
-          {
-            method: "POST",
-            headers: sessionHeaders,
-            body: JSON.stringify({ applyTo: "Contents" }),
-          },
-          env
-        );
-      }
-    }
-
-    // Remove from undo log
-    undoLog.splice(entryIdx, 1);
-
-    return {
-      success: true,
-      message: `השורה בכתובת ${entry.rowAddress} בוטלה ונמחקה בהצלחה מקובץ ה-Excel.`,
-      rowAddress: entry.rowAddress,
-      fileId,
-    };
-  } finally {
-    try {
-      const closeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/closeSession`;
-      await fetchGraph(closeUrl, { method: "POST", headers: sessionHeaders }, env);
-    } catch (closeErr) {
-      console.warn("[undoRow] Error closing session:", closeErr);
-    }
-  }
+  return {
+    success: true,
+    message: `השורה בכתובת ${params.rowAddress} בוטלה ונמחקה בהצלחה מקובץ ה-Excel.`,
+    rowAddress: params.rowAddress,
+    fileId,
+  };
 }

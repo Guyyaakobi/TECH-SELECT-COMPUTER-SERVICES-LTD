@@ -6,7 +6,7 @@ import crypto from "crypto";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import { jsPDF } from "jspdf";
-import { hoursAuthMiddleware } from "./server/hoursAuthMiddleware";
+import { hoursAuthMiddleware, isHoursAdmin } from "./server/hoursAuthMiddleware";
 import {
   listCustomers,
   detectAndListCustomers,
@@ -4397,7 +4397,10 @@ ${!isAteraCustomer ? `
     // 5. POST /api/hours/write-rows: write rows to table or plain range with workbook session & retries
     hoursRouter.post("/write-rows", async (req, res) => {
       try {
-        const { fileId, rows, driveId } = req.body || {};
+        const { fileId, rows, driveId, confirm } = req.body || {};
+        if (!confirm) {
+          return res.status(400).json({ error: "נדרש אישור מפורש (confirm: true) לביצוע כתיבה לקובץ" });
+        }
         if (!fileId || !rows || !Array.isArray(rows) || rows.length === 0) {
           return res.status(400).json({ error: "נדרשים שדות חובה: fileId ומערך שורות rows" });
         }
@@ -4425,16 +4428,29 @@ ${!isAteraCustomer ? `
       }
     });
 
-    // 7. POST /api/hours/undo: undo row written by this tool in the last 10 minutes
+    // 7. POST /api/hours/undo: stateless undo without server-side memory
     hoursRouter.post("/undo", async (req, res) => {
       try {
-        const { fileId, rowAddress, entryId } = req.body || {};
-        const target = rowAddress || entryId;
+        const body = req.body || {};
+        const fileId = body.fileId || body.itemId;
+        const target = body.rowAddress || body.entryId;
         if (!fileId || !target) {
           return res.status(400).json({ error: "נדרשים שדות חובה: fileId ו-rowAddress" });
         }
         const user = (req as any).user;
-        const result = await undoRow(fileId, target, user, process.env);
+        const result = await undoRow(
+          {
+            driveId: body.driveId,
+            itemId: fileId,
+            fileId,
+            rowAddress: target,
+            writtenValues: body.writtenValues,
+            writtenAt: body.writtenAt,
+            sheetName: body.sheetName,
+          },
+          user,
+          process.env
+        );
         return res.json(result);
       } catch (err: any) {
         console.error("[POST /api/hours/undo] Error:", err);
@@ -4442,9 +4458,13 @@ ${!isAteraCustomer ? `
       }
     });
 
-    // 8. GET /api/hours/diagnostics: retrieve token diagnostics & active env vars
+    // 8. GET /api/hours/diagnostics: retrieve token diagnostics & active env vars (ADMIN ONLY)
     hoursRouter.get("/diagnostics", async (req, res) => {
       try {
+        const user = (req as any).user;
+        if (!isHoursAdmin(user?.email, process.env)) {
+          return res.status(403).json({ error: "גישה נדחתה: פאנל הבדיקות זמין למנהלי מערכת בלבד" });
+        }
         const forceRefresh = req.query.refresh === "true";
         const result = await getGraphDiagnostics(process.env, forceRefresh);
         return res.json(result);
@@ -4454,9 +4474,13 @@ ${!isAteraCustomer ? `
       }
     });
 
-    // 8.1 POST /api/hours/diagnostics/refresh: clear token cache & fetch fresh token
+    // 8.1 POST /api/hours/diagnostics/refresh: clear token cache & fetch fresh token (ADMIN ONLY)
     hoursRouter.post(["/diagnostics/refresh", "/diagnostics"], async (req, res) => {
       try {
+        const user = (req as any).user;
+        if (!isHoursAdmin(user?.email, process.env)) {
+          return res.status(403).json({ error: "גישה נדחתה: פאנל הבדיקות זמין למנהלי מערכת בלבד" });
+        }
         clearGraphTokenCache();
         const result = await getGraphDiagnostics(process.env, true);
         return res.json(result);
@@ -4470,7 +4494,8 @@ ${!isAteraCustomer ? `
     hoursRouter.post("/assistant/chat", async (req, res) => {
       try {
         const user = (req as any).user;
-        const { message, audio, history, action, cardId, draftData, activeDrafts } = req.body || {};
+        const { message, audio, history, action, cardId, draftData, activeDrafts, undoData, writtenEntries } =
+          req.body || {};
         const result = await processAssistantChat(
           {
             user,
@@ -4481,6 +4506,8 @@ ${!isAteraCustomer ? `
             cardId,
             draftData,
             activeDrafts,
+            undoData,
+            writtenEntries,
             env: process.env,
           },
           process.env

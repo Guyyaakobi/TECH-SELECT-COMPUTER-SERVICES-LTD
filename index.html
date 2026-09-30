@@ -5,6 +5,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TECH-SELECT | שותף טכנולוגי וניהול IT</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    
+    <!-- PWA Manifest & Mobile Web App -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#2563eb" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="תיעוד שעות" />
+    <link rel="apple-touch-icon" href="/pwa-192x192.png" />
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/sw.js").catch(() => {});
+        });
+      }
+    </script>
+
     <meta name="description" content="טק-סלקט (TECH-SELECT) - חברת שירותי IT, תשתיות מחשוב, ענן, פרויקטים מורכבים, פיתוח תוכנה ובינה מלאכותית ארגונית. מענה ייעודי לסביבות מאובטחות וספקי משרד הביטחון (0011028306). פריסה ארצית: צפון (חיפה, יקנעם), שרון (הרצליה, רעננה, נתניה) ומרכז." />
     <link rel="canonical" href="https://www.tech-select.co.il/" />
     <meta name="author" content="Guy Yaakobi | TECH-SELECT LTD" />

@@ -173,7 +173,26 @@ export interface HoursAssistantEntryDraft {
   durationFormatted: string;
   startTime?: string;
   endTime?: string;
-  workType: "ביקור באתר" | "טיקטים" | "פרוייקטים";
+  isTimeSuggested?: boolean;
+  workType: string;
+  targetTabName?: string;
+  detectedTabType?: "tickets" | "onsite" | "project" | "other_or_summary";
+  availableTabs?: Array<{
+    name: string;
+    detectedType: "tickets" | "onsite" | "project" | "other_or_summary";
+    isSelected: boolean;
+  }>;
+  needsUserTabChoice?: boolean;
+  tabChoiceReason?: string;
+  headers?: string[];
+  unmappedFields?: string[];
+  columnMapping?: Array<{
+    field: string;
+    label: string;
+    headerName?: string;
+    isExists: boolean;
+    value?: any;
+  }>;
   contactPerson?: string;
   ticketNumber?: string;
   description: string;
@@ -187,12 +206,15 @@ export interface HoursAssistantEntryDraft {
 export interface WrittenEntryResult {
   id: string;
   fileId: string;
+  driveId?: string;
+  itemId?: string;
   fileName: string;
   filePath: string;
   sheetName?: string;
   webUrl: string;
   targetRow: number | string;
   rowAddress: string;
+  writtenValues?: any[][];
   entryId: string;
   customerName: string;
   date: string;
@@ -218,6 +240,16 @@ export interface AssistantChatRequest {
   cardId?: string;
   draftData?: any;
   activeDrafts?: HoursAssistantEntryDraft[];
+  undoData?: {
+    driveId?: string;
+    itemId?: string;
+    fileId?: string;
+    rowAddress: string;
+    writtenValues?: any[][];
+    writtenAt?: number;
+    sheetName?: string;
+  };
+  writtenEntries?: WrittenEntryResult[];
 }
 
 export interface AssistantChatResponse {
