@@ -19,10 +19,14 @@ import {
   Sparkles,
   Ticket,
   FolderKanban,
+  Check,
+  RefreshCw,
+  FolderOpen,
 } from "lucide-react";
 import {
   HoursAssistantEntryDraft,
   WrittenEntryResult,
+  apiFindMonthTarget,
 } from "../../services/hoursApiClient";
 
 interface HoursEntryCardProps {
@@ -52,6 +56,56 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
     (draft?.workType as any) || "טיקטים"
   );
   const [editDescription, setEditDescription] = useState(draft?.description || "");
+
+  // File selector state
+  const [isSelectingFile, setIsSelectingFile] = useState(!draft?.fileId && !draft?.fileName);
+  const [isLoadingFiles, setIsLoadingFiles] = useState(false);
+  const [fileList, setFileList] = useState<Array<{ fileId: string; fileName: string; webUrl?: string }>>(
+    draft?.availableFiles || []
+  );
+
+  useEffect(() => {
+    if (draft?.availableFiles && draft.availableFiles.length > 0) {
+      setFileList(draft.availableFiles);
+    }
+  }, [draft?.availableFiles]);
+
+  // Load customer files from SharePoint
+  const loadCustomerFiles = async () => {
+    if (!draft?.customerName) return;
+    setIsLoadingFiles(true);
+    try {
+      const res = await apiFindMonthTarget(draft.customerName, draft.date || "");
+      if (res.availableFiles && Array.isArray(res.availableFiles)) {
+        setFileList(res.availableFiles);
+      }
+      if (res.found && res.fileId && !draft.fileId && onUpdateDraft) {
+        onUpdateDraft({
+          ...draft,
+          fileId: res.fileId,
+          fileName: res.fileName,
+          filePath: res.filePath,
+          webUrl: res.webUrl,
+        });
+      }
+    } catch (err) {
+      console.warn("Failed to load customer files:", err);
+    } finally {
+      setIsLoadingFiles(false);
+    }
+  };
+
+  const handleSelectFile = (file: { fileId: string; fileName: string; webUrl?: string }) => {
+    if (!draft || !onUpdateDraft) return;
+    onUpdateDraft({
+      ...draft,
+      fileId: file.fileId,
+      fileName: file.fileName,
+      filePath: `${draft.customerName || ""}/שעות עבודה/${file.fileName}`,
+      webUrl: file.webUrl,
+    });
+    setIsSelectingFile(false);
+  };
 
   // Undo countdown timer for written entry (10 minutes)
   const [timeLeftMs, setTimeLeftMs] = useState<number>(0);
@@ -356,29 +410,101 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             <p className="font-medium">{draft.description || "טרם הוזן תיאור"}</p>
           </div>
 
-          {/* File Path & Target Row Info */}
-          <div className="p-2.5 rounded-xl bg-blue-950/20 border border-blue-500/20 text-xs text-slate-300 mb-4">
-            <div className="flex items-center justify-between gap-1 mb-1">
-              <span className="text-[11px] text-slate-400 flex items-center gap-1">
-                <FileSpreadsheet className="w-3.5 h-3.5 text-blue-400" />
-                קובץ יעד:
+          {/* File Path & Target Row Info with Manual File Selector */}
+          <div className="p-3 rounded-2xl bg-gradient-to-br from-blue-950/30 to-black/40 border border-blue-500/25 text-xs text-slate-300 mb-4 shadow-inner">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] text-slate-300 font-medium flex items-center gap-1.5">
+                <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                קובץ יעד באקסל:
               </span>
-              <span className="font-mono text-cyan-300 text-[11px]" dir="ltr">
-                {draft.fileName || "יזוהה אוטומטית לפי חודש"}
-              </span>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const nextState = !isSelectingFile;
+                  setIsSelectingFile(nextState);
+                  if (nextState && fileList.length === 0) {
+                    loadCustomerFiles();
+                  }
+                }}
+                className="text-[11px] px-2.5 py-1 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 hover:text-white border border-blue-400/30 flex items-center gap-1 cursor-pointer transition-colors active:scale-95"
+              >
+                <FolderOpen className="w-3 h-3" />
+                <span>{draft.fileName ? "החלף קובץ" : "בחר קובץ ידנית"}</span>
+                {isSelectingFile ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              </button>
             </div>
-            {draft.targetRow && (
-              <div className="flex items-center justify-between text-[11px]">
-                <span className="text-slate-400">שורה מיועדת:</span>
-                <span className="font-mono text-emerald-400 font-bold" dir="ltr">
+
+            {/* Currently selected file display */}
+            <div className="mt-1.5 flex items-center justify-between bg-black/40 px-2.5 py-1.5 rounded-xl border border-white/5">
+              <span className="font-mono text-cyan-300 font-semibold text-xs truncate max-w-[220px] sm:max-w-xs" dir="ltr">
+                {draft.fileName || (
+                  <span className="text-amber-400 font-sans text-xs">⚠️ לא זוהה קובץ אוטומטית - בחר מהרשימה מטה</span>
+                )}
+              </span>
+              {draft.targetRow ? (
+                <span className="font-mono text-emerald-400 text-[11px] font-bold shrink-0" dir="ltr">
                   שורה {draft.targetRow}
                 </span>
+              ) : null}
+            </div>
+
+            {/* Interactive File Selector Dropdown / List */}
+            {isSelectingFile && (
+              <div className="mt-2.5 pt-2.5 border-t border-white/10 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
+                  <span>קבצי Excel זמינים בתיקיית הלקוח ({draft.customerName}):</span>
+                  <button
+                    type="button"
+                    onClick={loadCustomerFiles}
+                    disabled={isLoadingFiles}
+                    className="inline-flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isLoadingFiles ? "animate-spin" : ""}`} />
+                    <span>רענן רשימה</span>
+                  </button>
+                </div>
+
+                {isLoadingFiles ? (
+                  <div className="py-3 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400" />
+                    <span>טוען קבצים מ-SharePoint...</span>
+                  </div>
+                ) : fileList.length > 0 ? (
+                  <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+                    {fileList.map((f) => {
+                      const isSelected = draft.fileId === f.fileId || draft.fileName === f.fileName;
+                      return (
+                        <button
+                          key={f.fileId}
+                          type="button"
+                          onClick={() => handleSelectFile(f)}
+                          className={`w-full text-right px-2.5 py-1.5 rounded-lg text-xs font-mono flex items-center justify-between transition-colors cursor-pointer border ${
+                            isSelected
+                              ? "bg-blue-600/40 border-blue-400 text-white font-bold"
+                              : "bg-black/30 border-white/5 text-slate-300 hover:bg-white/10 hover:text-white"
+                          }`}
+                          dir="ltr"
+                        >
+                          <span className="truncate">{f.fileName}</span>
+                          {isSelected && <Check className="w-3.5 h-3.5 text-blue-400 shrink-0 ml-1.5" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="py-2 text-center text-slate-400 text-xs">
+                    <p>לא נמצאו קבצי Excel ברשימה המקומית.</p>
+                    <button
+                      type="button"
+                      onClick={loadCustomerFiles}
+                      className="mt-1 text-blue-400 underline text-[11px] cursor-pointer"
+                    >
+                      לחץ כאן לסריקת קבצים מ-SharePoint
+                    </button>
+                  </div>
+                )}
               </div>
-            )}
-            {draft.filePath && (
-              <p className="text-[10px] text-slate-400 truncate mt-1" dir="ltr">
-                {draft.filePath}
-              </p>
             )}
           </div>
         </>
@@ -387,7 +513,16 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       {/* Action Buttons: "אשר והזן" / "ערוך" */}
       <div className="flex flex-col sm:flex-row items-center gap-2 pt-1 border-t border-white/10">
         <button
-          onClick={() => onConfirm && onConfirm(draft.id)}
+          onClick={() => {
+            if (!draft.fileId && !draft.fileName) {
+              setIsSelectingFile(true);
+              if (fileList.length === 0) {
+                loadCustomerFiles();
+              }
+              return;
+            }
+            if (onConfirm) onConfirm(draft.id);
+          }}
           disabled={isConfirming || !draft.isReadyForConfirmation}
           className="w-full sm:flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 hover:from-blue-500 hover:to-cyan-400 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 cursor-pointer active:scale-98 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
         >

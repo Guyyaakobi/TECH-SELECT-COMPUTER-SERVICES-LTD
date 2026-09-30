@@ -181,6 +181,7 @@ export interface HoursAssistantEntryDraft {
   isReadyForConfirmation: boolean;
   missingFields?: string[];
   mappedRow?: Record<string, any>;
+  availableFiles?: Array<{ fileId: string; fileName: string; webUrl?: string }>;
 }
 
 export interface WrittenEntryResult {

@@ -34,6 +34,7 @@ export interface HoursAssistantEntryDraft {
   isReadyForConfirmation: boolean;
   missingFields?: string[];
   mappedRow?: Record<string, any>;
+  availableFiles?: Array<{ fileId: string; fileName: string; webUrl?: string }>;
 }
 
 export interface WrittenEntryResult {
@@ -784,14 +785,18 @@ MANDATORY WORKFLOW:
             let targetRow: number | string | undefined = undefined;
             let duplicateWarning: string | null = null;
             let mappedRow: Record<string, any> | undefined = undefined;
+            let availableFiles: Array<{ fileId: string; fileName: string; webUrl?: string }> = [];
 
             try {
               if (customerName) {
                 const mt = await withSafeTimeout(
                   findMonthTarget(customerName, date, activeEnv),
                   12000,
-                  { found: false } as any
+                  { found: false, availableFiles: [] } as any
                 );
+                if (mt.availableFiles && Array.isArray(mt.availableFiles)) {
+                  availableFiles = mt.availableFiles;
+                }
                 if (mt.found && mt.fileId) {
                   fileId = mt.fileId;
                   driveId = mt.driveId;
@@ -853,6 +858,7 @@ MANDATORY WORKFLOW:
               isReadyForConfirmation: isReady,
               missingFields,
               mappedRow,
+              availableFiles,
             });
           }
 

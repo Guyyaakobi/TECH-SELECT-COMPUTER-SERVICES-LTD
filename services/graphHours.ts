@@ -49,6 +49,7 @@ export interface MonthTargetResult {
   driveId?: string;
   detectedPattern?: string;
   existingItems?: string[];
+  availableFiles?: Array<{ fileId: string; fileName: string; webUrl?: string }>;
 }
 
 export interface SheetStructureResult {
@@ -531,50 +532,21 @@ export async function detectAndListCustomers(
     if (res.ok) {
       const data: any = await res.json();
       const rootFolders: any[] = (data.value || []).filter((item: any) => Boolean(item.folder));
-
-      // Check which folders contain a subfolder named "שעות עבודה"
-      // Check in concurrent batches of 10
-      const batchSize = 10;
-      for (let i = 0; i < rootFolders.length; i += batchSize) {
-        const batch = rootFolders.slice(i, i + batchSize);
-        const batchResults = await Promise.all(
-          batch.map(async (folder) => {
-            try {
-              const subUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${folder.id}/children?$top=100`;
-              const subRes = await fetchGraph(subUrl, { method: "GET" }, env);
-              if (!subRes.ok) return null;
-              const subData: any = await subRes.json();
-              const subItems: any[] = subData.value || [];
-              const hoursItem = subItems.find(
-                (item) => Boolean(item.folder) && (item.name === hoursFolderName || item.name.includes("שעות"))
-              );
-              if (hoursItem) {
-                return {
-                  id: folder.id,
-                  name: folder.name,
-                  webUrl: folder.webUrl,
-                  driveId,
-                  hoursFolderId: hoursItem.id,
-                  type: "folder" as const,
-                };
-              }
-              return null;
-            } catch {
-              return null;
-            }
-          })
-        );
-
-        for (const item of batchResults) {
-          if (item) folderCustomers.push(item);
-        }
+      if (rootFolders.length > 0) {
+        folderCustomers = rootFolders.map((folder: any) => ({
+          id: folder.id,
+          name: folder.name,
+          webUrl: folder.webUrl,
+          driveId,
+          type: "folder" as const,
+        }));
       }
     }
   } catch (err) {
     console.warn("[detectAndListCustomers] Error checking default document library:", err);
   }
 
-  // If customer folders with "שעות עבודה" were found in the default document library
+  // If customer folders were found in the document library
   if (folderCustomers.length > 0) {
     customersCache = {
       timestamp: now,
@@ -592,8 +564,7 @@ export async function detectAndListCustomers(
   }
 
   // =========================================================================
-  // 2. If no such folders found: list document libraries (GET /sites/{siteId}/drives)
-  // Treat each library that contains a root folder "שעות עבודה" as a customer (customer name = library name).
+  // 2. If no folders found: list document libraries (1 single request)
   // =========================================================================
   let libraryCustomers: CustomerFolder[] = [];
   try {
@@ -605,41 +576,13 @@ export async function detectAndListCustomers(
         (d: any) => !d.system && d.name !== "Preservation Hold Library"
       );
 
-      const batchSize = 10;
-      for (let i = 0; i < allDrives.length; i += batchSize) {
-        const batch = allDrives.slice(i, i + batchSize);
-        const batchResults = await Promise.all(
-          batch.map(async (drive) => {
-            try {
-              const driveRootUrl = `https://graph.microsoft.com/v1.0/drives/${drive.id}/root/children?$top=100`;
-              const driveRootRes = await fetchGraph(driveRootUrl, { method: "GET" }, env);
-              if (!driveRootRes.ok) return null;
-              const driveRootData: any = await driveRootRes.json();
-              const driveRootItems: any[] = driveRootData.value || [];
-              const hoursItem = driveRootItems.find(
-                (item) => Boolean(item.folder) && (item.name === hoursFolderName || item.name.includes("שעות"))
-              );
-              if (hoursItem) {
-                return {
-                  id: drive.id,
-                  name: drive.name,
-                  webUrl: drive.webUrl,
-                  driveId: drive.id,
-                  hoursFolderId: hoursItem.id,
-                  type: "library" as const,
-                };
-              }
-              return null;
-            } catch {
-              return null;
-            }
-          })
-        );
-
-        for (const item of batchResults) {
-          if (item) libraryCustomers.push(item);
-        }
-      }
+      libraryCustomers = allDrives.map((drive: any) => ({
+        id: drive.id,
+        name: drive.name,
+        webUrl: drive.webUrl,
+        driveId: drive.id,
+        type: "library" as const,
+      }));
     }
   } catch (err) {
     console.warn("[detectAndListCustomers] Error checking document libraries:", err);
@@ -1160,6 +1103,19 @@ export async function findMonthTarget(
     }
   }
 
+  // Collect all available .xlsx files in "שעות עבודה" for manual selection
+  const availableFiles: Array<{ fileId: string; fileName: string; webUrl?: string }> = [];
+  for (const item of hoursItems) {
+    if (item.name.toLowerCase().endsWith(".xlsx") && !item.name.startsWith("~$")) {
+      recordFileDrive(item.id, driveId);
+      availableFiles.push({
+        fileId: item.id,
+        fileName: item.name,
+        webUrl: item.webUrl,
+      });
+    }
+  }
+
   const matchedItem = matchMonthItem(hoursItems, year, month, customerFolder.name);
 
   // If NOT found: return clear "not found" with existing names. NEVER create files!
@@ -1171,6 +1127,7 @@ export async function findMonthTarget(
       requestedMonth: ym,
       detectedPattern,
       existingItems: existingNames,
+      availableFiles,
     };
   }
 
@@ -1195,10 +1152,18 @@ export async function findMonthTarget(
         requestedMonth: ym,
         detectedPattern,
         existingItems: folderItems.map((i) => i.name),
+        availableFiles,
       };
     }
 
     recordFileDrive(xlsxFile.id, driveId);
+    if (!availableFiles.some((f) => f.fileId === xlsxFile.id)) {
+      availableFiles.unshift({
+        fileId: xlsxFile.id,
+        fileName: xlsxFile.name,
+        webUrl: xlsxFile.webUrl,
+      });
+    }
 
     return {
       found: true,
@@ -1212,6 +1177,7 @@ export async function findMonthTarget(
       driveId,
       detectedPattern,
       existingItems: existingNames,
+      availableFiles,
     };
   }
 
@@ -1231,6 +1197,7 @@ export async function findMonthTarget(
       driveId,
       detectedPattern,
       existingItems: existingNames,
+      availableFiles,
     };
   }
 
@@ -1241,6 +1208,7 @@ export async function findMonthTarget(
     requestedMonth: ym,
     detectedPattern,
     existingItems: existingNames,
+    availableFiles,
   };
 }
 
