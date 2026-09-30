@@ -375,9 +375,19 @@ export const HoursTestPanel: React.FC<HoursTestPanelProps> = ({ currentUser }) =
             </div>
 
             {diagnosticsError && (
-              <div className="p-3 rounded-lg bg-red-950/40 border border-red-500/40 text-xs text-red-300 flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 flex-shrink-0 text-red-400 mt-0.5" />
-                <span className="flex-1 whitespace-pre-wrap">{diagnosticsError}</span>
+              <div className="p-3.5 rounded-xl bg-red-950/40 border border-red-500/40 text-xs text-red-300 space-y-2">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 flex-shrink-0 text-red-400 mt-0.5" />
+                  <span className="flex-1 font-semibold">{diagnosticsError}</span>
+                </div>
+                <div className="text-[11px] text-red-300/90 bg-black/40 p-2.5 rounded border border-red-500/20 space-y-1">
+                  <p>מנוע התיעוד מוגדר לפעול אך ורק באמצעות משתני HOURS_GRAPH (ללא שום שימוש ב-CLIENT_ID/SECRET):</p>
+                  <ul className="list-disc list-inside font-mono text-[10px] space-y-0.5 text-slate-300">
+                    <li>AZURE_TENANT_ID</li>
+                    <li>HOURS_GRAPH_CLIENT_ID</li>
+                    <li>HOURS_GRAPH_CLIENT_SECRET</li>
+                  </ul>
+                </div>
               </div>
             )}
 

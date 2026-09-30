@@ -128,16 +128,13 @@ interface CustomersCache {
 let customersCache: CustomersCache | null = null;
 const CUSTOMERS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
-// Token cache
-interface TokenCache {
+// Dedicated token cache strictly for the Hours Engine so it NEVER reuses the Mail.Send token
+interface HoursTokenCache {
   token: string;
   expiresAt: number;
   obtainedAt: number;
-  candidateLabel?: string;
-  activeClientVar?: string;
-  activeSecretVar?: string;
 }
-let cachedGraphToken: TokenCache | null = null;
+let cachedHoursGraphToken: HoursTokenCache | null = null;
 
 export interface GraphDiagnosticsInfo {
   envSources: {
@@ -155,10 +152,10 @@ export interface GraphDiagnosticsInfo {
 }
 
 /**
- * Clear cached Microsoft Graph token
+ * Clear cached Microsoft Graph token for Hours Engine
  */
 export function clearGraphTokenCache() {
-  cachedGraphToken = null;
+  cachedHoursGraphToken = null;
 }
 
 /**
@@ -192,28 +189,29 @@ function decodeJwtPayload(token: string): any {
 let cachedSiteDriveInfo: { siteId: string; driveId: string; timestamp: number } | null = null;
 
 /**
- * Get environment configuration values
+ * Get environment configuration values strictly for the Hours Engine
+ * ONLY AZURE_TENANT_ID, HOURS_GRAPH_CLIENT_ID, HOURS_GRAPH_CLIENT_SECRET
  */
 export function getGraphHoursConfig(env?: any) {
   const envObj = (env || {}) as any;
   const p = typeof process !== "undefined" ? process?.env : {};
 
+  // Tenant strictly from AZURE_TENANT_ID
   const tenantId = (
     envObj.AZURE_TENANT_ID ||
-    envObj.TENANT_ID ||
     p?.AZURE_TENANT_ID ||
-    p?.TENANT_ID ||
     ""
   ).trim();
 
-  // Support explicit HOURS_GRAPH_CLIENT_ID & HOURS_GRAPH_CLIENT_SECRET
-  let hoursClientId = (
+  // Client ID strictly from HOURS_GRAPH_CLIENT_ID
+  let clientId = (
     envObj.HOURS_GRAPH_CLIENT_ID ||
     p?.HOURS_GRAPH_CLIENT_ID ||
     ""
   ).trim();
 
-  let hoursClientSecret = (
+  // Client Secret strictly from HOURS_GRAPH_CLIENT_SECRET
+  let clientSecret = (
     envObj.HOURS_GRAPH_CLIENT_SECRET ||
     p?.HOURS_GRAPH_CLIENT_SECRET ||
     ""
@@ -221,30 +219,11 @@ export function getGraphHoursConfig(env?: any) {
 
   // Auto-detect if user swapped client ID and client secret
   // (e.g. client ID has "~" and client secret is a 36-char GUID)
-  if (hoursClientId.includes("~") && /^[0-9a-fA-F-]{36}$/.test(hoursClientSecret)) {
-    const tmp = hoursClientId;
-    hoursClientId = hoursClientSecret;
-    hoursClientSecret = tmp;
+  if (clientId.includes("~") && /^[0-9a-fA-F-]{36}$/.test(clientSecret)) {
+    const tmp = clientId;
+    clientId = clientSecret;
+    clientSecret = tmp;
   }
-
-  // Fallback to AZURE_CLIENT_ID / CLIENT_ID if HOURS_GRAPH_* not provided
-  const clientId = (
-    hoursClientId ||
-    envObj.AZURE_CLIENT_ID ||
-    envObj.CLIENT_ID ||
-    p?.AZURE_CLIENT_ID ||
-    p?.CLIENT_ID ||
-    ""
-  ).trim();
-
-  const clientSecret = (
-    hoursClientSecret ||
-    envObj.AZURE_CLIENT_SECRET ||
-    envObj.CLIENT_SECRET ||
-    p?.AZURE_CLIENT_SECRET ||
-    p?.CLIENT_SECRET ||
-    ""
-  ).trim();
 
   const sharepointSite = (
     envObj.SHAREPOINT_SITE ||
@@ -269,131 +248,65 @@ export function getGraphHoursConfig(env?: any) {
 }
 
 /**
- * Obtain Microsoft Graph access token using existing client credentials connection
- * with resilient fallback across credential pairs.
+ * Obtain Microsoft Graph access token strictly using HOURS_GRAPH credentials.
+ * No fallback to CLIENT_ID / CLIENT_SECRET.
  */
 export async function getGraphAccessToken(env?: any): Promise<string> {
   const now = Date.now();
-  if (cachedGraphToken && cachedGraphToken.expiresAt > now + 60000) {
-    return cachedGraphToken.token;
+  if (cachedHoursGraphToken && cachedHoursGraphToken.expiresAt > now + 60000) {
+    return cachedHoursGraphToken.token;
   }
 
-  const envObj = (env || {}) as any;
-  const p = typeof process !== "undefined" ? process?.env : {};
   const { credentials } = getGraphHoursConfig(env);
 
+  if (!credentials.clientId) {
+    throw new Error("חסרה הגדרת מערכת: HOURS_GRAPH_CLIENT_ID");
+  }
+  if (!credentials.clientSecret) {
+    throw new Error("חסרה הגדרת מערכת: HOURS_GRAPH_CLIENT_SECRET");
+  }
   if (!credentials.tenantId) {
-    throw new Error(
-      "חסרה הגדרת מזהה דייר Microsoft Graph בשרת (TENANT_ID או AZURE_TENANT_ID)"
-    );
+    throw new Error("חסרה הגדרת מערכת: AZURE_TENANT_ID");
   }
 
-  // Build candidate pairs to try
-  const candidates: Array<{ clientId: string; clientSecret: string; label: string }> = [];
+  const tokenUrl = `https://login.microsoftonline.com/${encodeURIComponent(credentials.tenantId)}/oauth2/v2.0/token`;
+  const bodyParams = new URLSearchParams({
+    client_id: credentials.clientId,
+    client_secret: credentials.clientSecret,
+    scope: "https://graph.microsoft.com/.default",
+    grant_type: "client_credentials",
+  });
 
-  // Candidate 1: Preferred Hours credentials from config
-  if (credentials.clientId && credentials.clientSecret) {
-    candidates.push({
-      clientId: credentials.clientId,
-      clientSecret: credentials.clientSecret,
-      label: "HOURS_GRAPH credentials",
-    });
+  const res = await fetch(tokenUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: bodyParams.toString(),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "");
+    throw new Error(`שגיאה בקבלת טוקן Microsoft Graph מ-Microsoft Entra ID עבור HOURS_GRAPH (${res.status}): ${errText}`);
   }
 
-  // Candidate 2: Server default CLIENT_ID / CLIENT_SECRET
-  const serverClientId = (envObj.CLIENT_ID || p?.CLIENT_ID || "").trim();
-  const serverClientSecret = (envObj.CLIENT_SECRET || p?.CLIENT_SECRET || "").trim();
-  if (
-    serverClientId &&
-    serverClientSecret &&
-    (serverClientId !== credentials.clientId || serverClientSecret !== credentials.clientSecret)
-  ) {
-    candidates.push({
-      clientId: serverClientId,
-      clientSecret: serverClientSecret,
-      label: "Server default CLIENT_ID/SECRET",
-    });
+  const data: any = await res.json();
+  const token = data?.access_token;
+  if (!token) {
+    throw new Error("לא התקבל access_token מ-Microsoft Entra ID עבור HOURS_GRAPH");
   }
 
-  // Candidate 3: Inverted credentials in case client_id and secret were supplied inverted
-  if (credentials.clientId && credentials.clientSecret) {
-    candidates.push({
-      clientId: credentials.clientSecret,
-      clientSecret: credentials.clientId,
-      label: "Inverted credentials candidate",
-    });
-  }
+  const expiresInSec = Number(data?.expires_in) || 3599;
+  cachedHoursGraphToken = {
+    token,
+    expiresAt: now + expiresInSec * 1000,
+    obtainedAt: now,
+  };
 
-  let lastError = "";
-
-  for (const cand of candidates) {
-    try {
-      const tokenUrl = `https://login.microsoftonline.com/${encodeURIComponent(credentials.tenantId)}/oauth2/v2.0/token`;
-      const bodyParams = new URLSearchParams({
-        client_id: cand.clientId,
-        client_secret: cand.clientSecret,
-        scope: "https://graph.microsoft.com/.default",
-        grant_type: "client_credentials",
-      });
-
-      const res = await fetch(tokenUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: bodyParams.toString(),
-      });
-
-      if (!res.ok) {
-        const errText = await res.text().catch(() => "");
-        lastError = `[${cand.label}] HTTP ${res.status}: ${errText}`;
-        console.warn(`[getGraphAccessToken] Failed candidate ${cand.label}:`, lastError);
-        continue;
-      }
-
-      const data: any = await res.json();
-      const token = data?.access_token;
-      if (token) {
-        const expiresInSec = Number(data?.expires_in) || 3599;
-
-        let activeClientVar = "CLIENT_ID";
-        let activeSecretVar = "CLIENT_SECRET";
-        if (cand.label === "HOURS_GRAPH credentials") {
-          activeClientVar = (envObj.HOURS_GRAPH_CLIENT_ID || p?.HOURS_GRAPH_CLIENT_ID)
-            ? "HOURS_GRAPH_CLIENT_ID"
-            : (envObj.AZURE_CLIENT_ID || p?.AZURE_CLIENT_ID)
-            ? "AZURE_CLIENT_ID"
-            : "CLIENT_ID";
-          activeSecretVar = (envObj.HOURS_GRAPH_CLIENT_SECRET || p?.HOURS_GRAPH_CLIENT_SECRET)
-            ? "HOURS_GRAPH_CLIENT_SECRET"
-            : (envObj.AZURE_CLIENT_SECRET || p?.AZURE_CLIENT_SECRET)
-            ? "AZURE_CLIENT_SECRET"
-            : "CLIENT_SECRET";
-        } else if (cand.label === "Server default CLIENT_ID/SECRET") {
-          activeClientVar = "CLIENT_ID";
-          activeSecretVar = "CLIENT_SECRET";
-        }
-
-        cachedGraphToken = {
-          token,
-          expiresAt: now + expiresInSec * 1000,
-          obtainedAt: now,
-          candidateLabel: cand.label,
-          activeClientVar,
-          activeSecretVar,
-        };
-        return token;
-      }
-    } catch (err: any) {
-      lastError = err?.message || String(err);
-      console.warn(`[getGraphAccessToken] Error testing candidate ${cand.label}:`, lastError);
-    }
-  }
-
-  throw new Error(`שגיאה בקבלת טוקן Microsoft Graph מ-Microsoft Entra ID: ${lastError}`);
+  return token;
 }
 
 /**
- * Obtain diagnostics about the active Microsoft Graph authentication state:
- * - Which environment variables are used
+ * Obtain diagnostics about the active Hours Microsoft Graph authentication state:
+ * - Shows HOURS_GRAPH_* variable names
  * - appid/azp claim
  * - roles claim
  * - iat & exp
@@ -406,11 +319,30 @@ export async function getGraphDiagnostics(
   const envObj = (env || {}) as any;
   const p = typeof process !== "undefined" ? process?.env : {};
 
-  // Check initial cache state
+  const tenantConfigured = Boolean(envObj.AZURE_TENANT_ID || p?.AZURE_TENANT_ID);
+  const clientConfigured = Boolean(envObj.HOURS_GRAPH_CLIENT_ID || p?.HOURS_GRAPH_CLIENT_ID);
+  const secretConfigured = Boolean(envObj.HOURS_GRAPH_CLIENT_SECRET || p?.HOURS_GRAPH_CLIENT_SECRET);
+
+  const envSources = {
+    tenantVar: tenantConfigured ? "AZURE_TENANT_ID" : "חסר (AZURE_TENANT_ID)",
+    clientVar: clientConfigured ? "HOURS_GRAPH_CLIENT_ID" : "חסר (HOURS_GRAPH_CLIENT_ID)",
+    secretVar: secretConfigured ? "HOURS_GRAPH_CLIENT_SECRET" : "חסר (HOURS_GRAPH_CLIENT_SECRET)",
+  };
+
+  if (!clientConfigured) {
+    throw new Error("חסרה הגדרת מערכת: HOURS_GRAPH_CLIENT_ID");
+  }
+  if (!secretConfigured) {
+    throw new Error("חסרה הגדרת מערכת: HOURS_GRAPH_CLIENT_SECRET");
+  }
+  if (!tenantConfigured) {
+    throw new Error("חסרה הגדרת מערכת: AZURE_TENANT_ID");
+  }
+
   const wasCached = Boolean(
     !forceRefresh &&
-    cachedGraphToken &&
-    cachedGraphToken.expiresAt > Date.now() + 60000
+    cachedHoursGraphToken &&
+    cachedHoursGraphToken.expiresAt > Date.now() + 60000
   );
 
   if (forceRefresh) {
@@ -421,25 +353,6 @@ export async function getGraphDiagnostics(
   const token = await getGraphAccessToken(env);
   const payload = decodeJwtPayload(token) || {};
 
-  // Resolve env var names
-  let tenantVar = "None";
-  if (envObj.AZURE_TENANT_ID || p?.AZURE_TENANT_ID) tenantVar = "AZURE_TENANT_ID";
-  else if (envObj.TENANT_ID || p?.TENANT_ID) tenantVar = "TENANT_ID";
-
-  let clientVar = cachedGraphToken?.activeClientVar || "None";
-  if (clientVar === "None") {
-    if (envObj.HOURS_GRAPH_CLIENT_ID || p?.HOURS_GRAPH_CLIENT_ID) clientVar = "HOURS_GRAPH_CLIENT_ID";
-    else if (envObj.AZURE_CLIENT_ID || p?.AZURE_CLIENT_ID) clientVar = "AZURE_CLIENT_ID";
-    else if (envObj.CLIENT_ID || p?.CLIENT_ID) clientVar = "CLIENT_ID";
-  }
-
-  let secretVar = cachedGraphToken?.activeSecretVar || "None";
-  if (secretVar === "None") {
-    if (envObj.HOURS_GRAPH_CLIENT_SECRET || p?.HOURS_GRAPH_CLIENT_SECRET) secretVar = "HOURS_GRAPH_CLIENT_SECRET";
-    else if (envObj.AZURE_CLIENT_SECRET || p?.AZURE_CLIENT_SECRET) secretVar = "AZURE_CLIENT_SECRET";
-    else if (envObj.CLIENT_SECRET || p?.CLIENT_SECRET) secretVar = "CLIENT_SECRET";
-  }
-
   const appId = String(payload.appid || payload.azp || "");
   const roles: string[] = Array.isArray(payload.roles) ? payload.roles : [];
   const issuedAt = payload.iat ? new Date(payload.iat * 1000).toISOString() : null;
@@ -447,18 +360,14 @@ export async function getGraphDiagnostics(
   const tenantId = String(payload.tid || "");
 
   return {
-    envSources: {
-      tenantVar,
-      clientVar,
-      secretVar,
-    },
+    envSources,
     appId,
     roles,
     issuedAt,
     expiresAt,
     fromCache: wasCached,
-    cachedAt: cachedGraphToken?.obtainedAt
-      ? new Date(cachedGraphToken.obtainedAt).toISOString()
+    cachedAt: cachedHoursGraphToken?.obtainedAt
+      ? new Date(cachedHoursGraphToken.obtainedAt).toISOString()
       : null,
     tenantId,
   };

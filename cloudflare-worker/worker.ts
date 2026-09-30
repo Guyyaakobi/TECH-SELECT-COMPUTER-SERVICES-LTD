@@ -42,6 +42,11 @@ export interface Env {
   TENANT_ID?: string;
   CLIENT_ID?: string;
   CLIENT_SECRET?: string;
+  AZURE_TENANT_ID?: string;
+  HOURS_GRAPH_CLIENT_ID?: string;
+  HOURS_GRAPH_CLIENT_SECRET?: string;
+  SHAREPOINT_SITE?: string;
+  CUSTOMERS_ROOT_PATH?: string;
   [key: string]: any;
 }
 
