@@ -141,3 +141,84 @@ export async function apiGetHoursDiagnostics(forceRefresh = false): Promise<Hour
   return fetchHoursApi<HoursDiagnosticsData>(`/api/hours/diagnostics`);
 }
 
+export interface HoursAssistantEntryDraft {
+  id: string;
+  customerName: string;
+  customerFolder?: string;
+  fileId?: string;
+  fileName?: string;
+  filePath?: string;
+  webUrl?: string;
+  targetRow?: number | string;
+  date: string;
+  durationMinutes: number;
+  durationHours: number;
+  durationFormatted: string;
+  startTime?: string;
+  endTime?: string;
+  workType: "טלפון" | "שלט רחוק" | "באתר";
+  contactPerson?: string;
+  ticketNumber?: string;
+  description: string;
+  duplicateWarning?: string | null;
+  isReadyForConfirmation: boolean;
+  missingFields?: string[];
+  mappedRow?: Record<string, any>;
+}
+
+export interface WrittenEntryResult {
+  id: string;
+  fileId: string;
+  fileName: string;
+  filePath: string;
+  webUrl: string;
+  targetRow: number | string;
+  rowAddress: string;
+  entryId: string;
+  customerName: string;
+  date: string;
+  durationFormatted: string;
+  description: string;
+  workType: string;
+  writtenAt: number;
+  expiresAt: number;
+  canUndo: boolean;
+}
+
+export interface AssistantChatRequest {
+  message?: string;
+  audio?: {
+    data: string;
+    mimeType: string;
+  };
+  history?: Array<{
+    role: "user" | "model";
+    text: string;
+  }>;
+  action?: "confirm_entry" | "confirm_all" | "undo_entry" | "edit_draft";
+  cardId?: string;
+  draftData?: any;
+  activeDrafts?: HoursAssistantEntryDraft[];
+}
+
+export interface AssistantChatResponse {
+  reply: string;
+  transcript?: string;
+  drafts: HoursAssistantEntryDraft[];
+  writtenEntries: WrittenEntryResult[];
+  undoneCardIds: string[];
+  isConfirmed: boolean;
+  suggestedAction?: "confirm" | "clarify" | "undo" | "none";
+}
+
+/**
+ * 9. Stage 3 AI Assistant Chat (Voice + Text + Multi-entry Confirmation)
+ */
+export async function apiAssistantChat(req: AssistantChatRequest): Promise<AssistantChatResponse> {
+  return fetchHoursApi<AssistantChatResponse>(`/api/hours/assistant/chat`, {
+    method: "POST",
+    body: JSON.stringify(req),
+  });
+}
+
+

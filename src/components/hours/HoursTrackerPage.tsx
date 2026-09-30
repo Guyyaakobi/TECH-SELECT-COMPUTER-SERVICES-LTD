@@ -7,6 +7,8 @@ import {
   RefreshCw,
   Lock,
   Building2,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import {
   fetchHoursConfig,
@@ -18,6 +20,7 @@ import {
   loginWithMicrosoft,
   logoutFromMicrosoft,
 } from "../../services/hoursAuth";
+import { HoursAssistantChat } from "./HoursAssistantChat";
 import { HoursTestPanel } from "./HoursTestPanel";
 import type { PublicClientApplication, AccountInfo } from "@azure/msal-browser";
 
@@ -37,6 +40,7 @@ export const HoursTrackerPage: React.FC = () => {
   const [pcaInstance, setPcaInstance] = useState<PublicClientApplication | null>(null);
   const [runtimeConfig, setRuntimeConfig] = useState<AzureHoursConfig | null>(null);
   const [showFallbackButton, setShowFallbackButton] = useState<boolean>(false);
+  const [showTestPanel, setShowTestPanel] = useState<boolean>(false);
 
   const isInitializingRef = useRef(false);
 
@@ -383,69 +387,43 @@ export const HoursTrackerPage: React.FC = () => {
             </div>
           )}
 
-          {/* Authenticated State: "תיעוד שעות – בקרוב" + Employee Name */}
+          {/* Authenticated State: Stage 3 AI Assistant + Collapsible Test Panel */}
           {!missingConfig && !loading && (account || serverUser) && (
             <>
-              <div className="relative overflow-hidden p-8 sm:p-10 rounded-3xl bg-gradient-to-b from-white/[0.08] to-white/[0.02] border border-white/10 backdrop-blur-2xl shadow-2xl text-center">
-              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-cyan-400 to-blue-600" />
+              {/* Stage 3 AI Assistant (Voice + Text, Mobile-First) */}
+              <HoursAssistantChat
+                currentUser={{
+                  name: displayName,
+                  email: userEmail,
+                }}
+              />
 
-              <div className="w-16 h-16 rounded-2xl bg-blue-500/10 border border-blue-400/30 text-blue-400 flex items-center justify-center mx-auto mb-6 shadow-inner">
-                <Clock className="w-8 h-8 text-cyan-300" />
-              </div>
-
-              <h2 className="text-2xl sm:text-3xl font-extrabold text-white mb-2 tracking-tight">
-                תיעוד שעות – בקרוב
-              </h2>
-
-              <p className="text-base sm:text-lg font-medium text-cyan-300 mb-6">
-                שלום, <span className="font-bold underline decoration-cyan-400/40">{displayName}</span>
-              </p>
-
-              <div className="p-4 rounded-xl bg-black/40 border border-white/10 text-right mb-6">
-                <div className="flex items-center justify-between py-2 border-b border-white/5 text-xs">
-                  <span className="text-slate-400">עובד מאומת:</span>
-                  <span className="font-semibold text-slate-200">{displayName}</span>
-                </div>
-                {userEmail && (
-                  <div className="flex items-center justify-between py-2 border-b border-white/5 text-xs">
-                    <span className="text-slate-400">דוא״ל ארגוני:</span>
-                    <span className="font-mono text-slate-300 text-[11px]" dir="ltr">{userEmail}</span>
-                  </div>
-                )}
-                {serverUser?.oid && (
-                  <div className="flex items-center justify-between py-2 text-xs">
-                    <span className="text-slate-400">מזהה אימות שרת (OID):</span>
-                    <span className="font-mono text-cyan-400 text-[10px]" dir="ltr">
-                      {serverUser.oid.slice(0, 16)}...
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs mb-6">
-                <ShieldCheck className="w-3.5 h-3.5" />
-                <span>מאומת ומאובטח בחיבור יחיד (Single-Tenant Microsoft 365)</span>
-              </div>
-
-              <div>
+              {/* Stage 2 Technical Test Panel (hidden by default behind small toggle) */}
+              <div className="w-full mt-6 flex flex-col items-center">
                 <button
-                  onClick={handleLogout}
-                  className="px-5 py-2 rounded-xl bg-white/5 hover:bg-red-500/20 border border-white/10 hover:border-red-500/40 text-xs font-semibold text-slate-300 hover:text-white transition-all cursor-pointer inline-flex items-center gap-2"
+                  onClick={() => setShowTestPanel(!showTestPanel)}
+                  className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
                 >
-                  <LogOut className="w-3.5 h-3.5 text-red-400" />
-                  <span>התנתקות מהמערכת</span>
+                  <span>מצב בדיקה (טכני / Stage 2)</span>
+                  {showTestPanel ? (
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  )}
                 </button>
-              </div>
-            </div>
 
-            {/* Stage 2 Test Panel */}
-            <HoursTestPanel
-              currentUser={{
-                name: displayName,
-                email: userEmail,
-              }}
-            />
-          </>
+                {showTestPanel && (
+                  <div className="w-full mt-4">
+                    <HoursTestPanel
+                      currentUser={{
+                        name: displayName,
+                        email: userEmail,
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
       </main>

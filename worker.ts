@@ -36,6 +36,7 @@ import * as hoursWriteRowsHandler from "./functions/api/hours/write-rows";
 import * as hoursFindDuplicatesHandler from "./functions/api/hours/find-duplicates";
 import * as hoursUndoHandler from "./functions/api/hours/undo";
 import * as hoursDiagnosticsHandler from "./functions/api/hours/diagnostics";
+import * as hoursAssistantHandler from "./functions/api/hours/assistant";
 
 interface Env {
   ASSETS?: {
@@ -232,6 +233,14 @@ export default {
         return hoursDiagnosticsHandler.onRequestPost(context);
       }
       return hoursDiagnosticsHandler.onRequestGet(context);
+    }
+
+    // 9.9 Hours AI Assistant (/api/hours/assistant/chat)
+    if (pathname === "/api/hours/assistant/chat" || pathname === "/api/hours/assistant") {
+      if (request.method === "OPTIONS") {
+        return hoursAssistantHandler.onRequestOptions();
+      }
+      return hoursAssistantHandler.onRequestPost(context);
     }
 
     // 8. Simulator Activity Logger

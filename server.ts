@@ -1,4 +1,5 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+dotenv.config({ override: true });
 import express from "express";
 import path from "path";
 import crypto from "crypto";
@@ -18,6 +19,7 @@ import {
   getGraphDiagnostics,
   clearGraphTokenCache,
 } from "./services/graphHours";
+import { processAssistantChat } from "./services/geminiHoursAssistant";
 
 // Lazy Gemini client helper with required headers
 function getGeminiClient(): GoogleGenAI {
@@ -4456,6 +4458,34 @@ ${!isAteraCustomer ? `
       } catch (err: any) {
         console.error("[POST /api/hours/diagnostics/refresh] Error:", err);
         return res.status(500).json({ error: err?.message || "שגיאה ברענון טוקן Graph" });
+      }
+    });
+
+    // 9. POST /api/hours/assistant/chat: AI Assistant (voice & text) powered by Gemini and Stage 2 Engine
+    hoursRouter.post("/assistant/chat", async (req, res) => {
+      try {
+        const user = (req as any).user;
+        const { message, audio, history, action, cardId, draftData, activeDrafts } = req.body || {};
+        const result = await processAssistantChat(
+          {
+            user,
+            message,
+            audio,
+            history,
+            action,
+            cardId,
+            draftData,
+            activeDrafts,
+            env: process.env,
+          },
+          process.env
+        );
+        return res.json(result);
+      } catch (err: any) {
+        console.error("[POST /api/hours/assistant/chat] Error:", err);
+        return res.status(500).json({
+          error: err?.message || "שגיאה בעיבוד בקשת עוזר ה-AI לתיעוד שעות",
+        });
       }
     });
 

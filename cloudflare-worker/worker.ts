@@ -34,6 +34,7 @@ import * as hoursWriteRowsHandler from "../functions/api/hours/write-rows";
 import * as hoursFindDuplicatesHandler from "../functions/api/hours/find-duplicates";
 import * as hoursUndoHandler from "../functions/api/hours/undo";
 import * as hoursDiagnosticsHandler from "../functions/api/hours/diagnostics";
+import * as hoursAssistantHandler from "../functions/api/hours/assistant";
 
 export interface Env {
   GEMINI_API_KEY?: string;
@@ -229,6 +230,14 @@ export default {
         return hoursDiagnosticsHandler.onRequestPost({ request, env });
       }
       return hoursDiagnosticsHandler.onRequestGet({ request, env });
+    }
+
+    // Route 24: AI Hours Assistant (/api/hours/assistant/chat)
+    if (url.pathname.endsWith("/api/hours/assistant/chat") || url.pathname.endsWith("/api/hours/assistant")) {
+      if (request.method === "OPTIONS") {
+        return hoursAssistantHandler.onRequestOptions();
+      }
+      return hoursAssistantHandler.onRequestPost({ request, env });
     }
 
     return new Response(
