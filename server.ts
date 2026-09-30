@@ -4398,7 +4398,7 @@ ${!isAteraCustomer ? `
     // 5. POST /api/hours/write-rows: write rows to table or plain range with workbook session & retries
     hoursRouter.post("/write-rows", async (req, res) => {
       try {
-        const { fileId, rows, driveId, confirm } = req.body || {};
+        const { fileId, rows, driveId, confirm, workType } = req.body || {};
         if (!confirm) {
           return res.status(400).json({ error: "נדרש אישור מפורש (confirm: true) לביצוע כתיבה לקובץ" });
         }
@@ -4406,7 +4406,7 @@ ${!isAteraCustomer ? `
           return res.status(400).json({ error: "נדרשים שדות חובה: fileId ומערך שורות rows" });
         }
         const user = (req as any).user;
-        const result = await writeRows(fileId, rows, user, process.env, driveId);
+        const result = await writeRows(fileId, rows, user, process.env, driveId, workType);
         return res.json(result);
       } catch (err: any) {
         console.error("[POST /api/hours/write-rows] Error:", err);

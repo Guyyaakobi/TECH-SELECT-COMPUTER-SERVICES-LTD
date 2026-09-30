@@ -576,13 +576,14 @@ export async function processAssistantChat(
     }
 
     // Prepare fully enriched row object
+    const effectiveWorkType = targetDraft.targetTabName || targetDraft.workType;
     const rowPayload = buildEnrichedRowPayload({
       date: targetDraft.date,
       userName: user.name,
       hours: targetDraft.durationHours,
       minutes: targetDraft.durationMinutes,
       formatted: targetDraft.durationFormatted,
-      workType: targetDraft.workType,
+      workType: effectiveWorkType,
       desc: targetDraft.description,
       startTime: targetDraft.startTime,
       endTime: targetDraft.endTime,
@@ -592,7 +593,7 @@ export async function processAssistantChat(
       userOverride: targetDraft.mappedRow,
     });
 
-    const writeRes = await writeRows(targetDraft.fileId, [rowPayload], user, activeEnv, targetDraft.driveId, targetDraft.workType);
+    const writeRes = await writeRows(targetDraft.fileId, [rowPayload], user, activeEnv, targetDraft.driveId, effectiveWorkType);
     const rowNumMatch = (writeRes.rowAddress || "").match(/\d+/);
     const targetRow = rowNumMatch ? parseInt(rowNumMatch[0], 10) : 1;
 
@@ -603,7 +604,7 @@ export async function processAssistantChat(
       itemId: targetDraft.fileId,
       fileName: targetDraft.fileName || "hours.xlsx",
       filePath: targetDraft.filePath || "",
-      sheetName: writeRes.sheetName || targetDraft.workType,
+      sheetName: writeRes.sheetName || effectiveWorkType,
       webUrl: writeRes.webUrl || targetDraft.webUrl || "",
       targetRow,
       rowAddress: writeRes.rowAddress || `Row ${targetRow}`,
@@ -613,7 +614,7 @@ export async function processAssistantChat(
       date: targetDraft.date,
       durationFormatted: targetDraft.durationFormatted,
       description: targetDraft.description,
-      workType: targetDraft.workType,
+      workType: effectiveWorkType,
       writtenAt: writeRes.writtenAt || Date.now(),
       expiresAt: (writeRes.writtenAt || Date.now()) + 10 * 60 * 1000,
       canUndo: true,

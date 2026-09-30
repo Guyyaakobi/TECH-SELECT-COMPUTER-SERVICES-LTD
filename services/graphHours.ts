@@ -2132,13 +2132,43 @@ export function buildRowValuesFromSemanticMapping(
  */
 export function matchWorksheetByWorkType(sheets: any[], workType?: string): any {
   if (!sheets || sheets.length === 0) return null;
-  if (!workType) return sheets[0];
+  const visibleSheets = sheets.filter((s) => !s.visibility || s.visibility === "Visible");
+  const candidates = visibleSheets.length > 0 ? visibleSheets : sheets;
+  if (!workType) {
+    const firstData = candidates.find((s) => classifyWorksheet(s.name || "", []).isDataTab);
+    return firstData || candidates[0];
+  }
   const wt = workType.trim().toLowerCase();
-  const exact = sheets.find((s) => (s.name || "").trim().toLowerCase() === wt);
+  // 1. Exact match
+  const exact = candidates.find((s) => (s.name || "").trim().toLowerCase() === wt);
   if (exact) return exact;
+  // 2. Normalized substring match
   const norm = normalizeTabName(workType);
-  const fuzzy = sheets.find((s) => normalizeTabName(s.name || "").includes(norm) || norm.includes(normalizeTabName(s.name || "")));
-  return fuzzy || sheets[0];
+  const fuzzy = candidates.find((s) => {
+    const sNorm = normalizeTabName(s.name || "");
+    return sNorm.includes(norm) || norm.includes(sNorm);
+  });
+  if (fuzzy) return fuzzy;
+  // 3. Semantic category match ("tickets", "onsite", "project")
+  const semanticType: TabSemanticType | null =
+    wt.includes("טיקט") || wt.includes("קריאה") || wt.includes("קריאות") || wt === "tickets"
+      ? "tickets"
+      : wt.includes("ביקור") || wt.includes("אתר") || wt === "onsite"
+      ? "onsite"
+      : wt.includes("פרויקט") || wt.includes("פרוייקט") || wt === "project"
+      ? "project"
+      : null;
+
+  if (semanticType) {
+    const semanticMatch = candidates.find((s) => {
+      const cls = classifyWorksheet(s.name || "", []);
+      return cls.detectedType === semanticType && cls.isDataTab;
+    });
+    if (semanticMatch) return semanticMatch;
+  }
+  // 4. Default to first data tab over summary tab
+  const firstData = candidates.find((s) => classifyWorksheet(s.name || "", []).isDataTab);
+  return firstData || candidates[0];
 }
 
 /**
@@ -2234,17 +2264,31 @@ export async function readSheetStructure(
   // 3. No Excel Table on this worksheet -> Read the used range of the matched worksheet
   const usedRangeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/usedRange`;
   const usedRangeRes = await fetchGraph(usedRangeUrl, { method: "GET" }, env);
-  if (!usedRangeRes.ok) {
-    const errText = await usedRangeRes.text().catch(() => "");
-    throw new Error(
-      `שגיאה בקריאת נתוני גיליון "${sheetName}" מ-SharePoint (${usedRangeRes.status}): ${errText || "הגיליון אינו נגיש או שאינו מכיל טווח נתונים"}`
-    );
-  }
+  let values: any[][] = [];
+  let formulas: any[][] = [];
+  let fullAddress = "A1";
 
-  const rangeData: any = await usedRangeRes.json();
-  const values: any[][] = rangeData.values || [];
-  const formulas: any[][] = rangeData.formulas || [];
-  const fullAddress: string = rangeData.address || "A1";
+  if (usedRangeRes.ok) {
+    const rangeData: any = await usedRangeRes.json();
+    values = rangeData.values || [];
+    formulas = rangeData.formulas || [];
+    fullAddress = rangeData.address || "A1";
+  } else {
+    // If usedRange returned 404 (e.g. newly initialized month file with no data rows yet), attempt reading top range A1:Z15
+    const fallbackRangeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='A1:Z15')`;
+    const fallbackRes = await fetchGraph(fallbackRangeUrl, { method: "GET" }, env);
+    if (fallbackRes.ok) {
+      const fbData: any = await fallbackRes.json();
+      values = fbData.values || [];
+      formulas = fbData.formulas || [];
+      fullAddress = fbData.address || "A1:Z15";
+    } else {
+      const errText = await usedRangeRes.text().catch(() => "");
+      throw new Error(
+        `שגיאה בקריאת נתוני גיליון "${sheetName}" מ-SharePoint (${usedRangeRes.status}): ${errText || "הגיליון אינו נגיש או שאינו מכיל טווח נתונים"}`
+      );
+    }
+  }
 
   // Parse start row & col from address (e.g. "Sheet1!A1:F20" or "A1:F20" or "A1")
   const addressMatch = fullAddress.match(/(?:.*!)?([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?/i);
@@ -2994,8 +3038,9 @@ export async function writeRows(
     throw new Error("לא סופקו שורות לכתיבה");
   }
 
-  // Stage 4 Safety Validations: date not in future, duration 0.25-12 hours
-  const todayIso = new Date().toISOString().split("T")[0];
+  // Stage 4 Safety Validations: date within range (allow up to +48h for timezone differences like Israel UTC+3 and night shifts), duration 0.25-12 hours
+  const currentDate = new Date();
+  const maxAllowedDate = new Date(currentDate.getTime() + 48 * 60 * 60 * 1000).toISOString().split("T")[0];
   for (const row of rows) {
     const rawDate = String(row.date || row["תאריך"] || row["תאריך עבודה"] || "").trim();
     if (rawDate) {
@@ -3009,7 +3054,7 @@ export async function writeRows(
           isoDate = `${matchDmy[3]}-${matchDmy[2].padStart(2, "0")}-${matchDmy[1].padStart(2, "0")}`;
         }
       }
-      if (isoDate && isoDate > todayIso) {
+      if (isoDate && isoDate > maxAllowedDate) {
         throw new Error(`תאריך הדיווח (${rawDate}) אינו יכול להיות תאריך עתידי`);
       }
     }

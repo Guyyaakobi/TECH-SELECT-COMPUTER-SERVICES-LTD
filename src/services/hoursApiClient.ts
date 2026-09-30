@@ -100,10 +100,20 @@ export async function apiReadSheetStructure(fileId: string): Promise<any> {
 /**
  * 5. Write Rows
  */
-export async function apiWriteRows(fileId: string, rows: Record<string, any>[]): Promise<any> {
+export async function apiWriteRows(
+  fileId: string,
+  rows: Record<string, any>[],
+  options?: { driveId?: string; confirm?: boolean; workType?: string }
+): Promise<any> {
   return fetchHoursApi<any>(`/api/hours/write-rows`, {
     method: "POST",
-    body: JSON.stringify({ fileId, rows }),
+    body: JSON.stringify({
+      fileId,
+      rows,
+      confirm: options?.confirm ?? true,
+      driveId: options?.driveId,
+      workType: options?.workType,
+    }),
   });
 }
 

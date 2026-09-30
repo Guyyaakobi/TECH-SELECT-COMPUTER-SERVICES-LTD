@@ -267,7 +267,9 @@ export const HoursTestPanel: React.FC<HoursTestPanelProps> = ({ currentUser }) =
       const testRow: Record<string, any> = {};
       headers.forEach((h) => {
         const norm = h.toLowerCase();
-        if (norm.includes("תאריך") || norm.includes("date")) {
+        if (norm.includes("חתימ") || norm.includes("sign") || norm.includes("אישור") || norm.includes("approval")) {
+          testRow[h] = "";
+        } else if (norm.includes("תאריך") || norm.includes("date")) {
           testRow[h] = new Date().toISOString().split("T")[0];
         } else if (norm.includes("עובד") || norm.includes("שם") || norm.includes("employee")) {
           testRow[h] = empName;
@@ -284,7 +286,11 @@ export const HoursTestPanel: React.FC<HoursTestPanelProps> = ({ currentUser }) =
         }
       });
 
-      const res = await apiWriteRows(fileId, [testRow]);
+      const res = await apiWriteRows(fileId, [testRow], {
+        driveId: monthResult?.driveId,
+        workType: sheetStructure?.sheetName || undefined,
+        confirm: true,
+      });
       setWriteResult(res);
       setRawWriteResult(res);
 
