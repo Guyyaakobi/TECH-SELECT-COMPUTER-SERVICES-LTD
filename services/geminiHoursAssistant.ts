@@ -625,6 +625,14 @@ followed by your natural Hebrew response or tool calls.`;
   let userTranscript: string | undefined = undefined;
   let isConfirmed = false;
 
+  // Safe timeout wrapper for tools to ensure assistant never hangs on slow Graph calls
+  const withSafeTimeout = async <T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> => {
+    return Promise.race([
+      promise,
+      new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+    ]);
+  };
+
   // Tool execution loop (max 4 iterations)
   let loopCount = 0;
   let finalResponseText = "";
@@ -632,14 +640,23 @@ followed by your natural Hebrew response or tool calls.`;
   while (loopCount < 4) {
     loopCount++;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.8-flash",
-      contents,
-      config: {
-        systemInstruction,
-        tools: [{ functionDeclarations: toolDeclarations }],
-      },
-    });
+    const response = await withSafeTimeout(
+      ai.models.generateContent({
+        model: "gemini-flash-latest",
+        contents,
+        config: {
+          systemInstruction,
+          tools: [{ functionDeclarations: toolDeclarations }],
+        },
+      }),
+      60000,
+      null as any
+    );
+
+    if (!response) {
+      finalResponseText = "אירעה השהיה בתקשורת עם השרת. נא לחזור על הפעולה.";
+      break;
+    }
 
     const candidate = response.candidates?.[0];
     if (candidate?.content) {
@@ -661,7 +678,7 @@ followed by your natural Hebrew response or tool calls.`;
       try {
         if (name === "find_customer") {
           const query = String(args.query || "");
-          const matches = await findCustomer(query, activeEnv);
+          const matches = await withSafeTimeout(findCustomer(query, activeEnv), 15000, []);
           const topMatches = matches.slice(0, 5).map((m) => ({
             name: m.customer.name,
             webUrl: m.customer.webUrl,
@@ -685,24 +702,36 @@ followed by your natural Hebrew response or tool calls.`;
         } else if (name === "find_month_target") {
           const customerFolderName = String(args.customerFolderName || "");
           const date = String(args.date || jCtx.todayIso);
-          const target = await findMonthTarget(customerFolderName, date, activeEnv);
+          const target = await withSafeTimeout(
+            findMonthTarget(customerFolderName, date, activeEnv),
+            15000,
+            { found: false, searchPattern: date } as any
+          );
           toolResult = target;
         } else if (name === "read_sheet_structure") {
           const fileId = String(args.fileId || "");
-          const structure = await readSheetStructure(fileId, activeEnv);
+          const structure = await withSafeTimeout(
+            readSheetStructure(fileId, activeEnv),
+            15000,
+            { totalDataRows: 0, nextEmptyRowAddress: "Row 2", headers: [] } as any
+          );
           toolResult = structure;
         } else if (name === "find_duplicates") {
           const fileId = String(args.fileId || "");
           const date = String(args.date || jCtx.todayIso);
-          const dupRes = await findDuplicates(
-            fileId,
-            {
-              employee: user.name,
-              date,
-              start: typeof args.start === "string" ? args.start : undefined,
-              duration: typeof args.duration === "string" ? args.duration : undefined,
-            },
-            activeEnv
+          const dupRes = await withSafeTimeout(
+            findDuplicates(
+              fileId,
+              {
+                employee: user.name,
+                date,
+                start: typeof args.start === "string" ? args.start : undefined,
+                duration: typeof args.duration === "string" ? args.duration : undefined,
+              },
+              activeEnv
+            ),
+            12000,
+            { hasDuplicates: false, duplicates: [] }
           );
           toolResult = dupRes;
         } else if (name === "propose_entries") {
@@ -737,19 +766,31 @@ followed by your natural Hebrew response or tool calls.`;
 
             try {
               if (customerName) {
-                const mt = await findMonthTarget(customerName, date, activeEnv);
+                const mt = await withSafeTimeout(
+                  findMonthTarget(customerName, date, activeEnv),
+                  12000,
+                  { found: false } as any
+                );
                 if (mt.found && mt.fileId) {
                   fileId = mt.fileId;
                   fileName = mt.fileName;
                   filePath = mt.filePath;
                   webUrl = mt.webUrl;
 
-                  const struct = await readSheetStructure(fileId, activeEnv);
+                  const struct = await withSafeTimeout(
+                    readSheetStructure(fileId, activeEnv),
+                    12000,
+                    { totalDataRows: 0, nextEmptyRowAddress: "Row 2" } as any
+                  );
                   const rowNumMatch = (struct.nextEmptyRowAddress || "").match(/\d+/);
                   targetRow = rowNumMatch ? parseInt(rowNumMatch[0], 10) : struct.totalDataRows + 2;
 
                   // Check duplicates
-                  const dup = await findDuplicates(fileId, { employee: user.name, date }, activeEnv);
+                  const dup = await withSafeTimeout(
+                    findDuplicates(fileId, { employee: user.name, date }, activeEnv),
+                    10000,
+                    { hasDuplicates: false, duplicates: [] }
+                  );
                   if (dup.hasDuplicates) {
                     duplicateWarning = `נמצאו ${dup.duplicates.length} דיווחים קודמים עבורך בתאריך זה (${date})`;
                   }
@@ -801,7 +842,11 @@ followed by your natural Hebrew response or tool calls.`;
         } else if (name === "write_rows") {
           const fileId = String(args.fileId || "");
           const rows: any[] = Array.isArray(args.rows) ? args.rows : [];
-          const writeRes = await writeRows(fileId, rows, user, activeEnv);
+          const writeRes = await withSafeTimeout(
+            writeRows(fileId, rows, user, activeEnv),
+            30000,
+            { success: false, rowAddress: "", webUrl: "" } as any
+          );
 
           isConfirmed = true;
           const rowNumMatch = (writeRes.rowAddress || "").match(/\d+/);
@@ -840,7 +885,11 @@ followed by your natural Hebrew response or tool calls.`;
         } else if (name === "undo_row") {
           const fileId = String(args.fileId || "");
           const rowAddress = String(args.rowAddress || "");
-          const undoRes = await undoRow(fileId, rowAddress, user, activeEnv);
+          const undoRes = await withSafeTimeout(
+            undoRow(fileId, rowAddress, user, activeEnv),
+            15000,
+            { success: false } as any
+          );
           toolResult = undoRes;
         }
       } catch (toolErr: any) {

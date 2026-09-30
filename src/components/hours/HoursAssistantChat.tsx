@@ -335,6 +335,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
 
     let stepTimer1: any = null;
     let stepTimer2: any = null;
+    let stepTimer3: any = null;
 
     try {
       setLoading(true);
@@ -345,11 +346,15 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
       }, 3000);
 
       stepTimer2 = setTimeout(() => {
-        setLoadingStep("בודק קובץ Excel וכפילויות ומכין כרטיס...");
-      }, 6500);
+        setLoadingStep("בודק קובץ Excel וכפילויות...");
+      }, 7000);
 
-      // Prepare conversation history
-      const history = [...messages, userMessage]
+      stepTimer3 = setTimeout(() => {
+        setLoadingStep("מכין כרטיס סיכום להזנה...");
+      }, 14000);
+
+      // Prepare conversation history (prior turns only, current turn is in 'message')
+      const history = messages
         .filter((m) => m.id !== "welcome")
         .slice(-8)
         .map((m) => ({
@@ -378,6 +383,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
     } finally {
       if (stepTimer1) clearTimeout(stepTimer1);
       if (stepTimer2) clearTimeout(stepTimer2);
+      if (stepTimer3) clearTimeout(stepTimer3);
       setLoading(false);
     }
   };

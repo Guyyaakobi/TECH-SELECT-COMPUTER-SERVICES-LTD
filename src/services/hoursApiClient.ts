@@ -17,7 +17,7 @@ export async function fetchHoursApi<T = any>(
   const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
 
   const controller = new AbortController();
-  const timeoutMs = 25000;
+  const timeoutMs = 120000; // 120s timeout to allow full Gemini reasoning and SharePoint search
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
