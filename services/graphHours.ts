@@ -153,7 +153,30 @@ export function getGraphHoursConfig(env?: any) {
     ""
   ).trim();
 
+  // Support explicit HOURS_GRAPH_CLIENT_ID & HOURS_GRAPH_CLIENT_SECRET
+  let hoursClientId = (
+    envObj.HOURS_GRAPH_CLIENT_ID ||
+    p?.HOURS_GRAPH_CLIENT_ID ||
+    ""
+  ).trim();
+
+  let hoursClientSecret = (
+    envObj.HOURS_GRAPH_CLIENT_SECRET ||
+    p?.HOURS_GRAPH_CLIENT_SECRET ||
+    ""
+  ).trim();
+
+  // Auto-detect if user swapped client ID and client secret
+  // (e.g. client ID has "~" and client secret is a 36-char GUID)
+  if (hoursClientId.includes("~") && /^[0-9a-fA-F-]{36}$/.test(hoursClientSecret)) {
+    const tmp = hoursClientId;
+    hoursClientId = hoursClientSecret;
+    hoursClientSecret = tmp;
+  }
+
+  // Fallback to AZURE_CLIENT_ID / CLIENT_ID if HOURS_GRAPH_* not provided
   const clientId = (
+    hoursClientId ||
     envObj.AZURE_CLIENT_ID ||
     envObj.CLIENT_ID ||
     p?.AZURE_CLIENT_ID ||
@@ -162,6 +185,7 @@ export function getGraphHoursConfig(env?: any) {
   ).trim();
 
   const clientSecret = (
+    hoursClientSecret ||
     envObj.AZURE_CLIENT_SECRET ||
     envObj.CLIENT_SECRET ||
     p?.AZURE_CLIENT_SECRET ||
@@ -193,6 +217,7 @@ export function getGraphHoursConfig(env?: any) {
 
 /**
  * Obtain Microsoft Graph access token using existing client credentials connection
+ * with resilient fallback across credential pairs.
  */
 export async function getGraphAccessToken(env?: any): Promise<string> {
   const now = Date.now();
@@ -200,45 +225,94 @@ export async function getGraphAccessToken(env?: any): Promise<string> {
     return cachedGraphToken.token;
   }
 
+  const envObj = (env || {}) as any;
+  const p = typeof process !== "undefined" ? process?.env : {};
   const { credentials } = getGraphHoursConfig(env);
-  if (!credentials.tenantId || !credentials.clientId || !credentials.clientSecret) {
+
+  if (!credentials.tenantId) {
     throw new Error(
-      "חסרה הגדרת חיבור Microsoft Graph בשרת (TENANT_ID, CLIENT_ID, CLIENT_SECRET)"
+      "חסרה הגדרת מזהה דייר Microsoft Graph בשרת (TENANT_ID או AZURE_TENANT_ID)"
     );
   }
 
-  const tokenUrl = `https://login.microsoftonline.com/${encodeURIComponent(credentials.tenantId)}/oauth2/v2.0/token`;
-  const bodyParams = new URLSearchParams({
-    client_id: credentials.clientId,
-    client_secret: credentials.clientSecret,
-    scope: "https://graph.microsoft.com/.default",
-    grant_type: "client_credentials",
-  });
+  // Build candidate pairs to try
+  const candidates: Array<{ clientId: string; clientSecret: string; label: string }> = [];
 
-  const res = await fetch(tokenUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: bodyParams.toString(),
-  });
-
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "");
-    throw new Error(`שגיאה בקבלת טוקן Microsoft Graph (${res.status}): ${errText}`);
+  // Candidate 1: Preferred Hours credentials from config
+  if (credentials.clientId && credentials.clientSecret) {
+    candidates.push({
+      clientId: credentials.clientId,
+      clientSecret: credentials.clientSecret,
+      label: "HOURS_GRAPH credentials",
+    });
   }
 
-  const data: any = await res.json();
-  const token = data?.access_token;
-  if (!token) {
-    throw new Error("לא התקבל access_token מ-Microsoft Entra ID");
+  // Candidate 2: Server default CLIENT_ID / CLIENT_SECRET
+  const serverClientId = (envObj.CLIENT_ID || p?.CLIENT_ID || "").trim();
+  const serverClientSecret = (envObj.CLIENT_SECRET || p?.CLIENT_SECRET || "").trim();
+  if (
+    serverClientId &&
+    serverClientSecret &&
+    (serverClientId !== credentials.clientId || serverClientSecret !== credentials.clientSecret)
+  ) {
+    candidates.push({
+      clientId: serverClientId,
+      clientSecret: serverClientSecret,
+      label: "Server default CLIENT_ID/SECRET",
+    });
   }
 
-  const expiresInSec = Number(data?.expires_in) || 3599;
-  cachedGraphToken = {
-    token,
-    expiresAt: now + expiresInSec * 1000,
-  };
+  // Candidate 3: Inverted credentials in case client_id and secret were supplied inverted
+  if (credentials.clientId && credentials.clientSecret) {
+    candidates.push({
+      clientId: credentials.clientSecret,
+      clientSecret: credentials.clientId,
+      label: "Inverted credentials candidate",
+    });
+  }
 
-  return token;
+  let lastError = "";
+
+  for (const cand of candidates) {
+    try {
+      const tokenUrl = `https://login.microsoftonline.com/${encodeURIComponent(credentials.tenantId)}/oauth2/v2.0/token`;
+      const bodyParams = new URLSearchParams({
+        client_id: cand.clientId,
+        client_secret: cand.clientSecret,
+        scope: "https://graph.microsoft.com/.default",
+        grant_type: "client_credentials",
+      });
+
+      const res = await fetch(tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: bodyParams.toString(),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => "");
+        lastError = `[${cand.label}] HTTP ${res.status}: ${errText}`;
+        console.warn(`[getGraphAccessToken] Failed candidate ${cand.label}:`, lastError);
+        continue;
+      }
+
+      const data: any = await res.json();
+      const token = data?.access_token;
+      if (token) {
+        const expiresInSec = Number(data?.expires_in) || 3599;
+        cachedGraphToken = {
+          token,
+          expiresAt: now + expiresInSec * 1000,
+        };
+        return token;
+      }
+    } catch (err: any) {
+      lastError = err?.message || String(err);
+      console.warn(`[getGraphAccessToken] Error testing candidate ${cand.label}:`, lastError);
+    }
+  }
+
+  throw new Error(`שגיאה בקבלת טוקן Microsoft Graph מ-Microsoft Entra ID: ${lastError}`);
 }
 
 /**
@@ -316,6 +390,12 @@ export async function resolveSharePointDrive(env?: any): Promise<{ siteId: strin
   const siteRes = await fetchGraph(siteUrl, { method: "GET" }, env);
   if (!siteRes.ok) {
     const err = await siteRes.text().catch(() => "");
+    if (siteRes.status === 403) {
+      throw new Error(
+        `גישה נדחתה (403 Access Denied) לאתר SharePoint (${sharepointSite}). ` +
+        `יש לוודא שהאפליקציה ב-Azure Entra ID קיבלה הרשאת Application מסוג 'Sites.Read.All' או 'Sites.ReadWrite.All' ב-Microsoft Graph עם אישור מנהל (Admin Consent), או שנוספה הרשאת גישה ייעודית לאתר Customers.`
+      );
+    }
     throw new Error(`לא ניתן לגשת לאתר SharePoint (${sharepointSite}): ${err}`);
   }
   const siteData: any = await siteRes.json();
