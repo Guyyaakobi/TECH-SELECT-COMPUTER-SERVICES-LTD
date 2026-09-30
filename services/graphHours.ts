@@ -1024,56 +1024,73 @@ export async function findMonthTarget(
   const { hoursFolderName } = getGraphHoursConfig(env);
   const driveId = customerFolder.driveId || defaultDriveId;
 
-  // 2. Find "שעות עבודה" inside customer folder / library
-  let hoursFolderId = customerFolder.hoursFolderId;
-
-  if (!hoursFolderId) {
-    let custChildrenUrl = "";
-    if (customerFolder.type === "library") {
-      custChildrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/root/children?$top=100`;
-    } else {
-      custChildrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${customerFolder.id}/children?$top=100`;
-    }
-
-    const custChildrenRes = await fetchGraph(custChildrenUrl, { method: "GET" }, env);
-    if (!custChildrenRes.ok) {
-      const err = await custChildrenRes.text().catch(() => "");
-      throw new Error(`שגיאה בקריאת תוכן תיקיית הלקוח ${customerFolder.name}: ${err}`);
-    }
-
-    const custData: any = await custChildrenRes.json();
-    const custItems: any[] = custData.value || [];
-
-    // Look for folder named "שעות עבודה" (or containing "שעות")
-    const hoursFolder = custItems.find(
-      (item) => Boolean(item.folder) && (item.name === hoursFolderName || item.name.includes("שעות"))
-    );
-
-    if (!hoursFolder) {
-      return {
-        found: false,
-        message: `תיקיית "${hoursFolderName}" לא קיימת בתוך תיקיית הלקוח "${customerFolder.name}". (קיימות: ${custItems.map((i) => i.name).join(", ") || "אין פריטים"})`,
-        customerName: customerFolder.name,
-        requestedMonth: ym,
-        existingItems: custItems.map((i) => i.name),
-      };
-    }
-    hoursFolderId = hoursFolder.id;
+  // 2. Read children of customer folder / library
+  let custChildrenUrl = "";
+  if (customerFolder.type === "library") {
+    custChildrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/root/children?$top=100`;
+  } else {
+    custChildrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${customerFolder.id}/children?$top=100`;
   }
 
-  // 3. List children inside "שעות עבודה"
-  const hoursChildrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${hoursFolderId}/children?$top=200`;
-  const hoursChildrenRes = await fetchGraph(hoursChildrenUrl, { method: "GET" }, env);
-  if (!hoursChildrenRes.ok) {
-    const err = await hoursChildrenRes.text().catch(() => "");
-    throw new Error(`שגיאה בקריאת תוכן תיקיית "${hoursFolderName}": ${err}`);
+  const custChildrenRes = await fetchGraph(custChildrenUrl, { method: "GET" }, env);
+  if (!custChildrenRes.ok) {
+    const err = await custChildrenRes.text().catch(() => "");
+    throw new Error(`שגיאה בקריאת תוכן תיקיית הלקוח ${customerFolder.name}: ${err}`);
   }
 
-  const hoursData: any = await hoursChildrenRes.json();
-  const hoursItems: any[] = hoursData.value || [];
+  const custData: any = await custChildrenRes.json();
+  const custItems: any[] = custData.value || [];
+
+  // Accumulate all candidate files and items
+  const availableFiles: Array<{ fileId: string; fileName: string; webUrl?: string }> = [];
+  let hoursItems: any[] = [...custItems];
+
+  // A. Check files directly in customer folder / library root
+  for (const item of custItems) {
+    if (item.name.toLowerCase().endsWith(".xlsx") && !item.name.startsWith("~$")) {
+      recordFileDrive(item.id, driveId);
+      availableFiles.push({
+        fileId: item.id,
+        fileName: item.name,
+        webUrl: item.webUrl,
+      });
+    }
+  }
+
+  // B. Check if there is also a subfolder named "שעות עבודה" or containing "שעות"
+  const hoursFolder = custItems.find(
+    (item) => Boolean(item.folder) && (item.name === hoursFolderName || item.name.includes("שעות"))
+  );
+
+  if (hoursFolder) {
+    try {
+      const hoursChildrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${hoursFolder.id}/children?$top=200`;
+      const hoursChildrenRes = await fetchGraph(hoursChildrenUrl, { method: "GET" }, env);
+      if (hoursChildrenRes.ok) {
+        const hoursData: any = await hoursChildrenRes.json();
+        const subItems: any[] = hoursData.value || [];
+        hoursItems = [...subItems, ...hoursItems];
+        for (const item of subItems) {
+          if (item.name.toLowerCase().endsWith(".xlsx") && !item.name.startsWith("~$")) {
+            recordFileDrive(item.id, driveId);
+            if (!availableFiles.some((f) => f.fileId === item.id)) {
+              availableFiles.push({
+                fileId: item.id,
+                fileName: item.name,
+                webUrl: item.webUrl,
+              });
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn(`[findMonthTarget] Error reading subfolder ${hoursFolder.name}:`, err);
+    }
+  }
+
   const existingNames = hoursItems.map((i) => i.name);
 
-  // 4. DETECT naming pattern from existing items
+  // 3. DETECT naming pattern from existing items
   let detectedPattern = "YYYY-MM"; // default
   for (const name of existingNames) {
     if (/\b\d{4}[-.]\d{2}\b/.test(name)) {
@@ -1091,19 +1108,6 @@ export async function findMonthTarget(
     } else if (Object.values(HEBREW_MONTHS).some((arr) => arr.some((h) => name.includes(h)))) {
       detectedPattern = "HEBREW_MONTH_YYYY";
       break;
-    }
-  }
-
-  // Collect all available .xlsx files in "שעות עבודה" for manual selection
-  const availableFiles: Array<{ fileId: string; fileName: string; webUrl?: string }> = [];
-  for (const item of hoursItems) {
-    if (item.name.toLowerCase().endsWith(".xlsx") && !item.name.startsWith("~$")) {
-      recordFileDrive(item.id, driveId);
-      availableFiles.push({
-        fileId: item.id,
-        fileName: item.name,
-        webUrl: item.webUrl,
-      });
     }
   }
 
