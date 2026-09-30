@@ -251,11 +251,11 @@ export function buildEnrichedRowPayload(params: {
     project: effectiveProject,
     projectName: effectiveProject,
 
-    חתימה: effectiveContact ? `אושר ע"י ${effectiveContact}` : "אושר במקום",
-    "חתימת לקוח": effectiveContact ? `אושר ע"י ${effectiveContact}` : "אושר במקום",
-    סטטוס: "הושלם",
-    הערות: "הושלם בהצלחה",
-    notes: "הושלם בהצלחה",
+    חתימה: "",
+    "חתימת לקוח": "",
+    סטטוס: userOverride["סטטוס"] || "הושלם",
+    הערות: userOverride["הערות"] || "",
+    notes: userOverride["notes"] || "",
 
     ...userOverride,
   };
@@ -671,7 +671,7 @@ export async function processAssistantChat(
         properties: {
           query: {
             type: Type.STRING,
-            description: "Customer name or partial name in Hebrew or English (e.g., 'כהן', 'אלקטרה', 'גולד')",
+            description: "Customer name or partial name in Hebrew or English (e.g. as mentioned by user)",
           },
         },
         required: ["query"],
@@ -854,6 +854,8 @@ EXTRACTION RULES:
 
 CRITICAL REQUIREMENT - DYNAMIC COLUMNS PER FILE:
 Fields are mapped to the headers of the chosen worksheet by meaning. If a field has no column in the file (e.g. no ticket number column), it will NOT be written and marked as not existing in file.
+NEVER write to signature or approval columns (e.g. "חתימת לקוח", "אישור") - always leave them strictly empty!
+If the entry type has no matching tab in that customer's file, ask the employee which real tab to use from the existing tabs in the file.
 
 MANDATORY WORKFLOW:
 1. Ask ONLY for missing mandatory fields (customer, date, duration, description) – all in ONE question.
@@ -862,7 +864,7 @@ MANDATORY WORKFLOW:
    NOTE: propose_entries AUTOMATICALLY finds the customer's month Excel file in SharePoint, inspects sheet structure and real tabs, and checks duplicates.
 4. Show the summary and ask "מאשר להזין?".
 5. CRITICAL RULE: NEVER call write_rows before explicit confirmation from the employee (such as "אשר והזן", "כן", "מאשר", "תזין", "מאשרת"). Nothing is written until confirmation!
-6. Accept corrections in free speech ("תשנה לחצי שעה", "זה היה אצל אלקטרה", "התחלתי ב-10", "תעביר לטאב פרויקטים") and show the updated summary card again via propose_entries.
+6. Accept corrections in free speech ("תשנה לחצי שעה", "זה היה אצל לקוח אחר", "התחלתי ב-10", "תעביר לטאב פרויקטים") and show the updated summary card again via propose_entries.
 7. When the user confirms ("כן", "מאשר", "תזין"), call write_rows with all fields populated, then state "נרשם ✓" with target file and row.`;
 
   // Build Conversation Contents for Gemini

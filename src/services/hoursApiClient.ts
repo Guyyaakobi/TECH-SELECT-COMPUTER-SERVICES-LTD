@@ -272,4 +272,53 @@ export async function apiAssistantChat(req: AssistantChatRequest): Promise<Assis
   });
 }
 
+export interface ClassificationTestWorksheet {
+  name: string;
+  detectedType: "tickets" | "onsite" | "project" | "other_or_summary";
+  typeConfidence: number;
+  typeReason: string;
+  isDataTab: boolean;
+  isTable: boolean;
+  tableName?: string;
+  totalDataRows: number;
+  headers: string[];
+  headerMappings: Array<{
+    colIdx: number;
+    headerName: string;
+    mappedField: string | null;
+  }>;
+  unmappedRequiredFields: string[];
+  isLowConfidence: boolean;
+}
+
+export interface ClassificationCustomerResult {
+  customerName: string;
+  found: boolean;
+  fileName?: string;
+  filePath?: string;
+  webUrl?: string;
+  message?: string;
+  existingFiles?: string[];
+  worksheets?: ClassificationTestWorksheet[];
+}
+
+export interface ClassificationTestResponse {
+  month: string;
+  totalCustomersChecked: number;
+  results: ClassificationCustomerResult[];
+}
+
+/**
+ * 10. Real Classification Test in Admin Panel
+ */
+export async function apiTestClassification(
+  customerNames?: string[],
+  month?: string
+): Promise<ClassificationTestResponse> {
+  return fetchHoursApi<ClassificationTestResponse>(`/api/hours/admin/test-classification`, {
+    method: "POST",
+    body: JSON.stringify({ customerNames, month }),
+  });
+}
+
 

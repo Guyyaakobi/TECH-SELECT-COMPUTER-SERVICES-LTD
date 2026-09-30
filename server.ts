@@ -13,6 +13,7 @@ import {
   findCustomer,
   findMonthTarget,
   readSheetStructure,
+  inspectWorkbookFile,
   writeRows,
   findDuplicates,
   undoRow,
@@ -4487,6 +4488,108 @@ ${!isAteraCustomer ? `
       } catch (err: any) {
         console.error("[POST /api/hours/diagnostics/refresh] Error:", err);
         return res.status(500).json({ error: err?.message || "שגיאה ברענון טוקן Graph" });
+      }
+    });
+
+    // 8.2 POST /api/hours/admin/test-classification: Real classification test in admin panel
+    hoursRouter.post("/admin/test-classification", async (req, res) => {
+      try {
+        const user = (req as any).user;
+        if (!isHoursAdmin(user?.email, process.env)) {
+          return res.status(403).json({ error: "גישה נדחתה: פעולה זו זמינה למנהלי מערכת בלבד" });
+        }
+        let { customerNames, month } = req.body || {};
+        if (!customerNames || !Array.isArray(customerNames) || customerNames.length === 0) {
+          const list = await listCustomers(process.env);
+          customerNames = list.map((c) => c.name);
+        }
+        const today = new Date();
+        const effectiveMonth = month || `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
+
+        const results: any[] = [];
+        for (const customerName of customerNames) {
+          try {
+            const target = await findMonthTarget(customerName, effectiveMonth, process.env);
+            if (!target.found || !target.fileId) {
+              results.push({
+                customerName,
+                found: false,
+                message: target.message || "לא נמצא קובץ לחודש המבוקש",
+                existingFiles: target.existingItems || [],
+              });
+              continue;
+            }
+
+            const inspection = await inspectWorkbookFile(target.fileId, process.env, target.driveId, customerName);
+
+            const worksheets = (inspection.worksheets || []).map((w) => {
+              const unmappedRequiredFields: string[] = [];
+              if (w.isDataTab) {
+                if (w.fieldToColIndex.date === undefined) unmappedRequiredFields.push("תאריך");
+                if (w.fieldToColIndex.employee === undefined) unmappedRequiredFields.push("שם טכנאי/עובד");
+                if (
+                  w.fieldToColIndex.duration_hours === undefined &&
+                  (w.fieldToColIndex.start_time === undefined || w.fieldToColIndex.end_time === undefined)
+                ) {
+                  unmappedRequiredFields.push("שעות/משך זמן");
+                }
+                if (w.fieldToColIndex.description === undefined) unmappedRequiredFields.push("תיאור/מהות פעילות");
+              }
+
+              const isLowConfidence = w.isDataTab
+                ? (w.typeConfidence < 0.6 || unmappedRequiredFields.length > 0)
+                : false;
+
+              const headerMappings = (w.headers || []).map((headerName, colIdx) => {
+                const mappedField = w.colIndexToField?.[colIdx] || null;
+                return {
+                  colIdx,
+                  headerName,
+                  mappedField,
+                };
+              });
+
+              return {
+                name: w.name,
+                detectedType: w.detectedType,
+                typeConfidence: w.typeConfidence,
+                typeReason: w.typeReason,
+                isDataTab: w.isDataTab,
+                isTable: w.isTable,
+                tableName: w.tableName,
+                totalDataRows: w.totalDataRows,
+                headers: w.headers,
+                headerMappings,
+                unmappedRequiredFields,
+                isLowConfidence,
+              };
+            });
+
+            results.push({
+              customerName,
+              found: true,
+              fileName: target.fileName,
+              filePath: target.filePath,
+              webUrl: target.webUrl || inspection.webUrl || "",
+              worksheets,
+            });
+          } catch (custErr: any) {
+            results.push({
+              customerName,
+              found: false,
+              message: custErr?.message || "שגיאה בבדיקת קובץ הלקוח",
+            });
+          }
+        }
+
+        return res.json({
+          month: effectiveMonth,
+          totalCustomersChecked: results.length,
+          results,
+        });
+      } catch (err: any) {
+        console.error("[POST /api/hours/admin/test-classification] Error:", err);
+        return res.status(500).json({ error: err?.message || "שגיאה בבדיקת מבנה קבצים" });
       }
     });
 

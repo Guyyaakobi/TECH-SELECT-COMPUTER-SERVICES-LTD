@@ -100,6 +100,8 @@ export interface WorkbookInspectionResult {
   fileId: string;
   fileName: string;
   driveId: string;
+  webUrl?: string;
+  customerName?: string;
   lastModified: string;
   worksheets: InspectedWorksheet[];
   dataTabs: InspectedWorksheet[];
@@ -1694,6 +1696,7 @@ export async function inspectWorkbookFile(
   // Get file metadata for lastModifiedDateTime
   let lastModified = "";
   let fileName = "hours.xlsx";
+  let webUrl = "";
 
   try {
     const itemUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}?$select=id,name,lastModifiedDateTime,webUrl`;
@@ -1702,6 +1705,7 @@ export async function inspectWorkbookFile(
       const itemData: any = await itemRes.json();
       lastModified = itemData.lastModifiedDateTime || "";
       fileName = itemData.name || fileName;
+      webUrl = itemData.webUrl || "";
     }
   } catch (itemErr) {
     console.warn("[inspectWorkbookFile] item metadata warning:", itemErr);
@@ -1888,6 +1892,8 @@ export async function inspectWorkbookFile(
     fileId,
     fileName,
     driveId,
+    webUrl,
+    customerName,
     lastModified,
     worksheets: inspectedSheets,
     dataTabs,
@@ -2030,12 +2036,19 @@ export function chooseTargetWorksheet(
     };
   }
 
-  // Fallback to first data tab
+  // If the entry type has no matching tab in that customer's file, ask the employee which real tab to use
   const defaultTab = dataTabs[0];
+  const typeHebrewNames: Record<TabSemanticType, string> = {
+    tickets: "קריאות שירות / טיקטים",
+    onsite: "ביקור באתר",
+    project: "פרויקטים",
+    other_or_summary: "פעילות",
+  };
+  const categoryLabel = typeHebrewNames[targetCategory] || targetCategory;
   return {
     selectedTab: defaultTab,
-    needsUserChoice: dataTabs.length > 1,
-    choiceReason: `נבחר הטאב הראשון "${defaultTab.name}"`,
+    needsUserChoice: true,
+    choiceReason: `לא נמצא טאב מותאם עבור "${categoryLabel}" בקובץ זה. אנא בחר לאיזה טאב לרשום מבין הטאבים הקיימים: ${dataTabs.map((t) => `"${t.name}"`).join(", ")}`,
     availableTabs: dataTabs.map((t) => ({
       name: t.name,
       detectedType: t.detectedType,
@@ -2103,12 +2116,12 @@ export function buildRowValuesFromSemanticMapping(
   }
 
   if (fieldToColIndex.signature_or_approval !== undefined) {
-    const contact = rowObj.contactPerson || rowObj["איש קשר"];
-    values[fieldToColIndex.signature_or_approval] = contact ? `אושר ע"י ${contact}` : "אושר במקום";
+    // Rule: Never write to signature/approval columns (e.g. 'חתימת לקוח') – always leave empty
+    values[fieldToColIndex.signature_or_approval] = "";
   }
 
   if (fieldToColIndex.notes !== undefined) {
-    values[fieldToColIndex.notes] = rowObj.notes || rowObj["הערות"] || "הושלם בהצלחה";
+    values[fieldToColIndex.notes] = rowObj.notes || rowObj["הערות"] || "";
   }
 
   return values;
@@ -2222,35 +2235,10 @@ export async function readSheetStructure(
   const usedRangeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/usedRange`;
   const usedRangeRes = await fetchGraph(usedRangeUrl, { method: "GET" }, env);
   if (!usedRangeRes.ok) {
-    // If sheet is completely empty, provide tab-appropriate default headers:
-    const sName = (sheetName || targetWorkType || "").toLowerCase();
-    let defaultHeaders = ["תאריך", "יום", "מספר קריאה", "שם הטכנאי", "שעת התחלה", "שעת סיום", "סה״כ שעות", "איש קשר", "מהות הקריאה"];
-    if (sName.includes("ביקור") || sName.includes("אתר")) {
-      defaultHeaders = ["תאריך", "יום", "שם טכנאי", "שעת הגעה", "שעת עזיבה", "סה״כ שעות", "איש קשר", "מהות הקריאה", "חתימת לקוח"];
-    } else if (sName.includes("פרויקט") || sName.includes("פרוייקט")) {
-      defaultHeaders = ["תאריך", "יום", "שם הפרויקט", "שם טכנאי", "שעת התחלה", "שעת סיום", "שעות", "איש קשר", "פירוט ביצוע"];
-    }
-
-    const endLetter = indexToColumnLetter(defaultHeaders.length - 1);
-    return {
-      fileId,
-      isTable: false,
-      sheetName,
-      sheetId,
-      headers: defaultHeaders,
-      last5Rows: [],
-      totalDataRows: 0,
-      startColLetter: "A",
-      nextEmptyRowNumber: 2,
-      nextEmptyRowAddress: `A2:${endLetter}2`,
-      hasTotalsRow: false,
-      formats: {
-        dateFormat: "YYYY-MM-DD",
-        timeFormat: "HH:mm",
-        hoursFormat: "decimal",
-        formulaColumns: [],
-      },
-    };
+    const errText = await usedRangeRes.text().catch(() => "");
+    throw new Error(
+      `שגיאה בקריאת נתוני גיליון "${sheetName}" מ-SharePoint (${usedRangeRes.status}): ${errText || "הגיליון אינו נגיש או שאינו מכיל טווח נתונים"}`
+    );
   }
 
   const rangeData: any = await usedRangeRes.json();
@@ -2304,18 +2292,10 @@ export async function readSheetStructure(
     headers = headers.slice(0, lastNonEmptyCol + 1);
   }
 
-  // If middle headers are empty, fill with meaningful fallback
-  headers = headers.map((h, idx) => h || `עמודה ${idx + 1}`);
-
   if (headers.length === 0) {
-    const sName = (sheetName || targetWorkType || "").toLowerCase();
-    if (sName.includes("ביקור") || sName.includes("אתר")) {
-      headers = ["תאריך", "יום", "שם טכנאי", "שעת הגעה", "שעת עזיבה", "סה״כ שעות", "איש קשר", "מהות הקריאה", "חתימת לקוח"];
-    } else if (sName.includes("פרויקט") || sName.includes("פרוייקט")) {
-      headers = ["תאריך", "יום", "שם הפרויקט", "שם טכנאי", "שעת התחלה", "שעת סיום", "שעות", "איש קשר", "פירוט ביצוע"];
-    } else {
-      headers = ["תאריך", "יום", "מספר קריאה", "שם הטכנאי", "שעת התחלה", "שעת סיום", "סה״כ שעות", "איש קשר", "מהות הקריאה"];
-    }
+    throw new Error(
+      `לא נמצאו כותרות עמודות בגיליון "${sheetName}". הקובץ או הגיליון אינם מכילים שורת כותרות תקינה להזנת נתונים.`
+    );
   }
 
   const actualHeaderRowNumber = startRowIndex + headerRowOffset;
@@ -2976,13 +2956,13 @@ export function resolveCellValueForHeader(
 
   // M. NOTES (הערות)
   if (isNotesHeader(normHeader)) {
-    return rowObj["הערות"] || rowObj["notes"] || rowObj["remark"] || "הושלם בהצלחה";
+    return rowObj["הערות"] || rowObj["notes"] || rowObj["remark"] || "";
   }
 
   // N. SIGNATURE / APPROVAL / STATUS (חתימה / סטטוס)
   if (isSignatureHeader(normHeader)) {
-    const contact = rowObj["איש קשר"] || rowObj["contactPerson"] || "";
-    return rowObj["חתימה"] || (contact ? `אושר ע"י ${contact}` : "אושר במקום");
+    // Rule: Never write to signature/approval columns (e.g. "חתימת לקוח") – always leave empty
+    return "";
   }
   if (isStatusHeader(normHeader)) {
     return rowObj["סטטוס"] || "הושלם";

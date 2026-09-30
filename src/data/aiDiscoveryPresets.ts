@@ -23,7 +23,7 @@ export const AI_DISCOVERY_PRESETS: AIDiscoveryPreset[] = [
     descriptionEn: 'Tech company facing communication overload, internal knowledge fragmentation in Jira/Notion, and sales outreach automation.',
     iconName: 'Code2',
     data: {
-      fullName: 'רועי שחר',
+      fullName: 'רועי שפירא',
       email: 'roi@innovatetech.io',
       phone: '054-8899123',
       companyName: 'Innovate SaaS Ltd',

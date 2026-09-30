@@ -31,7 +31,10 @@ import {
   apiUndoRow,
   apiFindDuplicates,
   apiGetHoursDiagnostics,
+  apiTestClassification,
   type HoursDiagnosticsData,
+  type ClassificationCustomerResult,
+  type ClassificationTestWorksheet,
 } from "../../services/hoursApiClient";
 
 interface HoursTestPanelProps {
@@ -91,6 +94,50 @@ export const HoursTestPanel: React.FC<HoursTestPanelProps> = ({ currentUser }) =
 
   // Global error box
   const [panelError, setPanelError] = useState<string | null>(null);
+
+  // Real Classification Test (Requirement 2: בדוק מבנה קבצים)
+  const [testMonth, setTestMonth] = useState<string>(currentYm);
+  const [selectedCustNames, setSelectedCustNames] = useState<string[]>([]);
+  const [classFilter, setClassFilter] = useState<string>("");
+  const [classLoading, setClassLoading] = useState<boolean>(false);
+  const [classResults, setClassResults] = useState<ClassificationCustomerResult[] | null>(null);
+  const [classError, setClassError] = useState<string | null>(null);
+  const [expandedTabs, setExpandedTabs] = useState<Record<string, boolean>>({});
+
+  const toggleTabExpanded = (key: string) => {
+    setExpandedTabs((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleToggleCustomer = (name: string) => {
+    setSelectedCustNames((prev) =>
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name]
+    );
+  };
+
+  const handleSelectAllCustomers = () => {
+    const all = (customersResult || []).map((c: any) => c.name || c.customer?.name).filter(Boolean);
+    setSelectedCustNames(all);
+  };
+
+  const handleClearSelectedCustomers = () => {
+    setSelectedCustNames([]);
+  };
+
+  const handleRunClassificationTest = async () => {
+    try {
+      setClassLoading(true);
+      setClassError(null);
+      const res = await apiTestClassification(
+        selectedCustNames.length > 0 ? selectedCustNames : undefined,
+        testMonth
+      );
+      setClassResults(res.results);
+    } catch (err: any) {
+      setClassError(err?.message || "שגיאה בביצוע בדיקת מבנה קבצים");
+    } finally {
+      setClassLoading(false);
+    }
+  };
 
   const handleFetchDiagnostics = async (forceRefresh = false) => {
     try {
@@ -516,6 +563,416 @@ export const HoursTestPanel: React.FC<HoursTestPanelProps> = ({ currentUser }) =
                 </div>
               </div>
             ) : null}
+          </section>
+
+          {/* REAL CLASSIFICATION TEST IN THE ADMIN PANEL (Requirement 2) */}
+          <section className="p-4 sm:p-5 rounded-xl bg-gradient-to-r from-cyan-950/30 via-slate-900/90 to-blue-950/30 border border-cyan-500/40 space-y-4 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-300">
+                  <FileSpreadsheet className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span>בדיקת מבנה קבצים וסיווג גיליונות (Live Classification Test)</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                      Real Customers Only
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    קריאת קבצים אמיתיים מ-SharePoint עבור לקוחות אמיתיים, הצגת שמות גיליונות מדויקים מ-Graph, סיווג סמנטי ומיפוי עמודות
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Button: בדוק מבנה קבצים */}
+              <button
+                type="button"
+                onClick={handleRunClassificationTest}
+                disabled={classLoading}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-cyan-950/40 transition-all cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {classLoading ? (
+                  <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                ) : (
+                  <Sparkles className="w-4 h-4 text-cyan-200" />
+                )}
+                <span>בדוק מבנה קבצים</span>
+              </button>
+            </div>
+
+            {/* Picker Controls: Month + Customers Picker */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* Month Picker */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>חודש לבדיקה (YYYY-MM):</span>
+                </label>
+                <input
+                  type="text"
+                  value={testMonth}
+                  onChange={(e) => setTestMonth(e.target.value)}
+                  placeholder="2026-09"
+                  className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-cyan-400"
+                />
+              </div>
+
+              {/* Customer Filter & Selection */}
+              <div className="md:col-span-2 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                    <Folder className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>בחירת לקוחות אמיתיים מ-SharePoint:</span>
+                    <span className="text-[10px] text-cyan-400 font-mono">
+                      ({selectedCustNames.length > 0 ? `נבחרו ${selectedCustNames.length}` : "כל הלקוחות"})
+                    </span>
+                  </label>
+                  <div className="flex items-center gap-2 text-[10px]">
+                    <button
+                      type="button"
+                      onClick={handleSelectAllCustomers}
+                      className="text-cyan-400 hover:text-cyan-300 underline cursor-pointer"
+                    >
+                      בחר הכל
+                    </button>
+                    <span className="text-slate-600">|</span>
+                    <button
+                      type="button"
+                      onClick={handleClearSelectedCustomers}
+                      className="text-slate-400 hover:text-white underline cursor-pointer"
+                    >
+                      נקה בחירה (בדוק הכל)
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={classFilter}
+                      onChange={(e) => setClassFilter(e.target.value)}
+                      placeholder="סנן מתוך רשימת הלקוחות האמיתיים..."
+                      className="w-full bg-black/50 border border-white/10 rounded-xl px-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-cyan-400"
+                    />
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-500" />
+                  </div>
+                </div>
+
+                {/* Available Customers Checklist / Badges */}
+                {customersResult && customersResult.length > 0 && (
+                  <div className="max-h-32 overflow-y-auto p-2 bg-black/40 border border-white/5 rounded-xl flex flex-wrap gap-1.5">
+                    {customersResult
+                      .map((c: any) => c.name || c.customer?.name)
+                      .filter(Boolean)
+                      .filter((name: string) => !classFilter.trim() || name.toLowerCase().includes(classFilter.toLowerCase()))
+                      .map((name: string) => {
+                        const isChecked = selectedCustNames.includes(name);
+                        return (
+                          <button
+                            key={name}
+                            type="button"
+                            onClick={() => handleToggleCustomer(name)}
+                            className={`px-2 py-1 rounded-lg text-[10px] border transition-all cursor-pointer flex items-center gap-1.5 ${
+                              isChecked
+                                ? "bg-cyan-500/25 border-cyan-400 text-cyan-200 font-bold"
+                                : "bg-white/[0.03] border-white/10 text-slate-400 hover:text-slate-200 hover:bg-white/[0.06]"
+                            }`}
+                          >
+                            <span className={`w-2.5 h-2.5 rounded-full border flex items-center justify-center ${
+                              isChecked ? "bg-cyan-400 border-cyan-300" : "border-slate-500"
+                            }`}>
+                              {isChecked && <Check className="w-2 h-2 text-black stroke-[3]" />}
+                            </span>
+                            <span>{name}</span>
+                          </button>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Error Message if any */}
+            {classError && (
+              <div className="p-3 rounded-xl bg-red-950/40 border border-red-500/40 text-xs text-red-300 flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                <span>{classError}</span>
+              </div>
+            )}
+
+            {/* Loading indicator */}
+            {classLoading && (
+              <div className="p-8 rounded-xl bg-black/30 border border-white/5 flex flex-col items-center justify-center gap-3 text-slate-300 text-xs">
+                <RefreshCw className="w-6 h-6 animate-spin text-cyan-400" />
+                <p className="font-semibold">בודק מבנה קבצים אמיתיים מ-SharePoint עבור הלקוחות שנבחרו...</p>
+                <p className="text-[11px] text-slate-400">טוען גליונות עבודה, כותרות עמודות, סיווג סמנטי ומיפוי שדות</p>
+              </div>
+            )}
+
+            {/* Classification Results */}
+            {classResults && (
+              <div className="space-y-4 pt-2">
+                <div className="flex items-center justify-between border-b border-white/10 pb-2 text-xs">
+                  <div className="flex items-center gap-2 text-slate-300 font-semibold">
+                    <span>תוצאות בדיקת מבנה קבצים:</span>
+                    <span className="bg-cyan-500/20 text-cyan-300 px-2 py-0.5 rounded font-mono text-[11px]">
+                      {classResults.length} לקוחות נבדקו לחודש {testMonth}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setClassResults(null)}
+                    className="text-[11px] text-slate-400 hover:text-white underline cursor-pointer"
+                  >
+                    נקה תוצאות
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  {classResults.map((custRes, cIdx) => (
+                    <div
+                      key={cIdx}
+                      className="p-4 rounded-xl bg-black/40 border border-white/10 space-y-3"
+                    >
+                      {/* Customer Header */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-2.5">
+                        <div className="flex items-center gap-2">
+                          <Folder className="w-4 h-4 text-amber-400" />
+                          <span className="font-bold text-white text-sm">
+                            שם תיקיית לקוח: {custRes.customerName}
+                          </span>
+                        </div>
+
+                        {custRes.found ? (
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-slate-400">שם קובץ:</span>
+                            <span className="font-mono text-cyan-300 font-semibold">
+                              {custRes.fileName}
+                            </span>
+                            {custRes.webUrl && (
+                              <a
+                                href={custRes.webUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-2.5 py-1 rounded bg-cyan-600/20 hover:bg-cyan-600/40 text-cyan-300 border border-cyan-500/30 flex items-center gap-1 text-[11px] underline"
+                              >
+                                <span>פתח ב-Excel Online</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
+                            לא נמצא קובץ לחודש זה
+                          </span>
+                        )}
+                      </div>
+
+                      {/* If file not found */}
+                      {!custRes.found && (
+                        <div className="p-3 rounded-lg bg-amber-950/20 border border-amber-500/30 text-xs text-amber-300 space-y-1.5">
+                          <p>{custRes.message || "לא נמצא קובץ מתאים לחודש המבוקש בתיקיית 'שעות עבודה'."}</p>
+                          {custRes.existingFiles && custRes.existingFiles.length > 0 && (
+                            <div>
+                              <span className="text-slate-400 text-[10px] block mb-1">
+                                קבצים קיימים בתיקייה:
+                              </span>
+                              <div className="flex flex-wrap gap-1">
+                                {custRes.existingFiles.map((f, fIdx) => (
+                                  <span
+                                    key={fIdx}
+                                    className="px-2 py-0.5 rounded bg-white/5 font-mono text-[10px] text-slate-300"
+                                  >
+                                    {f}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Worksheets list */}
+                      {custRes.found && custRes.worksheets && (
+                        <div className="space-y-3">
+                          <div className="text-[11px] text-slate-400 font-semibold">
+                            גליונות עבודה שהוחזרו בדיוק על ידי Graph ({custRes.worksheets.length} גיליונות):
+                          </div>
+
+                          <div className="grid grid-cols-1 gap-2.5">
+                            {custRes.worksheets.map((sheet, sIdx) => {
+                              const tabKey = `${cIdx}-${sIdx}`;
+                              const isExpanded = expandedTabs[tabKey] !== false; // Default expanded
+
+                              const typeLabels: Record<string, { label: string; color: string }> = {
+                                tickets: { label: "קריאות שירות / טיקטים", color: "bg-blue-500/20 text-blue-300 border-blue-500/30" },
+                                onsite: { label: "ביקור באתר", color: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30" },
+                                project: { label: "פרויקטים", color: "bg-purple-500/20 text-purple-300 border-purple-500/30" },
+                                other_or_summary: { label: "סיכום / אחר (אינו טאב נתונים)", color: "bg-slate-700/40 text-slate-400 border-slate-600" },
+                              };
+                              const typeInfo = typeLabels[sheet.detectedType] || {
+                                label: sheet.detectedType,
+                                color: "bg-slate-800 text-slate-300 border-slate-700",
+                              };
+
+                              // Red alert conditions (Rule 2):
+                              // "Mark in red any tab classified with low confidence or any unmapped required field."
+                              const isRed = sheet.isLowConfidence || (sheet.isDataTab && sheet.unmappedRequiredFields.length > 0);
+
+                              return (
+                                <div
+                                  key={sIdx}
+                                  className={`p-3.5 rounded-xl border text-xs transition-all ${
+                                    isRed
+                                      ? "bg-red-950/30 border-red-500/60 shadow-[0_0_12px_rgba(239,68,68,0.25)]"
+                                      : "bg-white/[0.02] border-white/10"
+                                  }`}
+                                >
+                                  {/* Tab Header row */}
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-bold text-white text-xs font-mono bg-white/5 px-2 py-0.5 rounded border border-white/10">
+                                        שם גיליון: "{sheet.name}"
+                                      </span>
+
+                                      <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold ${typeInfo.color}`}>
+                                        סוג שזוהה: {typeInfo.label}
+                                      </span>
+
+                                      <span className={`text-[10px] px-2 py-0.5 rounded font-mono ${
+                                        sheet.typeConfidence >= 0.8
+                                          ? "bg-emerald-500/20 text-emerald-300"
+                                          : sheet.typeConfidence >= 0.6
+                                          ? "bg-amber-500/20 text-amber-300"
+                                          : "bg-red-500/25 text-red-300 font-bold border border-red-500/40"
+                                      }`}>
+                                        רמת ביטחון: {Math.round(sheet.typeConfidence * 100)}%
+                                      </span>
+
+                                      {sheet.isDataTab && (
+                                        <span className="text-[10px] text-slate-400 font-mono">
+                                          ({sheet.totalDataRows} שורות נתונים)
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleTabExpanded(tabKey)}
+                                      className="text-[10px] text-cyan-400 hover:text-cyan-300 underline cursor-pointer flex items-center gap-1 self-start sm:self-auto"
+                                    >
+                                      <span>{isExpanded ? "הסתר מיפוי עמודות" : "הצג מיפוי עמודות"}</span>
+                                      {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                    </button>
+                                  </div>
+
+                                  {/* Red Warning Banner for Low Confidence or Unmapped Required Fields */}
+                                  {isRed && (
+                                    <div className="mt-2.5 p-2.5 rounded-lg bg-red-950/60 border border-red-500/60 text-xs text-red-200 space-y-1">
+                                      <div className="flex items-center gap-1.5 font-bold text-red-400">
+                                        <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                                        <span>התראה: רמת ביטחון נמוכה או שדות חובה שטרם מופו בגיליון זה</span>
+                                      </div>
+                                      {sheet.typeConfidence < 0.6 && (
+                                        <p className="text-[11px] text-red-300">
+                                          &bull; רמת ביטחון נמוכה ({Math.round(sheet.typeConfidence * 100)}%): {sheet.typeReason}
+                                        </p>
+                                      )}
+                                      {sheet.unmappedRequiredFields.length > 0 && (
+                                        <p className="text-[11px] text-red-300 font-semibold">
+                                          &bull; שדות חובה שלא מופו:{" "}
+                                          <span className="text-white underline font-bold">
+                                            {sheet.unmappedRequiredFields.join(", ")}
+                                          </span>
+                                        </p>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Header -> Field Mapping Table */}
+                                  {isExpanded && sheet.headerMappings && sheet.headerMappings.length > 0 && (
+                                    <div className="mt-3 pt-2.5 border-t border-white/5 space-y-1.5">
+                                      <div className="text-[10px] text-slate-400 font-semibold flex items-center justify-between">
+                                        <span>מיפוי כותרת עמודה &larr; שדה סמנטי (Header &rarr; Field Mapping):</span>
+                                        <span className="font-mono text-[9px] text-slate-500">
+                                          סה״כ {sheet.headerMappings.length} עמודות
+                                        </span>
+                                      </div>
+
+                                      <div className="overflow-x-auto">
+                                        <table className="w-full text-right text-[11px] border-collapse">
+                                          <thead>
+                                            <tr className="border-b border-white/10 text-slate-400 text-[10px]">
+                                              <th className="py-1 px-2">עמודה</th>
+                                              <th className="py-1 px-2">כותרת מדויקת ב-Excel</th>
+                                              <th className="py-1 px-2">שדה מנוע שמופה</th>
+                                              <th className="py-1 px-2">הערת מנוע</th>
+                                            </tr>
+                                          </thead>
+                                          <tbody>
+                                            {sheet.headerMappings.map((hm, hIdx) => {
+                                              const colLetter = String.fromCharCode(65 + hm.colIdx);
+                                              const isSignature =
+                                                hm.headerName.includes("חתימ") ||
+                                                hm.headerName.includes("אישור") ||
+                                                hm.headerName.toLowerCase().includes("sign");
+
+                                              return (
+                                                <tr
+                                                  key={hIdx}
+                                                  className={`border-b border-white/5 ${
+                                                    hIdx % 2 === 0 ? "bg-white/[0.01]" : ""
+                                                  }`}
+                                                >
+                                                  <td className="py-1 px-2 font-mono text-cyan-400 font-semibold">
+                                                    {colLetter} ({hm.colIdx + 1})
+                                                  </td>
+                                                  <td className="py-1 px-2 text-white font-medium">
+                                                    {hm.headerName || <span className="text-slate-600">(ריקה)</span>}
+                                                  </td>
+                                                  <td className="py-1 px-2">
+                                                    {hm.mappedField ? (
+                                                      <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px]">
+                                                        {hm.mappedField}
+                                                      </span>
+                                                    ) : (
+                                                      <span className="text-slate-500 text-[10px]">
+                                                        לא מופה (שדה לא מוכר)
+                                                      </span>
+                                                    )}
+                                                  </td>
+                                                  <td className="py-1 px-2 text-[10px]">
+                                                    {isSignature ? (
+                                                      <span className="text-amber-400 font-medium">
+                                                        נשאר ריק תמיד (כלל: אין לחתום)
+                                                      </span>
+                                                    ) : hm.mappedField ? (
+                                                      <span className="text-slate-400">מופה בהצלחה</span>
+                                                    ) : (
+                                                      <span className="text-slate-600">לא ייכתב נתון</span>
+                                                    )}
+                                                  </td>
+                                                </tr>
+                                              );
+                                            })}
+                                          </tbody>
+                                        </table>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </section>
 
           {/* STEP 1: Customer Search */}

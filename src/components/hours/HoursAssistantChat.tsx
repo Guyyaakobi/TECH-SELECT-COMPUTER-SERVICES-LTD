@@ -583,17 +583,17 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
   const quickSuggestions = [
     {
       icon: <Lightbulb className="w-4 h-4 text-amber-500" />,
-      prompt: "הייתי שעה וחצי באסיו תיקון שרת",
+      prompt: "שעתיים תמיכה מרחוק ופתרון תקלות",
       tag: "שעות עבודה",
     },
     {
       icon: <Compass className="w-4 h-4 text-blue-500" />,
-      prompt: "שעתיים בטיקטים עבור שחר שירותי תוכנה",
+      prompt: "שעה וחצי טיפול בתקלת שרת והגדרות אבטחה",
       tag: "טיקטים",
     },
     {
       icon: <FileText className="w-4 h-4 text-purple-500" />,
-      prompt: "ביקור באתר מנורה מבטחים, 3 שעות",
+      prompt: "ביקור באתר, 3 שעות תחזוקת רשת",
       tag: "ביקור באתר",
     },
   ];
