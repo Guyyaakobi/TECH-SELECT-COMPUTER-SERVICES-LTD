@@ -28,6 +28,7 @@ import * as verifyOtpHandler from "./functions/api/auth/verify-otp";
 import * as contactHandler from "./functions/api/contact";
 import * as checkCustomerHandler from "./functions/api/atera/check-customer";
 import * as hoursMeHandler from "./functions/api/hours/me";
+import * as hoursConfigHandler from "./functions/api/hours/config";
 
 interface Env {
   ASSETS?: {
@@ -149,6 +150,14 @@ export default {
     // 9. Send Email via Microsoft Graph API (support@tech-select.co.il)
     if (pathname === "/api/mail/send" || pathname === "/api/send-mail") {
       return mailHandler.handleSendMail(request, env, ctx);
+    }
+
+    // 9.0 Hours Tracking Public Configuration (/api/hours/config)
+    if (pathname === "/api/hours/config") {
+      if (request.method === "OPTIONS") {
+        return hoursConfigHandler.onRequestOptions(context);
+      }
+      return hoursConfigHandler.onRequestGet(context);
     }
 
     // 9.1 Hours Tracking Token Validation & User Info (/api/hours/me)

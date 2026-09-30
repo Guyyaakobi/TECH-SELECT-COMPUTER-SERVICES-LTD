@@ -35,8 +35,18 @@ export async function onRequestGet(context: any): Promise<Response> {
   }
 
   const token = authHeader.replace(/^Bearer\s+/i, "").trim();
-  const tenantId = (env.AZURE_TENANT_ID || env.TENANT_ID || "").trim();
-  const clientId = (env.AZURE_CLIENT_ID || env.CLIENT_ID || "").trim();
+  const tenantId = (
+    env.AZURE_TENANT_ID ||
+    env.TENANT_ID ||
+    (typeof process !== "undefined" && (process.env.AZURE_TENANT_ID || process.env.TENANT_ID)) ||
+    ""
+  ).trim();
+  const clientId = (
+    env.AZURE_CLIENT_ID ||
+    env.CLIENT_ID ||
+    (typeof process !== "undefined" && (process.env.AZURE_CLIENT_ID || process.env.CLIENT_ID)) ||
+    ""
+  ).trim();
 
   if (!tenantId) {
     console.warn("[HOURS AUTH 401] reason: unconfigured TENANT_ID on server");

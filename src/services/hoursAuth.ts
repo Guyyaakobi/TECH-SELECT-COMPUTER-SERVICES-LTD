@@ -6,21 +6,43 @@ import {
   AccountInfo,
 } from "@azure/msal-browser";
 import {
-  getActiveTenantId,
-  getActiveClientId,
-  getActiveApiScope,
+  AzureHoursConfig,
   getAuthority,
   getRedirectUri,
 } from "../config/hoursConfig";
 
-export function createMsalConfig(): Configuration {
-  const tenantId = getActiveTenantId();
-  const clientId = getActiveClientId() || "00000000-0000-0000-0000-000000000000";
+let msalInstance: PublicClientApplication | null = null;
+let currentConfig: AzureHoursConfig | null = null;
 
-  return {
+export function isMsalInitialized(): boolean {
+  return msalInstance !== null;
+}
+
+export function getMsalInstance(): PublicClientApplication {
+  if (!msalInstance) {
+    throw new Error("מערכת האימות טרם אותחלה. יש להמתין לקבלת הגדרות שרת.");
+  }
+  return msalInstance;
+}
+
+/**
+ * Initializes the MSAL singleton instance with runtime server configuration
+ */
+export async function initMsal(config: AzureHoursConfig): Promise<PublicClientApplication> {
+  if (
+    msalInstance &&
+    currentConfig?.clientId === config.clientId &&
+    currentConfig?.tenantId === config.tenantId
+  ) {
+    return msalInstance;
+  }
+
+  currentConfig = config;
+
+  const msalConfig: Configuration = {
     auth: {
-      clientId,
-      authority: getAuthority(tenantId),
+      clientId: config.clientId || "00000000-0000-0000-0000-000000000000",
+      authority: getAuthority(config.tenantId),
       redirectUri: typeof window !== "undefined" ? getRedirectUri() : "",
       postLogoutRedirectUri: typeof window !== "undefined" ? getRedirectUri() : "",
     },
@@ -38,45 +60,22 @@ export function createMsalConfig(): Configuration {
       },
     },
   };
-}
 
-let msalInstance: PublicClientApplication | null = null;
-let msalInitPromise: Promise<PublicClientApplication> | null = null;
-
-export function resetMsalInstance(): void {
-  msalInstance = null;
-  msalInitPromise = null;
-}
-
-/**
- * Returns the initialized MSAL singleton instance
- */
-export async function getMsalInstance(): Promise<PublicClientApplication> {
-  if (msalInstance) {
-    return msalInstance;
-  }
-
-  if (msalInitPromise) {
-    return msalInitPromise;
-  }
-
-  msalInitPromise = (async () => {
-    const config = createMsalConfig();
-    const instance = new PublicClientApplication(config);
-    await instance.initialize();
-    msalInstance = instance;
-    return instance;
-  })();
-
-  return msalInitPromise;
+  const instance = new PublicClientApplication(msalConfig);
+  await instance.initialize();
+  msalInstance = instance;
+  return instance;
 }
 
 /**
  * Helper to acquire API Token:
  * First attempts acquireTokenSilent, falling back to acquireTokenRedirect as required.
  */
-export async function getApiToken(pca?: PublicClientApplication): Promise<string> {
-  const instance = pca || (await getMsalInstance());
+export async function getApiToken(
+  pca?: PublicClientApplication,
+  customScope?: string
+): Promise<string> {
+  const instance = pca || getMsalInstance();
   const accounts = instance.getAllAccounts();
   const activeAccount = instance.getActiveAccount() || (accounts.length > 0 ? accounts[0] : null);
 
@@ -84,12 +83,11 @@ export async function getApiToken(pca?: PublicClientApplication): Promise<string
     throw new Error("לא נמצא חשבון פעיל מחובר. יש לבצע התחברות למערכת.");
   }
 
-  // Set active account if not set
   if (!instance.getActiveAccount()) {
     instance.setActiveAccount(activeAccount);
   }
 
-  const scope = getActiveApiScope();
+  const scope = customScope || currentConfig?.apiScope || "User.Read";
   const tokenRequest = {
     scopes: [scope],
     account: activeAccount,
@@ -101,11 +99,14 @@ export async function getApiToken(pca?: PublicClientApplication): Promise<string
     return response.accessToken;
   } catch (err: any) {
     console.warn("[getApiToken] Silent token acquisition failed, attempting acquireTokenRedirect fallback:", err);
-    if (err instanceof InteractionRequiredAuthError || err?.name === "InteractionRequiredAuthError" || err?.errorCode === "interaction_required") {
+    if (
+      err instanceof InteractionRequiredAuthError ||
+      err?.name === "InteractionRequiredAuthError" ||
+      err?.errorCode === "interaction_required"
+    ) {
       await instance.acquireTokenRedirect(tokenRequest);
       throw err;
     }
-    // Attempt redirect anyway if silent fails
     await instance.acquireTokenRedirect(tokenRequest);
     throw err;
   }
@@ -114,9 +115,12 @@ export async function getApiToken(pca?: PublicClientApplication): Promise<string
 /**
  * Redirect to Microsoft 365 sign-in page
  */
-export async function loginWithMicrosoft(pca?: PublicClientApplication): Promise<void> {
-  const instance = pca || (await getMsalInstance());
-  const scope = getActiveApiScope();
+export async function loginWithMicrosoft(
+  pca?: PublicClientApplication,
+  customScope?: string
+): Promise<void> {
+  const instance = pca || getMsalInstance();
+  const scope = customScope || currentConfig?.apiScope || "User.Read";
   const loginRequest = {
     scopes: [scope],
     redirectUri: getRedirectUri(),
@@ -129,7 +133,7 @@ export async function loginWithMicrosoft(pca?: PublicClientApplication): Promise
  * Sign out and return to the hidden route
  */
 export async function logoutFromMicrosoft(pca?: PublicClientApplication): Promise<void> {
-  const instance = pca || (await getMsalInstance());
+  const instance = pca || getMsalInstance();
   const account = instance.getActiveAccount() || instance.getAllAccounts()[0];
   await instance.logoutRedirect({
     account,

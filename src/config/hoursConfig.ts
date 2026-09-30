@@ -1,16 +1,14 @@
 /**
  * Configuration for Internal Hours Tracking Tool ("תיעוד שעות")
  * 
- * Microsoft 365 / Azure Entra ID credentials can be configured via:
- * 1. Environment variables (.env or Cloudflare Pages env vars):
- *    - VITE_AZURE_TENANT_ID
- *    - VITE_AZURE_CLIENT_ID
- *    - VITE_AZURE_API_SCOPE (optional)
- *    - VITE_HOURS_SLUG (optional)
- * 2. Or directly configured via the internal identification portal screen
+ * In accordance with OS security principles:
+ * - Config is loaded at RUNTIME from the server (/api/hours/config).
+ * - No secrets or client credentials exist in client builds.
+ * - No user input, localStorage, or sessionStorage configuration.
+ * - VITE_HOURS_SLUG is preserved exclusively for the hidden route path.
  */
 
-// 1. Hidden Route Slug - A long random unguessable string
+// 1. Hidden Route Slug - Unguessable string
 // Accessible only via: /t/{RANDOM_SLUG}
 export const RANDOM_SLUG =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_HOURS_SLUG) ||
@@ -18,63 +16,43 @@ export const RANDOM_SLUG =
 
 export const HIDDEN_ROUTE_PATH = `/t/${RANDOM_SLUG}`;
 
-// Helper to get active Tenant ID (env var priority, fallback to local storage)
-export const getActiveTenantId = (): string => {
-  const envVal = (typeof import.meta !== "undefined" && import.meta.env?.VITE_AZURE_TENANT_ID) || "";
-  if (envVal && envVal.trim()) return envVal.trim();
-  if (typeof window !== "undefined") {
-    const saved = localStorage.getItem("TECHSELECT_AZURE_TENANT_ID");
-    if (saved && saved.trim()) return saved.trim();
-  }
-  return "";
-};
+export interface AzureHoursConfig {
+  tenantId: string;
+  clientId: string;
+  apiScope: string;
+}
 
-// Helper to get active Client ID (env var priority, fallback to local storage)
-export const getActiveClientId = (): string => {
-  const envVal = (typeof import.meta !== "undefined" && import.meta.env?.VITE_AZURE_CLIENT_ID) || "";
-  if (envVal && envVal.trim()) return envVal.trim();
-  if (typeof window !== "undefined") {
-    const saved = localStorage.getItem("TECHSELECT_AZURE_CLIENT_ID");
-    if (saved && saved.trim()) return saved.trim();
-  }
-  return "";
-};
-
-export const saveAzureCredentials = (tenantId: string, clientId: string): void => {
-  if (typeof window !== "undefined") {
-    if (tenantId && tenantId.trim()) {
-      localStorage.setItem("TECHSELECT_AZURE_TENANT_ID", tenantId.trim());
-    }
-    if (clientId && clientId.trim()) {
-      localStorage.setItem("TECHSELECT_AZURE_CLIENT_ID", clientId.trim());
-    }
-  }
-};
-
-// Backward-compatible exports
-export const AZURE_TENANT_ID = getActiveTenantId();
-export const AZURE_CLIENT_ID = getActiveClientId();
-
-// 3. API Scope for token acquisition
-export const getActiveApiScope = (): string => {
-  const customScope = (typeof import.meta !== "undefined" && import.meta.env?.VITE_AZURE_API_SCOPE) || "";
-  if (customScope) return customScope;
-  const clientId = getActiveClientId();
-  return clientId ? `api://${clientId}/access_as_user` : "User.Read";
-};
-
-export const API_SCOPE = getActiveApiScope();
-
-// 4. Single-Tenant Authority URL
-export const getAuthority = (tenantId = getActiveTenantId()): string => {
+// Authority URL helper
+export const getAuthority = (tenantId: string): string => {
   const cleanTenant = (tenantId || "").trim();
   return cleanTenant ? `https://login.microsoftonline.com/${cleanTenant}` : "https://login.microsoftonline.com/common";
 };
 
-// 5. Dynamic Redirect URI - Full URL of the hidden route
+// Dynamic Redirect URI - Full URL of the hidden route
 export function getRedirectUri(): string {
   if (typeof window !== "undefined" && window.location) {
     return `${window.location.origin}${HIDDEN_ROUTE_PATH}`;
   }
   return `https://www.tech-select.co.il${HIDDEN_ROUTE_PATH}`;
+}
+
+// Fetch runtime configuration from the server
+export async function fetchHoursConfig(): Promise<AzureHoursConfig> {
+  const response = await fetch("/api/hours/config", {
+    method: "GET",
+    headers: {
+      "Accept": "application/json",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`טעינת הגדרות המערכת מהשרת נכשלה (קוד: ${response.status})`);
+  }
+
+  const data = await response.json();
+  return {
+    tenantId: (data?.tenantId || "").trim(),
+    clientId: (data?.clientId || "").trim(),
+    apiScope: (data?.apiScope || "").trim() || (data?.clientId ? `api://${data.clientId}/access_as_user` : "User.Read"),
+  };
 }

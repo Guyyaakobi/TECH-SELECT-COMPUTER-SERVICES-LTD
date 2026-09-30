@@ -26,6 +26,7 @@ import { handleContactSubmission } from "../functions/api/contact";
 import { handleSendOtp } from "../functions/api/auth/send-otp";
 import { handleVerifyOtp } from "../functions/api/auth/verify-otp";
 import * as hoursMeHandler from "../functions/api/hours/me";
+import * as hoursConfigHandler from "../functions/api/hours/config";
 
 export interface Env {
   GEMINI_API_KEY?: string;
@@ -143,7 +144,15 @@ export default {
       return handleCheckCustomer(request, env);
     }
 
-    // Route 15: Internal Hours Token Validation (/api/hours/me)
+    // Route 15: Public Hours Tracking Config (/api/hours/config)
+    if (url.pathname.endsWith("/api/hours/config")) {
+      if (request.method === "OPTIONS") {
+        return hoursConfigHandler.onRequestOptions({ request, env });
+      }
+      return hoursConfigHandler.onRequestGet({ request, env });
+    }
+
+    // Route 16: Internal Hours Token Validation (/api/hours/me)
     if (url.pathname.endsWith("/api/hours/me")) {
       if (request.method === "OPTIONS") {
         return hoursMeHandler.onRequestOptions({ request, env });

@@ -4276,10 +4276,25 @@ ${!isAteraCustomer ? `
     });
 
     // ==========================================
-    // 8. API Route: Internal Hours Tracking (Microsoft 365 Auth Protected)
+    // 8. API Route: Internal Hours Tracking
     // ==========================================
     const hoursRouter = express.Router();
-    // Protect ALL /api/hours routes with Microsoft 365 Entra ID token validation
+
+    // GET /api/hours/config: Public runtime configuration (Client safe - no secrets)
+    hoursRouter.get("/config", (_req, res) => {
+      const tenantId = (process.env.AZURE_TENANT_ID || process.env.TENANT_ID || "").trim();
+      const clientId = (process.env.AZURE_CLIENT_ID || process.env.CLIENT_ID || "").trim();
+      const apiScope = clientId ? `api://${clientId}/access_as_user` : "";
+
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      return res.json({
+        tenantId,
+        clientId,
+        apiScope,
+      });
+    });
+
+    // Protect subsequent /api/hours routes with Microsoft 365 Entra ID token validation
     hoursRouter.use(hoursAuthMiddleware);
 
     // GET /api/hours/me: returns authenticated user info (req.user)
