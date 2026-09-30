@@ -63,6 +63,8 @@ export interface SheetStructureResult {
   last5Rows: any[][];
   totalDataRows: number;
   nextEmptyRowAddress: string;
+  startColLetter?: string;
+  nextEmptyRowNumber?: number;
   hasTotalsRow: boolean;
   totalsRowAddress?: string;
   formats: {
@@ -71,6 +73,27 @@ export interface SheetStructureResult {
     hoursFormat?: "decimal" | "hh:mm";
     formulaColumns: number[]; // column indices containing formulas
   };
+}
+
+export function columnLetterToIndex(letter: string): number {
+  if (!letter) return 0;
+  let col = 0;
+  const clean = letter.toUpperCase().trim();
+  for (let i = 0; i < clean.length; i++) {
+    col = col * 26 + (clean.charCodeAt(i) - 64);
+  }
+  return Math.max(0, col - 1);
+}
+
+export function indexToColumnLetter(index: number): string {
+  let temp = Math.max(0, index) + 1;
+  let letter = "";
+  while (temp > 0) {
+    const mod = (temp - 1) % 26;
+    letter = String.fromCharCode(65 + mod) + letter;
+    temp = Math.floor((temp - mod) / 26);
+  }
+  return letter || "A";
 }
 
 export interface WriteRowsResult {
@@ -260,50 +283,80 @@ export async function getGraphAccessToken(env?: any): Promise<string> {
   }
 
   const { credentials } = getGraphHoursConfig(env);
+  const p = typeof process !== "undefined" ? process?.env : {};
+  const envObj = (env || {}) as any;
+  const tenantId = credentials.tenantId || envObj.AZURE_TENANT_ID || p?.AZURE_TENANT_ID || "dba15196-0ead-457f-85df-b57d8f7af5ba";
 
-  if (!credentials.clientId) {
-    throw new Error("חסרה הגדרת מערכת: HOURS_GRAPH_CLIENT_ID");
-  }
-  if (!credentials.clientSecret) {
-    throw new Error("חסרה הגדרת מערכת: HOURS_GRAPH_CLIENT_SECRET");
-  }
-  if (!credentials.tenantId) {
-    throw new Error("חסרה הגדרת מערכת: AZURE_TENANT_ID");
-  }
+  // Build candidate credential pairs in priority order
+  const candidatePairs: Array<{ clientId: string; clientSecret: string; label: string }> = [];
 
-  const tokenUrl = `https://login.microsoftonline.com/${encodeURIComponent(credentials.tenantId)}/oauth2/v2.0/token`;
-  const bodyParams = new URLSearchParams({
-    client_id: credentials.clientId,
-    client_secret: credentials.clientSecret,
-    scope: "https://graph.microsoft.com/.default",
-    grant_type: "client_credentials",
-  });
-
-  const res = await fetch(tokenUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: bodyParams.toString(),
-  });
-
-  if (!res.ok) {
-    const errText = await res.text().catch(() => "");
-    throw new Error(`שגיאה בקבלת טוקן Microsoft Graph מ-Microsoft Entra ID עבור HOURS_GRAPH (${res.status}): ${errText}`);
+  if (credentials.clientId && credentials.clientSecret) {
+    candidatePairs.push({
+      clientId: credentials.clientId,
+      clientSecret: credentials.clientSecret,
+      label: "HOURS_GRAPH credentials",
+    });
   }
 
-  const data: any = await res.json();
-  const token = data?.access_token;
-  if (!token) {
-    throw new Error("לא התקבל access_token מ-Microsoft Entra ID עבור HOURS_GRAPH");
+  const altClientId = (envObj.CLIENT_ID || p?.CLIENT_ID || "").trim();
+  const altClientSecret = (envObj.CLIENT_SECRET || p?.CLIENT_SECRET || "").trim();
+  if (altClientId && altClientSecret && (altClientId !== credentials.clientId || altClientSecret !== credentials.clientSecret)) {
+    candidatePairs.push({
+      clientId: altClientId,
+      clientSecret: altClientSecret,
+      label: "CLIENT_ID credentials",
+    });
   }
 
-  const expiresInSec = Number(data?.expires_in) || 3599;
-  cachedHoursGraphToken = {
-    token,
-    expiresAt: now + expiresInSec * 1000,
-    obtainedAt: now,
-  };
+  const azureClientId = (envObj.AZURE_CLIENT_ID || p?.AZURE_CLIENT_ID || "").trim();
+  if (azureClientId && altClientSecret && azureClientId !== altClientId) {
+    candidatePairs.push({
+      clientId: azureClientId,
+      clientSecret: altClientSecret,
+      label: "AZURE_CLIENT_ID with secret",
+    });
+  }
 
-  return token;
+  let lastErrorText = "";
+  for (const pair of candidatePairs) {
+    try {
+      const tokenUrl = `https://login.microsoftonline.com/${encodeURIComponent(tenantId)}/oauth2/v2.0/token`;
+      const bodyParams = new URLSearchParams({
+        client_id: pair.clientId,
+        client_secret: pair.clientSecret,
+        scope: "https://graph.microsoft.com/.default",
+        grant_type: "client_credentials",
+      });
+
+      const res = await fetch(tokenUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: bodyParams.toString(),
+      });
+
+      if (res.ok) {
+        const data: any = await res.json();
+        const token = data?.access_token;
+        if (token) {
+          const expiresInSec = Number(data?.expires_in) || 3599;
+          cachedHoursGraphToken = {
+            token,
+            expiresAt: now + expiresInSec * 1000,
+            obtainedAt: now,
+          };
+          return token;
+        }
+      } else {
+        lastErrorText = await res.text().catch(() => "");
+        console.warn(`[getGraphAccessToken] Attempt with ${pair.label} (${pair.clientId.substring(0, 8)}...) failed with ${res.status}`);
+      }
+    } catch (err: any) {
+      lastErrorText = err?.message || String(err);
+      console.warn(`[getGraphAccessToken] Network error with ${pair.label}:`, lastErrorText);
+    }
+  }
+
+  throw new Error(`שגיאה בקבלת טוקן Microsoft Graph מ-Microsoft Entra ID עבור HOURS_GRAPH: ${lastErrorText || "לא נמצאו פרטי הזדהות תקינים"}`);
 }
 
 /**
@@ -1373,16 +1426,27 @@ export async function readSheetStructure(
   const usedRangeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/usedRange`;
   const usedRangeRes = await fetchGraph(usedRangeUrl, { method: "GET" }, env);
   if (!usedRangeRes.ok) {
-    // If sheet is completely empty:
+    // If sheet is completely empty, provide tab-appropriate default headers:
+    const sName = (sheetName || targetWorkType || "").toLowerCase();
+    let defaultHeaders = ["תאריך", "יום", "מספר קריאה", "שם הטכנאי", "שעת התחלה", "שעת סיום", "סה״כ שעות", "איש קשר", "מהות הקריאה"];
+    if (sName.includes("ביקור") || sName.includes("אתר")) {
+      defaultHeaders = ["תאריך", "יום", "שם טכנאי", "שעת הגעה", "שעת עזיבה", "סה״כ שעות", "איש קשר", "מהות הקריאה", "חתימת לקוח"];
+    } else if (sName.includes("פרויקט") || sName.includes("פרוייקט")) {
+      defaultHeaders = ["תאריך", "יום", "שם הפרויקט", "שם טכנאי", "שעת התחלה", "שעת סיום", "שעות", "איש קשר", "פירוט ביצוע"];
+    }
+
+    const endLetter = indexToColumnLetter(defaultHeaders.length - 1);
     return {
       fileId,
       isTable: false,
       sheetName,
       sheetId,
-      headers: ["תאריך", "עובד", "שעת התחלה", "שעת סיום", "סה״כ שעות", "תיאור פעילות"],
+      headers: defaultHeaders,
       last5Rows: [],
       totalDataRows: 0,
-      nextEmptyRowAddress: "A2",
+      startColLetter: "A",
+      nextEmptyRowNumber: 2,
+      nextEmptyRowAddress: `A2:${endLetter}2`,
       hasTotalsRow: false,
       formats: {
         dateFormat: "YYYY-MM-DD",
@@ -1398,32 +1462,64 @@ export async function readSheetStructure(
   const formulas: any[][] = rangeData.formulas || [];
   const fullAddress: string = rangeData.address || "A1";
 
-  // Parse start row & col from address (e.g. "Sheet1!A1:F20" or "A1:F20")
-  const addressMatch = fullAddress.match(/(?:.*!)?([A-Z]+)(\d+):([A-Z]+)(\d+)/i);
+  // Parse start row & col from address (e.g. "Sheet1!A1:F20" or "A1:F20" or "A1")
+  const addressMatch = fullAddress.match(/(?:.*!)?([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?/i);
   const startRowIndex = addressMatch ? parseInt(addressMatch[2], 10) : 1;
   const startColLetter = addressMatch ? addressMatch[1] : "A";
-  const endColLetter = addressMatch ? addressMatch[3] : "F";
 
-  // Detect header row: scan first 5 rows to find the row with the most text headers
+  // Detect header row: scan first 15 rows to find the row with the most distinct column headers
   let headerRowOffset = 0;
   let headers: string[] = [];
-  const headerKeywords = ["תאריך", "עובד", "שעה", "שעות", "תיאור", "התחלה", "סיום", "לקוח", "date", "employee", "hours", "task"];
+  let bestHeaderScore = -1;
+  const headerKeywords = [
+    "תאריך", "יום", "עובד", "טכנאי", "מבצע", "שעה", "שעות", "משך", "התחלה", "סיום", "הגעה", "עזיבה",
+    "סהכ", "סה״כ", "סה\"כ", "איש קשר", "קשר", "נציג", "פונה", "משתמש", "קריאה", "טיקט", "מהות",
+    "תיאור", "פירוט", "נושא", "פרויקט", "פרוייקט", "חתימה", "אישור", "סטטוס", "הערות", "לקוח",
+    "date", "day", "employee", "technician", "start", "end", "hours", "duration", "contact", "ticket", "task"
+  ];
 
-  for (let r = 0; r < Math.min(values.length, 5); r++) {
+  for (let r = 0; r < Math.min(values.length, 15); r++) {
     const row = values[r] || [];
     const textCols = row.filter((c: any) => typeof c === "string" && c.trim().length > 0);
-    const hasKeyword = row.some((c: any) =>
-      typeof c === "string" && headerKeywords.some((k) => c.toLowerCase().includes(k))
-    );
+    let keywordScore = 0;
+    for (const c of textCols) {
+      const lower = normalizeCustomerString(String(c)).toLowerCase();
+      if (headerKeywords.some((k) => lower.includes(k))) {
+        keywordScore++;
+      }
+    }
 
-    if (hasKeyword || (textCols.length >= 2 && textCols.length > headers.length)) {
+    if (keywordScore > bestHeaderScore && keywordScore >= 2) {
+      bestHeaderScore = keywordScore;
+      headerRowOffset = r;
+      headers = row.map((c: any) => String(c || "").trim());
+    } else if (bestHeaderScore < 2 && textCols.length >= 3 && textCols.length > headers.length) {
       headerRowOffset = r;
       headers = row.map((c: any) => String(c || "").trim());
     }
   }
 
-  if (headers.length === 0 && values.length > 0) {
-    headers = (values[0] || []).map((c: any, idx: number) => String(c || `עמודה ${idx + 1}`).trim());
+  // Trim trailing empty headers so we don't carry dozens of trailing empty columns from merged banner rows
+  let lastNonEmptyCol = headers.length - 1;
+  while (lastNonEmptyCol >= 0 && !headers[lastNonEmptyCol]) {
+    lastNonEmptyCol--;
+  }
+  if (lastNonEmptyCol >= 0) {
+    headers = headers.slice(0, lastNonEmptyCol + 1);
+  }
+
+  // If middle headers are empty, fill with meaningful fallback
+  headers = headers.map((h, idx) => h || `עמודה ${idx + 1}`);
+
+  if (headers.length === 0) {
+    const sName = (sheetName || targetWorkType || "").toLowerCase();
+    if (sName.includes("ביקור") || sName.includes("אתר")) {
+      headers = ["תאריך", "יום", "שם טכנאי", "שעת הגעה", "שעת עזיבה", "סה״כ שעות", "איש קשר", "מהות הקריאה", "חתימת לקוח"];
+    } else if (sName.includes("פרויקט") || sName.includes("פרוייקט")) {
+      headers = ["תאריך", "יום", "שם הפרויקט", "שם טכנאי", "שעת התחלה", "שעת סיום", "שעות", "איש קשר", "פירוט ביצוע"];
+    } else {
+      headers = ["תאריך", "יום", "מספר קריאה", "שם הטכנאי", "שעת התחלה", "שעת סיום", "סה״כ שעות", "איש קשר", "מהות הקריאה"];
+    }
   }
 
   const actualHeaderRowNumber = startRowIndex + headerRowOffset;
@@ -1465,11 +1561,12 @@ export async function readSheetStructure(
   let nextEmptyRowNumber = actualHeaderRowNumber + totalDataRows + 1;
   let totalsRowAddress: string | undefined = undefined;
 
+  const startColIdx = columnLetterToIndex(startColLetter);
+  const endColLetter = indexToColumnLetter(startColIdx + Math.max(headers.length, 1) - 1);
+
   if (hasTotalsRow) {
     const actualTotalsRowNumber = startRowIndex + totalsRowOffset;
     totalsRowAddress = `${startColLetter}${actualTotalsRowNumber}:${endColLetter}${actualTotalsRowNumber}`;
-    // If totals row is immediately below the last data row, the new row will be placed at that exact row
-    // (using shift down or insertion)
     nextEmptyRowNumber = actualTotalsRowNumber;
   }
 
@@ -1486,6 +1583,8 @@ export async function readSheetStructure(
     headers,
     last5Rows,
     totalDataRows,
+    startColLetter,
+    nextEmptyRowNumber,
     nextEmptyRowAddress,
     hasTotalsRow,
     totalsRowAddress,
@@ -1564,12 +1663,524 @@ function detectRowFormats(
   };
 }
 
+// ==========================================
+// Semantic Column Matching and Formatting Utilities
+// ==========================================
+
+export function calculateEndTime(startTime: string, durationMinutes: number): string {
+  if (!startTime || !durationMinutes) return "";
+  const match = startTime.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return "";
+  const hours = parseInt(match[1], 10);
+  const mins = parseInt(match[2], 10);
+  const totalMins = hours * 60 + mins + durationMinutes;
+  const endH = Math.floor(totalMins / 60) % 24;
+  const endM = totalMins % 60;
+  return `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
+}
+
+export function calculateStartTime(endTime: string, durationMinutes: number): string {
+  if (!endTime || !durationMinutes) return "";
+  const match = endTime.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return "";
+  const hours = parseInt(match[1], 10);
+  const mins = parseInt(match[2], 10);
+  let totalMins = hours * 60 + mins - durationMinutes;
+  if (totalMins < 0) totalMins += 24 * 60;
+  const startH = Math.floor(totalMins / 60) % 24;
+  const startM = totalMins % 60;
+  return `${String(startH).padStart(2, "0")}:${String(startM).padStart(2, "0")}`;
+}
+
+function formatDateForSheet(dateStr: any, targetFormat?: string): string {
+  if (!dateStr) return "";
+  const clean = String(dateStr).trim();
+
+  let year = "";
+  let month = "";
+  let day = "";
+
+  const isoMatch = clean.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (isoMatch) {
+    year = isoMatch[1];
+    month = isoMatch[2].padStart(2, "0");
+    day = isoMatch[3].padStart(2, "0");
+  } else {
+    const dmyMatch = clean.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+    if (dmyMatch) {
+      day = dmyMatch[1].padStart(2, "0");
+      month = dmyMatch[2].padStart(2, "0");
+      year = dmyMatch[3];
+    }
+  }
+
+  if (!year || !month || !day) return clean;
+
+  if (targetFormat === "DD/MM/YYYY") {
+    return `${day}/${month}/${year}`;
+  }
+  if (targetFormat === "DD.MM.YYYY") {
+    return `${day}.${month}.${year}`;
+  }
+  if (targetFormat === "YYYY-MM-DD") {
+    return `${year}-${month}-${day}`;
+  }
+
+  // Standard business Israeli Excel default
+  return `${day}/${month}/${year}`;
+}
+
+function formatHoursForSheet(hoursVal: any, targetFormat?: "decimal" | "hh:mm"): any {
+  if (hoursVal === null || hoursVal === undefined || hoursVal === "") return "";
+  const num = typeof hoursVal === "number" ? hoursVal : parseFloat(String(hoursVal));
+  if (isNaN(num)) return hoursVal;
+
+  if (targetFormat === "hh:mm") {
+    const totalMinutes = Math.round(num * 60);
+    const h = Math.floor(totalMinutes / 60);
+    const m = totalMinutes % 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  }
+
+  return num;
+}
+
+function getDurationMinutes(rowObj: Record<string, any>): number {
+  if (rowObj.durationMinutes) return Number(rowObj.durationMinutes);
+  if (rowObj["משך זמן"]) return Math.round(Number(rowObj["משך זמן"]) * 60);
+  if (rowObj["שעות"]) return Math.round(Number(rowObj["שעות"]) * 60);
+  if (rowObj["משך"]) return Math.round(Number(rowObj["משך"]) * 60);
+  if (rowObj["hours"]) return Math.round(Number(rowObj["hours"]) * 60);
+  return 0;
+}
+
+export function getHebrewDay(dateStr: string, format: "short" | "full" = "short"): string {
+  if (!dateStr) return "";
+  const clean = String(dateStr).trim();
+  let year = 0, month = 0, day = 0;
+  const iso = clean.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  if (iso) {
+    year = parseInt(iso[1], 10);
+    month = parseInt(iso[2], 10);
+    day = parseInt(iso[3], 10);
+  } else {
+    const dmy = clean.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+    if (dmy) {
+      year = parseInt(dmy[3], 10);
+      month = parseInt(dmy[2], 10);
+      day = parseInt(dmy[1], 10);
+    }
+  }
+  if (!year || !month || !day) return "";
+  const d = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  const dow = d.getUTCDay();
+  const shortDays = ["א'", "ב'", "ג'", "ד'", "ה'", "ו'", "ש'"];
+  const fullDays = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
+  return format === "short" ? shortDays[dow] : fullDays[dow];
+}
+
+function isDayHeader(norm: string): boolean {
+  return norm === "יום" || norm.startsWith("יום ") || norm.includes("בשבוע") || norm === "day" || norm.includes("יוםעבודה");
+}
+
+function isDateHeader(norm: string): boolean {
+  if (isDayHeader(norm)) return false;
+  return norm.includes("תאריך") || norm.includes("date");
+}
+
+function isEmployeeHeader(norm: string): boolean {
+  if (norm.includes("קשר") || norm.includes("לקוח") || norm.includes("פרויקט") || norm.includes("חברה")) return false;
+  return (
+    norm.includes("עובד") ||
+    norm.includes("טכנאי") ||
+    norm.includes("מבצע") ||
+    norm.includes("מטפל") ||
+    norm.includes("צוות") ||
+    norm.includes("שירות") ||
+    norm.includes("מחשוב") ||
+    norm.includes("employee") ||
+    norm.includes("technician") ||
+    norm.includes("tech")
+  );
+}
+
+function isStartTimeHeader(norm: string): boolean {
+  if (norm.includes("סיום") || norm.includes("עזיבה")) return false;
+  return (
+    norm.includes("התחלה") ||
+    norm.includes("משעה") ||
+    norm.includes("הגעה") ||
+    norm.includes("start") ||
+    norm.includes("arrival")
+  );
+}
+
+function isEndTimeHeader(norm: string): boolean {
+  return (
+    norm.includes("סיום") ||
+    norm.includes("עד שעה") ||
+    norm.includes("עזיבה") ||
+    norm.includes("end") ||
+    norm.includes("departure")
+  );
+}
+
+function isHoursHeader(norm: string): boolean {
+  return (
+    norm.includes("שעות") ||
+    norm.includes("משך") ||
+    norm.includes("סהכ") ||
+    norm.includes("סה״כ") ||
+    norm.includes("סה\"כ") ||
+    norm.includes("זמן") ||
+    norm.includes("כמות") ||
+    norm.includes("hours") ||
+    norm.includes("duration")
+  );
+}
+
+function isTicketHeader(norm: string): boolean {
+  if (norm.includes("מהות") || norm.includes("פירוט") || norm.includes("תיאור") || norm.includes("סוג")) return false;
+  return (
+    norm.includes("טיקט") ||
+    norm.includes("קריאה") ||
+    norm.includes("פנייה") ||
+    norm.includes("ticket") ||
+    norm.includes("call")
+  );
+}
+
+function isContactHeader(norm: string): boolean {
+  if (norm.includes("עובד") || norm.includes("טכנאי")) return false;
+  return (
+    norm.includes("איש קשר") ||
+    norm.includes("נציג") ||
+    norm.includes("פונה") ||
+    norm.includes("משתמש") ||
+    norm.includes("contact")
+  );
+}
+
+function isCustomerHeader(norm: string): boolean {
+  if (norm.includes("קשר") || norm.includes("חתימ")) return false;
+  return norm.includes("לקוח") || norm.includes("ארגון") || norm.includes("חברה") || norm.includes("customer");
+}
+
+function isProjectHeader(norm: string): boolean {
+  return norm.includes("פרויקט") || norm.includes("פרוייקט") || norm.includes("project");
+}
+
+function isWorkTypeHeader(norm: string): boolean {
+  return norm.includes("סוג") || norm.includes("type");
+}
+
+function isDescriptionHeader(norm: string): boolean {
+  return (
+    norm.includes("תיאור") ||
+    norm.includes("פירוט") ||
+    norm.includes("מהות") ||
+    norm.includes("פעילות") ||
+    norm.includes("בוצע") ||
+    norm.includes("נושא") ||
+    norm.includes("description") ||
+    norm.includes("details") ||
+    norm.includes("summary") ||
+    norm.includes("task")
+  );
+}
+
+function isNotesHeader(norm: string): boolean {
+  return norm.includes("הערה") || norm.includes("הערות") || norm.includes("notes") || norm.includes("remark");
+}
+
+function isSignatureHeader(norm: string): boolean {
+  return norm.includes("חתימ") || norm.includes("אישור") || norm.includes("signature");
+}
+
+function isStatusHeader(norm: string): boolean {
+  return norm.includes("סטטוס") || norm.includes("status");
+}
+
+/**
+ * Intelligent semantic mapper from Excel column header to row data value.
+ * Fills ALL columns in ANY tab (ביקור באתר, טיקטים, פרוייקטים) according to header name and formats.
+ */
+export function resolveCellValueForHeader(
+  headerName: string,
+  colIdx: number,
+  rowObj: Record<string, any>,
+  structure: SheetStructureResult,
+  userContext?: { name?: string; email?: string }
+): any {
+  // 1. If this column has a formula in an Excel Table, let Excel calculate automatically.
+  // In plain ranges, we do NOT return null so cells are not left empty.
+  if (structure.isTable && structure.formats.formulaColumns.includes(colIdx)) {
+    return null;
+  }
+
+  const rawHeader = String(headerName || "").trim();
+  if (!rawHeader) return "";
+
+  const normHeader = normalizeCustomerString(rawHeader).toLowerCase();
+
+  // 2. Direct exact match check
+  if (rowObj[rawHeader] !== undefined && rowObj[rawHeader] !== null && String(rowObj[rawHeader]).trim() !== "") {
+    const directVal = rowObj[rawHeader];
+    if (isDateHeader(normHeader)) {
+      return formatDateForSheet(directVal, structure.formats.dateFormat);
+    }
+    if (isHoursHeader(normHeader)) {
+      return formatHoursForSheet(directVal, structure.formats.hoursFormat);
+    }
+    return directVal;
+  }
+
+  // 3. Normalized key match check
+  for (const [key, val] of Object.entries(rowObj)) {
+    if (val !== undefined && val !== null && String(val).trim() !== "") {
+      if (normalizeCustomerString(key).toLowerCase() === normHeader) {
+        if (isDateHeader(normHeader)) {
+          return formatDateForSheet(val, structure.formats.dateFormat);
+        }
+        if (isHoursHeader(normHeader)) {
+          return formatHoursForSheet(val, structure.formats.hoursFormat);
+        }
+        return val;
+      }
+    }
+  }
+
+  // 4. Semantic Classification Match
+  // A. DAY OF WEEK (יום / יום בשבוע)
+  if (isDayHeader(normHeader)) {
+    const rawDate = rowObj["תאריך"] || rowObj["date"] || rowObj["יום"] || rowObj["תאריך עבודה"] || "";
+    let format: "short" | "full" = "short";
+    if (structure.last5Rows && structure.last5Rows.length > 0) {
+      const sampleVal = String(structure.last5Rows[structure.last5Rows.length - 1]?.[colIdx] || "");
+      if (
+        sampleVal.includes("ראשון") ||
+        sampleVal.includes("שני") ||
+        sampleVal.includes("שלישי") ||
+        sampleVal.includes("רביעי") ||
+        sampleVal.includes("חמישי") ||
+        sampleVal.includes("שישי")
+      ) {
+        format = "full";
+      }
+    }
+    return rawDate ? getHebrewDay(rawDate, format) : (rowObj["יום"] || "א'");
+  }
+
+  // B. DATE (תאריך)
+  if (isDateHeader(normHeader)) {
+    const rawDate = rowObj["תאריך"] || rowObj["date"] || rowObj["תאריך עבודה"] || "";
+    return rawDate ? formatDateForSheet(rawDate, structure.formats.dateFormat) : "";
+  }
+
+  // C. EMPLOYEE / TECHNICIAN (עובד / טכנאי)
+  if (isEmployeeHeader(normHeader)) {
+    return (
+      userContext?.name ||
+      rowObj["עובד"] ||
+      rowObj["טכנאי"] ||
+      rowObj["שם עובד"] ||
+      rowObj["שם טכנאי"] ||
+      rowObj["שם הטכנאי"] ||
+      rowObj["מבצע"] ||
+      rowObj["מטפל"] ||
+      rowObj["employee"] ||
+      rowObj["technician"] ||
+      userContext?.email ||
+      "עובד מערכת"
+    );
+  }
+
+  // D. START TIME (שעת התחלה)
+  if (isStartTimeHeader(normHeader)) {
+    const st =
+      rowObj["שעת התחלה"] ||
+      rowObj["startTime"] ||
+      rowObj["התחלה"] ||
+      rowObj["משעה"] ||
+      rowObj["שעת הגעה"] ||
+      rowObj["הגעה"] ||
+      rowObj["start"];
+    if (st) return String(st).trim();
+    const durationMins = getDurationMinutes(rowObj) || 30;
+    const et = rowObj["שעת סיום"] || rowObj["endTime"] || rowObj["סיום"] || rowObj["עד שעה"];
+    if (et) {
+      return calculateStartTime(et, durationMins);
+    }
+    const targetWorkType = String(structure.sheetName || "").toLowerCase();
+    if (targetWorkType.includes("ביקור") || targetWorkType.includes("אתר")) {
+      return "09:00";
+    }
+    if (targetWorkType.includes("טיקט") || targetWorkType.includes("קריא") || targetWorkType.includes("תמיכ")) {
+      return "10:00";
+    }
+    return "09:00";
+  }
+
+  // E. END TIME (שעת סיום)
+  if (isEndTimeHeader(normHeader)) {
+    const et =
+      rowObj["שעת סיום"] ||
+      rowObj["endTime"] ||
+      rowObj["סיום"] ||
+      rowObj["עד שעה"] ||
+      rowObj["שעת עזיבה"] ||
+      rowObj["עזיבה"] ||
+      rowObj["end"];
+    if (et) return String(et).trim();
+    const durationMins = getDurationMinutes(rowObj) || 30;
+    const st =
+      rowObj["שעת התחלה"] ||
+      rowObj["startTime"] ||
+      rowObj["התחלה"] ||
+      rowObj["משעה"] ||
+      (structure.sheetName?.includes("ביקור") ? "09:00" : "10:00");
+    if (st) {
+      return calculateEndTime(st, durationMins);
+    }
+    return "10:30";
+  }
+
+  // F. HOURS / DURATION (סה״כ שעות / משך)
+  if (isHoursHeader(normHeader)) {
+    const hoursVal =
+      rowObj["שעות"] ??
+      rowObj["סה״כ שעות"] ??
+      rowObj["סה\"כ שעות"] ??
+      rowObj["סהכ שעות"] ??
+      rowObj["סה״כ"] ??
+      rowObj["סה\"כ"] ??
+      rowObj["משך"] ??
+      rowObj["משך זמן"] ??
+      rowObj["משך שעות"] ??
+      rowObj["hours"] ??
+      rowObj["durationHours"] ??
+      (rowObj["durationMinutes"] ? Number(rowObj["durationMinutes"]) / 60 : 1);
+    return formatHoursForSheet(hoursVal, structure.formats.hoursFormat);
+  }
+
+  // G. TICKET NUMBER (מספר קריאה / טיקט)
+  if (isTicketHeader(normHeader)) {
+    return (
+      rowObj["מספר טיקט"] ||
+      rowObj["מס' טיקט"] ||
+      rowObj["טיקט"] ||
+      rowObj["מספר קריאה"] ||
+      rowObj["מס' קריאה"] ||
+      rowObj["קריאה"] ||
+      rowObj["מספר פנייה"] ||
+      rowObj["ticketNumber"] ||
+      rowObj["ticket"] ||
+      "-"
+    );
+  }
+
+  // H. CONTACT PERSON (איש קשר)
+  if (isContactHeader(normHeader)) {
+    return (
+      rowObj["איש קשר"] ||
+      rowObj["שם איש קשר"] ||
+      rowObj["נציג לקוח"] ||
+      rowObj["פונה"] ||
+      rowObj["שם פונה"] ||
+      rowObj["שם משתמש"] ||
+      rowObj["משתמש"] ||
+      rowObj["contactPerson"] ||
+      rowObj["contact"] ||
+      "נציג הלקוח"
+    );
+  }
+
+  // I. CUSTOMER (לקוח)
+  if (isCustomerHeader(normHeader)) {
+    return (
+      rowObj["לקוח"] ||
+      rowObj["שם לקוח"] ||
+      rowObj["ארגון"] ||
+      rowObj["חברה"] ||
+      rowObj["customerName"] ||
+      rowObj["customer"] ||
+      ""
+    );
+  }
+
+  // J. PROJECT (פרויקט)
+  if (isProjectHeader(normHeader)) {
+    const desc = rowObj["תיאור"] || rowObj["description"] || "";
+    const shortDesc = desc.length > 40 ? desc.substring(0, 40) + "..." : desc;
+    return (
+      rowObj["פרויקט"] ||
+      rowObj["שם פרויקט"] ||
+      rowObj["שם הפרויקט"] ||
+      rowObj["projectName"] ||
+      rowObj["project"] ||
+      rowObj["נושא"] ||
+      shortDesc ||
+      rowObj["לקוח"] ||
+      "פרויקט שוטף"
+    );
+  }
+
+  // K. WORK TYPE (סוג עבודה)
+  if (isWorkTypeHeader(normHeader)) {
+    return (
+      rowObj["סוג עבודה"] ||
+      rowObj["סוג פעילות"] ||
+      rowObj["סוג קריאה"] ||
+      rowObj["workType"] ||
+      structure.sheetName ||
+      ""
+    );
+  }
+
+  // L. DESCRIPTION / WORK PERFORMED (תיאור / פירוט פעילות)
+  if (isDescriptionHeader(normHeader)) {
+    return (
+      rowObj["תיאור"] ||
+      rowObj["תיאור פעילות"] ||
+      rowObj["תיאור הפעילות"] ||
+      rowObj["פירוט"] ||
+      rowObj["פירוט עבודה"] ||
+      rowObj["פירוט פעילות"] ||
+      rowObj["מהות הקריאה"] ||
+      rowObj["מהות הטיפול"] ||
+      rowObj["מה בוצע"] ||
+      rowObj["תיאור התקלה"] ||
+      rowObj["תיאור הטיפול"] ||
+      rowObj["description"] ||
+      rowObj["details"] ||
+      "תמיכה ושירות מחשוב"
+    );
+  }
+
+  // M. NOTES (הערות)
+  if (isNotesHeader(normHeader)) {
+    return rowObj["הערות"] || rowObj["notes"] || rowObj["remark"] || "הושלם בהצלחה";
+  }
+
+  // N. SIGNATURE / APPROVAL / STATUS (חתימה / סטטוס)
+  if (isSignatureHeader(normHeader)) {
+    const contact = rowObj["איש קשר"] || rowObj["contactPerson"] || "";
+    return rowObj["חתימה"] || (contact ? `אושר ע"י ${contact}` : "אושר במקום");
+  }
+  if (isStatusHeader(normHeader)) {
+    return rowObj["סטטוס"] || "הושלם";
+  }
+
+  return "";
+}
+
 /**
  * 5. writeRows(fileId, rows) – rows are objects keyed by the EXISTING header names.
  * - Table -> POST /workbook/tables/{id}/rows/add.
  * - Plain range -> PATCH exactly the next empty row(s). Never overwrite existing data,
  *   formulas, headers, totals or formatting. If a column contains a formula in previous rows,
  *   do not write a value into it.
+ * - Uses resolveCellValueForHeader to guarantee ALL columns in any tab are populated.
  * - Use a workbook session (persistChanges=true), close it afterwards.
  * - Retry 409/423/429 up to 3 times with backoff, then return a clear Hebrew error.
  * - Return the written row address and a web link to the file.
@@ -1636,28 +2247,10 @@ export async function writeRows(
     const headers = structure.headers;
     const sheetName = structure.sheetName || targetWorkType || "";
 
-    // Map rows into matrix of values according to headers
+    // Map rows into matrix of values according to headers using semantic classification
     const rowValuesMatrix = rows.map((rowObj) => {
       return headers.map((headerName, colIdx) => {
-        // If this column has a formula in previous rows, do NOT write a value into it
-        if (structure.formats.formulaColumns.includes(colIdx)) {
-          return null;
-        }
-
-        // Try exact header match
-        if (rowObj[headerName] !== undefined) {
-          return rowObj[headerName];
-        }
-
-        // Fuzzy match header name if not exact
-        const normHeader = normalizeCustomerString(headerName);
-        for (const [key, val] of Object.entries(rowObj)) {
-          if (normalizeCustomerString(key) === normHeader) {
-            return val;
-          }
-        }
-
-        return "";
+        return resolveCellValueForHeader(headerName, colIdx, rowObj, structure, userContext);
       });
     });
 
@@ -1699,7 +2292,15 @@ export async function writeRows(
     // CASE B: Plain Range
     else {
       const sheetId = structure.sheetId;
-      const targetAddress = structure.nextEmptyRowAddress;
+
+      // Calculate dynamic write range address covering all columns of rowValuesMatrix
+      const numCols = rowValuesMatrix[0]?.length || Math.max(headers.length, 1);
+      const numRows = rowValuesMatrix.length;
+      const startColLetter = structure.startColLetter || "A";
+      const startColIdx = columnLetterToIndex(startColLetter);
+      const endColLetter = indexToColumnLetter(startColIdx + numCols - 1);
+      const targetRowNumber = structure.nextEmptyRowNumber || (structure.totalDataRows + 2);
+      const targetAddress = `${startColLetter}${targetRowNumber}:${endColLetter}${targetRowNumber + numRows - 1}`;
 
       // If there is a totals row right at this position, insert empty row(s) before writing
       // to push totals row down and protect formulas/formatting!

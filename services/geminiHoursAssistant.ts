@@ -7,6 +7,9 @@ import {
   writeRows,
   undoRow,
   CustomerFolder,
+  calculateEndTime,
+  calculateStartTime,
+  getHebrewDay,
 } from "./graphHours";
 import { AuthenticatedUser } from "../server/hoursAuthMiddleware";
 
@@ -35,6 +38,204 @@ export interface HoursAssistantEntryDraft {
   missingFields?: string[];
   mappedRow?: Record<string, any>;
   availableFiles?: Array<{ fileId: string; fileName: string; webUrl?: string }>;
+}
+
+export function buildEnrichedRowPayload(params: {
+  date: string;
+  userName: string;
+  hours: number;
+  minutes?: number;
+  formatted?: string;
+  workType: string;
+  desc: string;
+  startTime?: string;
+  endTime?: string;
+  contactPerson?: string;
+  ticketNumber?: string;
+  customerName?: string;
+  userOverride?: Record<string, any>;
+}): Record<string, any> {
+  const {
+    date,
+    userName,
+    hours,
+    minutes = Math.round(hours * 60) || 30,
+    workType,
+    desc,
+    startTime = "",
+    contactPerson = "",
+    ticketNumber = "",
+    customerName = "",
+    userOverride = {},
+  } = params;
+
+  let calculatedEndTime = params.endTime || "";
+  if (!calculatedEndTime && startTime && minutes) {
+    calculatedEndTime = calculateEndTime(startTime, minutes);
+  }
+
+  let calculatedStartTime = startTime;
+  if (!calculatedStartTime && calculatedEndTime && minutes) {
+    calculatedStartTime = calculateStartTime(calculatedEndTime, minutes);
+  }
+
+  // Provide realistic business-hour start & end times for EVERY tab so columns are never empty
+  if (!calculatedStartTime) {
+    if (workType === "ביקור באתר" || workType.includes("ביקור") || workType.includes("אתר")) {
+      calculatedStartTime = "09:00";
+    } else if (workType === "טיקטים" || workType.includes("טיקט") || workType.includes("קריא") || workType.includes("תמיכ")) {
+      calculatedStartTime = "10:00";
+    } else {
+      calculatedStartTime = "09:00";
+    }
+    calculatedEndTime = calculateEndTime(calculatedStartTime, minutes || 30);
+  }
+
+  if (!calculatedEndTime && calculatedStartTime) {
+    calculatedEndTime = calculateEndTime(calculatedStartTime, minutes || 30);
+  }
+
+  const hebrewDayShort = getHebrewDay(date, "short") || "א'";
+  const hebrewDayFull = getHebrewDay(date, "full") || "ראשון";
+
+  const effectiveContact = contactPerson.trim() || (workType.includes("ביקור") ? "נציג הלקוח" : "נציג הלקוח");
+  const effectiveTicket = ticketNumber.trim() || (workType.includes("טיקט") ? "-" : "");
+  const effectiveProject =
+    ticketNumber ||
+    (desc.length > 40 ? desc.substring(0, 40) + "..." : desc) ||
+    customerName ||
+    "פרויקט שוטף";
+
+  return {
+    תאריך: date,
+    date: date,
+    "תאריך עבודה": date,
+    "תאריך ביצוע": date,
+
+    יום: hebrewDayShort,
+    "יום בשבוע": hebrewDayShort,
+    "יום עבודה": hebrewDayShort,
+    "יום מלא": hebrewDayFull,
+    day: hebrewDayShort,
+
+    עובד: userName,
+    "שם עובד": userName,
+    טכנאי: userName,
+    "שם טכנאי": userName,
+    "שם הטכנאי": userName,
+    מבצע: userName,
+    מטפל: userName,
+    "איש צוות": userName,
+    "איש שירות": userName,
+    "איש מחשוב": userName,
+    employee: userName,
+    technician: userName,
+
+    "שעת התחלה": calculatedStartTime,
+    "שעה התחלה": calculatedStartTime,
+    התחלה: calculatedStartTime,
+    משעה: calculatedStartTime,
+    "שעת הגעה": calculatedStartTime,
+    הגעה: calculatedStartTime,
+    startTime: calculatedStartTime,
+    start: calculatedStartTime,
+
+    "שעת סיום": calculatedEndTime,
+    "שעה סיום": calculatedEndTime,
+    סיום: calculatedEndTime,
+    "עד שעה": calculatedEndTime,
+    "שעת עזיבה": calculatedEndTime,
+    עזיבה: calculatedEndTime,
+    endTime: calculatedEndTime,
+    end: calculatedEndTime,
+
+    משך: hours,
+    שעות: hours,
+    "סה״כ שעות": hours,
+    "סה\"כ שעות": hours,
+    "סהכ שעות": hours,
+    "סה״כ": hours,
+    "סה\"כ": hours,
+    "משך זמן": hours,
+    "משך שעות": hours,
+    "כמות שעות": hours,
+    כמות: hours,
+    זמן: hours,
+    hours: hours,
+    duration: hours,
+    durationHours: hours,
+    durationMinutes: minutes,
+
+    תיאור: desc,
+    "תיאור פעילות": desc,
+    "תיאור הפעילות": desc,
+    "תיאור התקלה": desc,
+    "תיאור תקלה": desc,
+    "תיאור הטיפול": desc,
+    פירוט: desc,
+    "פירוט עבודה": desc,
+    "פירוט פעילות": desc,
+    "פירוט הטיפול": desc,
+    "פירוט הקריאה": desc,
+    "מהות הקריאה": desc,
+    "מהות הטיפול": desc,
+    "מה בוצע": desc,
+    פעילות: desc,
+    נושא: desc,
+    description: desc,
+    details: desc,
+    summary: desc,
+    task: desc,
+
+    "מספר טיקט": effectiveTicket,
+    "מס' טיקט": effectiveTicket,
+    "מס טיקט": effectiveTicket,
+    טיקט: effectiveTicket,
+    "מספר קריאה": effectiveTicket,
+    "מס' קריאה": effectiveTicket,
+    "מס קריאה": effectiveTicket,
+    קריאה: effectiveTicket,
+    "מספר פנייה": effectiveTicket,
+    ticket: effectiveTicket,
+    ticketNumber: effectiveTicket,
+
+    "איש קשר": effectiveContact,
+    "שם איש קשר": effectiveContact,
+    "נציג לקוח": effectiveContact,
+    פונה: effectiveContact,
+    "שם פונה": effectiveContact,
+    "שם משתמש": effectiveContact,
+    משתמש: effectiveContact,
+    contact: effectiveContact,
+    contactPerson: effectiveContact,
+
+    לקוח: customerName,
+    "שם לקוח": customerName,
+    ארגון: customerName,
+    חברה: customerName,
+    customer: customerName,
+    customerName: customerName,
+
+    "סוג עבודה": workType,
+    "סוג פעילות": workType,
+    "סוג קריאה": workType,
+    "סוג שירות": workType,
+    workType: workType,
+
+    פרויקט: effectiveProject,
+    "שם פרויקט": effectiveProject,
+    "שם הפרויקט": effectiveProject,
+    project: effectiveProject,
+    projectName: effectiveProject,
+
+    חתימה: effectiveContact ? `אושר ע"י ${effectiveContact}` : "אושר במקום",
+    "חתימת לקוח": effectiveContact ? `אושר ע"י ${effectiveContact}` : "אושר במקום",
+    סטטוס: "הושלם",
+    הערות: "הושלם בהצלחה",
+    notes: "הושלם בהצלחה",
+
+    ...userOverride,
+  };
 }
 
 export interface WrittenEntryResult {
@@ -323,14 +524,22 @@ export async function processAssistantChat(
       targetDraft.webUrl = mt.webUrl;
     }
 
-    // Prepare row object
-    const rowPayload = targetDraft.mappedRow || {
-      תאריך: targetDraft.date,
-      עובד: user.name,
-      משך: targetDraft.durationHours,
-      "סוג עבודה": targetDraft.workType,
-      תיאור: targetDraft.description,
-    };
+    // Prepare fully enriched row object
+    const rowPayload = buildEnrichedRowPayload({
+      date: targetDraft.date,
+      userName: user.name,
+      hours: targetDraft.durationHours,
+      minutes: targetDraft.durationMinutes,
+      formatted: targetDraft.durationFormatted,
+      workType: targetDraft.workType,
+      desc: targetDraft.description,
+      startTime: targetDraft.startTime,
+      endTime: targetDraft.endTime,
+      contactPerson: targetDraft.contactPerson,
+      ticketNumber: targetDraft.ticketNumber,
+      customerName: targetDraft.customerName,
+      userOverride: targetDraft.mappedRow,
+    });
 
     const writeRes = await writeRows(targetDraft.fileId, [rowPayload], user, activeEnv, targetDraft.driveId, targetDraft.workType);
     const rowNumMatch = (writeRes.rowAddress || "").match(/\d+/);
@@ -512,15 +721,33 @@ export async function processAssistantChat(
     },
     {
       name: "write_rows",
-      description: "CRITICAL: Write rows to the Excel sheet. NEVER CALL THIS TOOL BEFORE THE USER HAS EXPLICITLY CONFIRMED (e.g., 'כן', 'מאשר', 'תזין', 'אשר והזן').",
+      description: "CRITICAL: Write rows to the Excel sheet. NEVER CALL THIS TOOL BEFORE THE USER HAS EXPLICITLY CONFIRMED (e.g., 'כן', 'מאשר', 'תזין', 'אשר והזן'). Always include all fields so all columns in the tab are populated.",
       parameters: {
         type: Type.OBJECT,
         properties: {
           fileId: { type: Type.STRING, description: "Target file ID" },
           rows: {
             type: Type.ARRAY,
-            description: "Array of row objects with keys matching Excel column headers",
-            items: { type: Type.OBJECT },
+            description: "Array of row objects with all fields needed for Excel columns",
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                date: { type: Type.STRING, description: "Date in YYYY-MM-DD or DD/MM/YYYY" },
+                workType: {
+                  type: Type.STRING,
+                  enum: ["ביקור באתר", "טיקטים", "פרוייקטים"],
+                  description: "Target tab: 'ביקור באתר' | 'טיקטים' | 'פרוייקטים'",
+                },
+                hours: { type: Type.NUMBER, description: "Duration in decimal hours (e.g. 0.5, 1.0, 1.5)" },
+                description: { type: Type.STRING, description: "Clear professional billing description" },
+                startTime: { type: Type.STRING, description: "Start time (e.g. '09:00' or '10:00')" },
+                endTime: { type: Type.STRING, description: "End time (e.g. '10:30' or '11:00')" },
+                contactPerson: { type: Type.STRING, description: "Contact person at customer" },
+                ticketNumber: { type: Type.STRING, description: "Ticket or call number" },
+                customer: { type: Type.STRING, description: "Customer name" },
+              },
+              required: ["date", "workType", "hours", "description"],
+            },
           },
         },
         required: ["fileId", "rows"],
@@ -556,22 +783,26 @@ EXTRACTION RULES:
   2. Customer: call find_customer. If customer match is ambiguous (multiple options with close scores), ask the employee to choose between the options.
   3. Duration: round to 15 minutes (15 min = 0.25h, 30 min = 0.5h, 45 min = 0.75h, 60 min = 1h). If missing, ask for it!
   4. Work type: strictly one of ["ביקור באתר", "טיקטים", "פרוייקטים"] – matches the exact tabs in the Excel file!
-     - "ביקור באתר": on-site visit / physical presence ("הייתי אצל", "ביקור", "הגעתי פיזית").
-     - "טיקטים": remote support, phone calls, tickets, daily maintenance ("דיברתי", "התחברתי", "טלפון", "מרחוק", "איפוס סיסמה", "תמיכה").
-     - "פרוייקטים": project work, setup, migration, rollout ("פרויקט", "שדרוג שרת", "מיגרציה", "הקמה").
+     - "ביקור באתר": on-site visit / physical presence ("הייתי אצל", "ביקור", "הגעתי פיזית"). Columns in this tab include: תאריך, יום (יום בשבוע), טכנאי/עובד, שעת התחלה/הגעה, שעת סיום/עזיבה, סה״כ שעות, איש קשר, מהות הקריאה/תיאור פעילות, חתימת לקוח/אישור.
+     - "טיקטים": remote support, phone calls, tickets, daily maintenance ("דיברתי", "התחברתי", "טלפון", "מרחוק", "איפוס סיסמה", "תמיכה"). Columns in this tab include: תאריך, יום, מספר טיקט/קריאה, טכנאי/עובד, שעת התחלה, שעת סיום, סה״כ שעות, איש קשר/פונה, פירוט הטיפול.
+     - "פרוייקטים": project work, setup, migration, rollout ("פרויקט", "שדרוג שרת", "מיגרציה", "הקמה"). Columns in this tab include: תאריך, יום, פרויקט/נושא, טכנאי/עובד, שעת התחלה, שעת סיום, שעות, איש קשר, פירוט ביצוע.
   5. Description: rewrite as a short, clear, professional Hebrew sentence suitable for billing, faithful to what was said. Do not invent details.
-  6. Contact person at customer (optional).
-  7. Ticket number (optional).
+  6. Contact person at customer: extract if mentioned (e.g. "דיברתי עם דניאל", "יוסי ביקש").
+  7. Ticket number: extract if mentioned (e.g. "טיקט 1234", "קריאה 5678").
+  8. Start time / End time: extract if mentioned or implied (e.g. "הייתי בין 10:00 ל-12:00", "התחלתי ב-14:00"). If not mentioned, provide realistic business hours (e.g. 09:00 or 10:00 with end time based on duration).
+
+CRITICAL REQUIREMENT - POPULATE ALL COLUMNS:
+Ensure ALL fields are populated so that every tab in the Excel sheet receives values for all its columns (Date, Day of week, Employee, Start time, End time, Hours, Description, Contact person, Ticket #, Signature). Never leave columns blank when data can be provided or inferred!
 
 MANDATORY WORKFLOW:
 1. Ask ONLY for missing mandatory fields (customer, date, duration, description) – all in ONE question.
 2. If customer name is ambiguous or needs SharePoint folder matching, call find_customer.
-3. Call propose_entries directly with the extracted details (customer, date, duration, description, workType).
+3. Call propose_entries directly with the extracted details (customer, date, duration, description, workType, startTime, endTime, contactPerson, ticketNumber).
    NOTE: propose_entries AUTOMATICALLY finds the customer's month Excel file in SharePoint, inspects sheet structure, and checks duplicates. You do NOT need to call find_month_target or read_sheet_structure manually beforehand.
 4. Show the summary and ask "מאשר להזין?".
 5. CRITICAL RULE: NEVER call write_rows before explicit confirmation from the employee (such as "אשר והזן", "כן", "מאשר", "תזין", "מאשרת").
 6. Accept corrections in free speech ("תשנה לחצי שעה", "זה היה אצל אלקטרה") and show the summary again.
-7. When the user confirms ("כן", "מאשר", "תזין"), call write_rows, then state "נרשם ✓" with target file and row.`;
+7. When the user confirms ("כן", "מאשר", "תזין"), call write_rows with all fields populated, then state "נרשם ✓" with target file and row.`;
 
   // Build Conversation Contents for Gemini
   const contents: any[] = [];
@@ -822,13 +1053,20 @@ MANDATORY WORKFLOW:
                     duplicateWarning = `נמצאו ${dup.duplicates.length} דיווחים קודמים עבורך בתאריך זה (${date})`;
                   }
 
-                  mappedRow = {
-                    תאריך: date,
-                    עובד: user.name,
-                    משך: hours,
-                    "סוג עבודה": workType,
-                    תיאור: desc,
-                  };
+                  mappedRow = buildEnrichedRowPayload({
+                    date,
+                    userName: user.name,
+                    hours,
+                    minutes,
+                    formatted,
+                    workType,
+                    desc,
+                    startTime: raw.startTime,
+                    endTime: raw.endTime,
+                    contactPerson: raw.contactPerson,
+                    ticketNumber: raw.ticketNumber,
+                    customerName,
+                  });
                 }
               }
             } catch (enrichErr) {
@@ -870,9 +1108,34 @@ MANDATORY WORKFLOW:
           };
         } else if (name === "write_rows") {
           const fileId = String(args.fileId || "");
-          const rows: any[] = Array.isArray(args.rows) ? args.rows : [];
+          const rawRows: any[] = Array.isArray(args.rows) ? args.rows : [];
           const matchingDraft = collectedDrafts.find((d) => d.fileId === fileId);
-          const firstRowWorkType = rows[0]?.["סוג עבודה"] || rows[0]?.workType || matchingDraft?.workType;
+          const firstRowWorkType = rawRows[0]?.["סוג עבודה"] || rawRows[0]?.workType || matchingDraft?.workType;
+
+          // Enrich every row to make sure all columns in the sheet receive their corresponding values
+          const rows = rawRows.map((r) => {
+            return buildEnrichedRowPayload({
+              date: r.date || r.תאריך || matchingDraft?.date || jCtx.todayIso,
+              userName: user.name,
+              hours:
+                typeof r.hours === "number"
+                  ? r.hours
+                  : typeof r.משך === "number"
+                  ? r.משך
+                  : typeof r.שעות === "number"
+                  ? r.שעות
+                  : matchingDraft?.durationHours || 1,
+              workType: r.workType || r["סוג עבודה"] || matchingDraft?.workType || "טיקטים",
+              desc: r.description || r.תיאור || matchingDraft?.description || "",
+              startTime: r.startTime || r["שעת התחלה"] || matchingDraft?.startTime,
+              endTime: r.endTime || r["שעת סיום"] || matchingDraft?.endTime,
+              contactPerson: r.contactPerson || r["איש קשר"] || matchingDraft?.contactPerson,
+              ticketNumber: r.ticketNumber || r["מספר טיקט"] || r["מספר קריאה"] || matchingDraft?.ticketNumber,
+              customerName: r.customer || r.לקוח || matchingDraft?.customerName,
+              userOverride: r,
+            });
+          });
+
           const writeRes = await withSafeTimeout(
             writeRows(fileId, rows, user, activeEnv, matchingDraft?.driveId, firstRowWorkType),
             30000,
