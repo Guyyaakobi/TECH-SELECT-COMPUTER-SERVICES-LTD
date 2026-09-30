@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import {
   Mic,
+  MicOff,
   Square,
   Send,
   Sparkles,
@@ -12,6 +13,7 @@ import {
   Volume2,
   Trash2,
   ChevronDown,
+  X,
 } from "lucide-react";
 import {
   apiAssistantChat,
@@ -63,6 +65,11 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<any>(null);
+  const [micPermissionError, setMicPermissionError] = useState<{
+    title: string;
+    details: string;
+    instructions: string[];
+  } | null>(null);
 
   // Chat scroll container
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -77,9 +84,29 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
 
   // Audio Recording: Start
   const startRecording = async () => {
+    setMicPermissionError(null);
     try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        alert("הדפדפן אינו תומך בהקלטת שמע דרך המיקרופון.");
+      if (typeof window !== "undefined" && !window.isSecureContext) {
+        setMicPermissionError({
+          title: "נדרש חיבור מאובטח (HTTPS)",
+          details: "דפדפנים מודרניים דורשים חיבור HTTPS מאובטח כדי לאפשר גישה למיקרופון.",
+          instructions: [
+            "ודא שכתובת האתר מתחילה ב-https://.",
+            "באפשרותך להקליד את הדיווח ישירות בתיבת הטקסט משמאל.",
+          ],
+        });
+        return;
+      }
+
+      if (!navigator?.mediaDevices || !navigator?.mediaDevices?.getUserMedia) {
+        setMicPermissionError({
+          title: "הדפדפן אינו תומך בהקלטת שמע",
+          details: "סביבת הדפדפן הנוכחית אינה תומכת בממשק MediaDevices או שרצה בתוך מסגרת מוגבלת.",
+          instructions: [
+            "אם פתחת את האתר דרך חלון תצוגה מקדימה, פתח אותו בחלון דפדפן נפרד ורגיל.",
+            "ניתן להקליד את פרטי העבודה בתיבת הטקסט למטה.",
+          ],
+        });
         return;
       }
 
@@ -140,9 +167,50 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
       }, 1000);
     } catch (err: any) {
       console.error("[HoursVoice] Mic access error:", err);
-      alert("לא ניתן לגשת למיקרופון. אנא ודא שהענקת הרשאת מיקרופון בדפדפן.");
       setIsRecording(false);
       clearInterval(recordingTimerRef.current);
+
+      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+        setMicPermissionError({
+          title: "הרשאת המיקרופון נדחתה או חסומה בדפדפן",
+          details: "הדפדפן חסם את הגישה למיקרופון עבור אתר זה. יש לאפשר את ההרשאה בהגדרות הדפדפן.",
+          instructions: [
+            "לחץ על סמל המנעול 🔒 או סמל הכוונון 🎛️ ליד שורת הכתובת (URL) בראש הדפדפן.",
+            "אתר את שורת 'מיקרופון' (Microphone) והעבר אותה למצב 'אפשר' (Allow).",
+            "אם אתה משתמש בטלפון סלולרי: פתח הגדרות מכשיר -> יישומים/דפדפן (Chrome / Safari) -> הרשאות -> אפשר מיקרופון.",
+            "לאחר שינוי ההגדרה, רענן את העמוד ונסה שוב.",
+            "ניתן להקליד את הדיווח בתיבת הטקסט ללא צורך במיקרופון.",
+          ],
+        });
+      } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
+        setMicPermissionError({
+          title: "לא זוהה מיקרופון מחובר",
+          details: "הדפדפן לא מצא התקן קלט שמע (מיקרופון) פעיל במכשיר שלך.",
+          instructions: [
+            "ודא שהמיקרופון או האוזניות מחוברים כראוי.",
+            "בדוק בהגדרות מערכת ההפעלה שהמיקרופון מוגדר ופועל.",
+            "באפשרותך להקליד את פרטי העבודה ישירות בתיבת הטקסט.",
+          ],
+        });
+      } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
+        setMicPermissionError({
+          title: "המיקרופון תפוס על ידי תוכנה אחרת",
+          details: "יישום אחר (כגון Teams, Zoom או שיחה פעילה) תופס את המיקרופון כעת.",
+          instructions: [
+            "סגור יישומים אחרים המשתמשים במיקרופון.",
+            "לחץ שוב על כפתור המיקרופון כדי לנסות מחדש.",
+          ],
+        });
+      } else {
+        setMicPermissionError({
+          title: "לא ניתן לגשת למיקרופון",
+          details: err?.message || "אירעה שגיאה בלתי צפויה בעת פתיחת המיקרופון.",
+          instructions: [
+            "בדוק את הרשאות הדפדפן שלך או רענן את העמוד.",
+            "באפשרותך להקליד את הפעילות בחופשיות בתיבת הטקסט.",
+          ],
+        });
+      }
     }
   };
 
@@ -515,6 +583,50 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
 
       {/* Bottom Input Area: Big Microphone + Text Box (Mobile First) */}
       <div className="p-3 sm:p-4 border-t border-white/10 bg-black/60 backdrop-blur-md z-10 flex flex-col gap-2.5">
+        {/* Microphone Permission Diagnostic & Guidance Banner */}
+        {micPermissionError && (
+          <div className="p-3.5 rounded-2xl bg-amber-950/40 border border-amber-500/40 text-amber-200 flex flex-col gap-2 relative">
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2 text-amber-300 font-bold text-xs sm:text-sm">
+                <MicOff className="w-4 h-4 text-amber-400 flex-shrink-0" />
+                <span>{micPermissionError.title}</span>
+              </div>
+              <button
+                onClick={() => setMicPermissionError(null)}
+                className="p-1 rounded-lg hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                title="סגור הודעה"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-amber-100/90 leading-relaxed">
+              {micPermissionError.details}
+            </p>
+
+            <div className="bg-black/30 p-2.5 rounded-xl border border-amber-500/20 text-[11px] space-y-1">
+              <span className="font-semibold text-amber-300 block">כיצד לאפשר:</span>
+              <ul className="list-disc list-inside space-y-0.5 text-slate-300">
+                {micPermissionError.instructions.map((inst, i) => (
+                  <li key={i}>{inst}</li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <span className="text-[11px] text-slate-400">
+                💡 תוכל להמשיך להקליד כרגיל בתיבת הטקסט שלמטה
+              </span>
+              <button
+                onClick={startRecording}
+                className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl transition-colors cursor-pointer"
+              >
+                נסה שוב
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Active Audio Recording Bar */}
         {isRecording && (
           <div className="flex items-center justify-between p-3 rounded-2xl bg-red-950/40 border border-red-500/40 animate-pulse">
