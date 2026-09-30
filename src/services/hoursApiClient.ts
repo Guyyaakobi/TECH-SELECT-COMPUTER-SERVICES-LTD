@@ -113,3 +113,31 @@ export async function apiUndoRow(fileId: string, rowAddress: string): Promise<an
     body: JSON.stringify({ fileId, rowAddress }),
   });
 }
+
+export interface HoursDiagnosticsData {
+  envSources: {
+    tenantVar: string;
+    clientVar: string;
+    secretVar: string;
+  };
+  appId: string;
+  roles: string[];
+  issuedAt: string | null;
+  expiresAt: string | null;
+  fromCache: boolean;
+  cachedAt?: string | null;
+  tenantId?: string;
+}
+
+/**
+ * 8. Get Graph Token Diagnostics
+ */
+export async function apiGetHoursDiagnostics(forceRefresh = false): Promise<HoursDiagnosticsData> {
+  if (forceRefresh) {
+    return fetchHoursApi<HoursDiagnosticsData>(`/api/hours/diagnostics/refresh`, {
+      method: "POST",
+    });
+  }
+  return fetchHoursApi<HoursDiagnosticsData>(`/api/hours/diagnostics`);
+}
+

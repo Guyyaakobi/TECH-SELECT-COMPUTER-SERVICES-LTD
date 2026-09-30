@@ -14,6 +14,8 @@ import {
   writeRows,
   findDuplicates,
   undoRow,
+  getGraphDiagnostics,
+  clearGraphTokenCache,
 } from "./services/graphHours";
 
 // Lazy Gemini client helper with required headers
@@ -4429,6 +4431,30 @@ ${!isAteraCustomer ? `
       } catch (err: any) {
         console.error("[POST /api/hours/undo] Error:", err);
         return res.status(400).json({ error: err?.message || "שגיאה בביטול שורה" });
+      }
+    });
+
+    // 8. GET /api/hours/diagnostics: retrieve token diagnostics & active env vars
+    hoursRouter.get("/diagnostics", async (req, res) => {
+      try {
+        const forceRefresh = req.query.refresh === "true";
+        const result = await getGraphDiagnostics(process.env, forceRefresh);
+        return res.json(result);
+      } catch (err: any) {
+        console.error("[GET /api/hours/diagnostics] Error:", err);
+        return res.status(500).json({ error: err?.message || "שגיאה בבדיקת אבחון Graph" });
+      }
+    });
+
+    // 8.1 POST /api/hours/diagnostics/refresh: clear token cache & fetch fresh token
+    hoursRouter.post(["/diagnostics/refresh", "/diagnostics"], async (req, res) => {
+      try {
+        clearGraphTokenCache();
+        const result = await getGraphDiagnostics(process.env, true);
+        return res.json(result);
+      } catch (err: any) {
+        console.error("[POST /api/hours/diagnostics/refresh] Error:", err);
+        return res.status(500).json({ error: err?.message || "שגיאה ברענון טוקן Graph" });
       }
     });
 

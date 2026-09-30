@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   ChevronDown,
   ChevronUp,
@@ -15,6 +15,12 @@ import {
   Calendar,
   Sparkles,
   RefreshCw,
+  ShieldCheck,
+  Key,
+  Clock,
+  Database,
+  Check,
+  AlertCircle,
 } from "lucide-react";
 import {
   apiListCustomers,
@@ -24,6 +30,8 @@ import {
   apiWriteRows,
   apiUndoRow,
   apiFindDuplicates,
+  apiGetHoursDiagnostics,
+  type HoursDiagnosticsData,
 } from "../../services/hoursApiClient";
 
 interface HoursTestPanelProps {
@@ -76,8 +84,30 @@ export const HoursTestPanel: React.FC<HoursTestPanelProps> = ({ currentUser }) =
   const [dupLoading, setDupLoading] = useState<boolean>(false);
   const [dupResult, setDupResult] = useState<any | null>(null);
 
+  // Diagnostics card state (server-side check)
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState<boolean>(false);
+  const [diagnosticsData, setDiagnosticsData] = useState<HoursDiagnosticsData | null>(null);
+  const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
+
   // Global error box
   const [panelError, setPanelError] = useState<string | null>(null);
+
+  const handleFetchDiagnostics = async (forceRefresh = false) => {
+    try {
+      setDiagnosticsLoading(true);
+      setDiagnosticsError(null);
+      const data = await apiGetHoursDiagnostics(forceRefresh);
+      setDiagnosticsData(data);
+    } catch (err: any) {
+      setDiagnosticsError(err?.message || "שגיאה בבדיקת אבחון Graph");
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    handleFetchDiagnostics(false);
+  }, []);
 
   // 1. Search Customers
   const handleSearchCustomer = async (isAll = false) => {
@@ -311,6 +341,172 @@ export const HoursTestPanel: React.FC<HoursTestPanelProps> = ({ currentUser }) =
               </button>
             </div>
           )}
+
+          {/* DIAGNOSTICS CARD (Server-Side Check) */}
+          <section className="p-4 rounded-xl bg-gradient-to-r from-slate-900/90 via-slate-900/60 to-slate-900/90 border border-cyan-500/30 space-y-4 shadow-lg shadow-cyan-950/20">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-300">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-bold text-white flex items-center gap-2">
+                    <span>אבחון שרת: חיבור Microsoft Graph (App-Only Token)</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+                      Server Diagnostics
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    זיהוי משתני סביבה פעילים, תביעות טוקן (Claims: appid, roles) וסטטוס מטמון
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleFetchDiagnostics(true)}
+                disabled={diagnosticsLoading}
+                className="px-3.5 py-1.5 rounded-xl bg-cyan-600/30 hover:bg-cyan-600/50 text-cyan-200 border border-cyan-500/40 text-xs font-semibold transition-all cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50 self-start sm:self-auto"
+                title="איפוס מטמון הטוקן וקבלת טוקן חדש מ-Microsoft Entra ID"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${diagnosticsLoading ? "animate-spin" : ""}`} />
+                <span>רענן טוקן</span>
+              </button>
+            </div>
+
+            {diagnosticsError && (
+              <div className="p-3 rounded-lg bg-red-950/40 border border-red-500/40 text-xs text-red-300 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0 text-red-400 mt-0.5" />
+                <span className="flex-1 whitespace-pre-wrap">{diagnosticsError}</span>
+              </div>
+            )}
+
+            {diagnosticsLoading && !diagnosticsData ? (
+              <div className="py-6 flex items-center justify-center gap-2 text-xs text-slate-400">
+                <RefreshCw className="w-4 h-4 animate-spin text-cyan-400" />
+                <span>טוען נתוני אבחון שרת...</span>
+              </div>
+            ) : diagnosticsData ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                {/* 1. Environment Variables Names Used */}
+                <div className="p-3 rounded-lg bg-white/[0.03] border border-white/5 space-y-2">
+                  <div className="flex items-center gap-1.5 text-slate-300 font-semibold text-[11px]">
+                    <Database className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>שמות משתני הסביבה הפעילים במנוע:</span>
+                  </div>
+                  <div className="space-y-1.5 text-[11px]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">דייר (Tenant ID):</span>
+                      <span className="font-mono text-cyan-300 bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-500/20 font-bold">
+                        {diagnosticsData.envSources.tenantVar}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">מזהה לקוח (Client ID):</span>
+                      <span className="font-mono text-purple-300 bg-purple-950/40 px-2 py-0.5 rounded border border-purple-500/20 font-bold">
+                        {diagnosticsData.envSources.clientVar}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">סוד לקוח (Client Secret):</span>
+                      <span className="font-mono text-emerald-300 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-500/20 font-bold">
+                        {diagnosticsData.envSources.secretVar}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Token Claims: App ID & Timing */}
+                <div className="p-3 rounded-lg bg-white/[0.03] border border-white/5 space-y-2">
+                  <div className="flex items-center gap-1.5 text-slate-300 font-semibold text-[11px]">
+                    <Key className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>פרטי הטוקן הפעיל (Token Claims):</span>
+                  </div>
+                  <div className="space-y-1.5 text-[11px]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">App ID ("appid" / "azp"):</span>
+                      <span className="font-mono text-amber-300 text-[10px] font-semibold bg-amber-950/40 px-2 py-0.5 rounded border border-amber-500/20" dir="ltr">
+                        {diagnosticsData.appId || "לא זוהה"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">זמן הנפקה (Issued At):</span>
+                      <span className="text-slate-200 font-mono text-[10px]" dir="ltr">
+                        {diagnosticsData.issuedAt
+                          ? new Date(diagnosticsData.issuedAt).toLocaleTimeString("he-IL", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                              second: "2-digit",
+                            }) +
+                            " (" +
+                            new Date(diagnosticsData.issuedAt).toLocaleDateString("he-IL") +
+                            ")"
+                          : "לא זמין"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">סטטוס מטמון (Cache):</span>
+                      <span
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                          diagnosticsData.fromCache
+                            ? "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
+                            : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                        }`}
+                      >
+                        {diagnosticsData.fromCache ? "מהמטמון (From Memory Cache)" : "טוקן חדש (Fresh Token)"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Roles Claim (Application Permissions) */}
+                <div className="p-3 rounded-lg bg-white/[0.03] border border-white/5 space-y-2 md:col-span-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-slate-300 font-semibold text-[11px]">
+                      <ShieldCheck className="w-3.5 h-3.5 text-cyan-400" />
+                      <span>הרשאות אפליקציה ("roles" claim):</span>
+                    </div>
+                    <span className="text-[10px] text-slate-400">
+                      {diagnosticsData.roles.length} הרשאות מזוהות
+                    </span>
+                  </div>
+
+                  {diagnosticsData.roles && diagnosticsData.roles.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {diagnosticsData.roles.map((role, idx) => {
+                        const isSharePoint = role.toLowerCase().includes("sites");
+                        return (
+                          <span
+                            key={idx}
+                            className={`px-2.5 py-1 rounded-md text-[11px] font-mono font-bold border flex items-center gap-1 ${
+                              isSharePoint
+                                ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                                : "bg-blue-500/20 text-blue-300 border-blue-500/30"
+                            }`}
+                          >
+                            {isSharePoint && <Check className="w-3 h-3 text-emerald-400" />}
+                            <span>{role}</span>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="p-2 rounded bg-amber-950/30 border border-amber-500/30 text-amber-300 text-[11px] flex items-center gap-2">
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                      <span>לא נמצאו הרשאות (Roles) בטוקן הנוכחי.</span>
+                    </div>
+                  )}
+
+                  {/* Contextual warning if Sites permissions are absent */}
+                  {!diagnosticsData.roles.some((r) => r.toLowerCase().includes("sites")) && (
+                    <p className="text-[10px] text-amber-300/90 bg-amber-950/20 border border-amber-500/20 p-2 rounded">
+                      שים לב: הטוקן אינו מכיל את הרשאת <strong>Sites.Read.All</strong> או <strong>Sites.ReadWrite.All</strong> הנדרשת לקריאה וכתיבה באקסל וב-SharePoint.
+                    </p>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </section>
 
           {/* STEP 1: Customer Search */}
           <section className="p-4 rounded-xl bg-white/[0.02] border border-white/5 space-y-3">

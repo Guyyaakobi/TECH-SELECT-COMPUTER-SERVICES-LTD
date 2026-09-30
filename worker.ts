@@ -35,6 +35,7 @@ import * as hoursSheetStructureHandler from "./functions/api/hours/sheet-structu
 import * as hoursWriteRowsHandler from "./functions/api/hours/write-rows";
 import * as hoursFindDuplicatesHandler from "./functions/api/hours/find-duplicates";
 import * as hoursUndoHandler from "./functions/api/hours/undo";
+import * as hoursDiagnosticsHandler from "./functions/api/hours/diagnostics";
 
 interface Env {
   ASSETS?: {
@@ -220,6 +221,17 @@ export default {
         return hoursUndoHandler.onRequestOptions(context);
       }
       return hoursUndoHandler.onRequestPost(context);
+    }
+
+    // 9.8 Hours Token Diagnostics (/api/hours/diagnostics)
+    if (pathname === "/api/hours/diagnostics" || pathname === "/api/hours/diagnostics/refresh") {
+      if (request.method === "OPTIONS") {
+        return hoursDiagnosticsHandler.onRequestOptions(context);
+      }
+      if (request.method === "POST") {
+        return hoursDiagnosticsHandler.onRequestPost(context);
+      }
+      return hoursDiagnosticsHandler.onRequestGet(context);
     }
 
     // 8. Simulator Activity Logger

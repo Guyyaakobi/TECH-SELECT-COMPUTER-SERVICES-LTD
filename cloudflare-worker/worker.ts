@@ -33,6 +33,7 @@ import * as hoursSheetStructureHandler from "../functions/api/hours/sheet-struct
 import * as hoursWriteRowsHandler from "../functions/api/hours/write-rows";
 import * as hoursFindDuplicatesHandler from "../functions/api/hours/find-duplicates";
 import * as hoursUndoHandler from "../functions/api/hours/undo";
+import * as hoursDiagnosticsHandler from "../functions/api/hours/diagnostics";
 
 export interface Env {
   GEMINI_API_KEY?: string;
@@ -212,6 +213,17 @@ export default {
         return hoursUndoHandler.onRequestOptions({ request, env });
       }
       return hoursUndoHandler.onRequestPost({ request, env });
+    }
+
+    // Route 23: Graph Diagnostics (/api/hours/diagnostics)
+    if (url.pathname.endsWith("/api/hours/diagnostics") || url.pathname.endsWith("/api/hours/diagnostics/refresh")) {
+      if (request.method === "OPTIONS") {
+        return hoursDiagnosticsHandler.onRequestOptions({ request, env });
+      }
+      if (request.method === "POST") {
+        return hoursDiagnosticsHandler.onRequestPost({ request, env });
+      }
+      return hoursDiagnosticsHandler.onRequestGet({ request, env });
     }
 
     return new Response(

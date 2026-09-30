@@ -132,8 +132,61 @@ const CUSTOMERS_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 interface TokenCache {
   token: string;
   expiresAt: number;
+  obtainedAt: number;
+  candidateLabel?: string;
+  activeClientVar?: string;
+  activeSecretVar?: string;
 }
 let cachedGraphToken: TokenCache | null = null;
+
+export interface GraphDiagnosticsInfo {
+  envSources: {
+    tenantVar: string;
+    clientVar: string;
+    secretVar: string;
+  };
+  appId: string;
+  roles: string[];
+  issuedAt: string | null;
+  expiresAt: string | null;
+  fromCache: boolean;
+  cachedAt?: string | null;
+  tenantId?: string;
+}
+
+/**
+ * Clear cached Microsoft Graph token
+ */
+export function clearGraphTokenCache() {
+  cachedGraphToken = null;
+}
+
+/**
+ * Decode JWT token payload safely without external dependencies
+ */
+function decodeJwtPayload(token: string): any {
+  try {
+    const parts = token.split(".");
+    if (parts.length < 2) return null;
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    if (typeof Buffer !== "undefined") {
+      const jsonStr = Buffer.from(base64, "base64").toString("utf-8");
+      return JSON.parse(jsonStr);
+    } else {
+      const binary = atob(base64);
+      const jsonStr = decodeURIComponent(
+        binary
+          .split("")
+          .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+          .join("")
+      );
+      return JSON.parse(jsonStr);
+    }
+  } catch {
+    return null;
+  }
+}
 
 // Resolved Site & Drive Cache
 let cachedSiteDriveInfo: { siteId: string; driveId: string; timestamp: number } | null = null;
@@ -300,9 +353,32 @@ export async function getGraphAccessToken(env?: any): Promise<string> {
       const token = data?.access_token;
       if (token) {
         const expiresInSec = Number(data?.expires_in) || 3599;
+
+        let activeClientVar = "CLIENT_ID";
+        let activeSecretVar = "CLIENT_SECRET";
+        if (cand.label === "HOURS_GRAPH credentials") {
+          activeClientVar = (envObj.HOURS_GRAPH_CLIENT_ID || p?.HOURS_GRAPH_CLIENT_ID)
+            ? "HOURS_GRAPH_CLIENT_ID"
+            : (envObj.AZURE_CLIENT_ID || p?.AZURE_CLIENT_ID)
+            ? "AZURE_CLIENT_ID"
+            : "CLIENT_ID";
+          activeSecretVar = (envObj.HOURS_GRAPH_CLIENT_SECRET || p?.HOURS_GRAPH_CLIENT_SECRET)
+            ? "HOURS_GRAPH_CLIENT_SECRET"
+            : (envObj.AZURE_CLIENT_SECRET || p?.AZURE_CLIENT_SECRET)
+            ? "AZURE_CLIENT_SECRET"
+            : "CLIENT_SECRET";
+        } else if (cand.label === "Server default CLIENT_ID/SECRET") {
+          activeClientVar = "CLIENT_ID";
+          activeSecretVar = "CLIENT_SECRET";
+        }
+
         cachedGraphToken = {
           token,
           expiresAt: now + expiresInSec * 1000,
+          obtainedAt: now,
+          candidateLabel: cand.label,
+          activeClientVar,
+          activeSecretVar,
         };
         return token;
       }
@@ -313,6 +389,79 @@ export async function getGraphAccessToken(env?: any): Promise<string> {
   }
 
   throw new Error(`שגיאה בקבלת טוקן Microsoft Graph מ-Microsoft Entra ID: ${lastError}`);
+}
+
+/**
+ * Obtain diagnostics about the active Microsoft Graph authentication state:
+ * - Which environment variables are used
+ * - appid/azp claim
+ * - roles claim
+ * - iat & exp
+ * - fromCache flag
+ */
+export async function getGraphDiagnostics(
+  env?: any,
+  forceRefresh = false
+): Promise<GraphDiagnosticsInfo> {
+  const envObj = (env || {}) as any;
+  const p = typeof process !== "undefined" ? process?.env : {};
+
+  // Check initial cache state
+  const wasCached = Boolean(
+    !forceRefresh &&
+    cachedGraphToken &&
+    cachedGraphToken.expiresAt > Date.now() + 60000
+  );
+
+  if (forceRefresh) {
+    clearGraphTokenCache();
+  }
+
+  // Get token (will use cache or fetch fresh)
+  const token = await getGraphAccessToken(env);
+  const payload = decodeJwtPayload(token) || {};
+
+  // Resolve env var names
+  let tenantVar = "None";
+  if (envObj.AZURE_TENANT_ID || p?.AZURE_TENANT_ID) tenantVar = "AZURE_TENANT_ID";
+  else if (envObj.TENANT_ID || p?.TENANT_ID) tenantVar = "TENANT_ID";
+
+  let clientVar = cachedGraphToken?.activeClientVar || "None";
+  if (clientVar === "None") {
+    if (envObj.HOURS_GRAPH_CLIENT_ID || p?.HOURS_GRAPH_CLIENT_ID) clientVar = "HOURS_GRAPH_CLIENT_ID";
+    else if (envObj.AZURE_CLIENT_ID || p?.AZURE_CLIENT_ID) clientVar = "AZURE_CLIENT_ID";
+    else if (envObj.CLIENT_ID || p?.CLIENT_ID) clientVar = "CLIENT_ID";
+  }
+
+  let secretVar = cachedGraphToken?.activeSecretVar || "None";
+  if (secretVar === "None") {
+    if (envObj.HOURS_GRAPH_CLIENT_SECRET || p?.HOURS_GRAPH_CLIENT_SECRET) secretVar = "HOURS_GRAPH_CLIENT_SECRET";
+    else if (envObj.AZURE_CLIENT_SECRET || p?.AZURE_CLIENT_SECRET) secretVar = "AZURE_CLIENT_SECRET";
+    else if (envObj.CLIENT_SECRET || p?.CLIENT_SECRET) secretVar = "CLIENT_SECRET";
+  }
+
+  const appId = String(payload.appid || payload.azp || "");
+  const roles: string[] = Array.isArray(payload.roles) ? payload.roles : [];
+  const issuedAt = payload.iat ? new Date(payload.iat * 1000).toISOString() : null;
+  const expiresAt = payload.exp ? new Date(payload.exp * 1000).toISOString() : null;
+  const tenantId = String(payload.tid || "");
+
+  return {
+    envSources: {
+      tenantVar,
+      clientVar,
+      secretVar,
+    },
+    appId,
+    roles,
+    issuedAt,
+    expiresAt,
+    fromCache: wasCached,
+    cachedAt: cachedGraphToken?.obtainedAt
+      ? new Date(cachedGraphToken.obtainedAt).toISOString()
+      : null,
+    tenantId,
+  };
 }
 
 /**
