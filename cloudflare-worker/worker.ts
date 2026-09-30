@@ -27,6 +27,12 @@ import { handleSendOtp } from "../functions/api/auth/send-otp";
 import { handleVerifyOtp } from "../functions/api/auth/verify-otp";
 import * as hoursMeHandler from "../functions/api/hours/me";
 import * as hoursConfigHandler from "../functions/api/hours/config";
+import * as hoursCustomersHandler from "../functions/api/hours/customers";
+import * as hoursMonthTargetHandler from "../functions/api/hours/month-target";
+import * as hoursSheetStructureHandler from "../functions/api/hours/sheet-structure";
+import * as hoursWriteRowsHandler from "../functions/api/hours/write-rows";
+import * as hoursFindDuplicatesHandler from "../functions/api/hours/find-duplicates";
+import * as hoursUndoHandler from "../functions/api/hours/undo";
 
 export interface Env {
   GEMINI_API_KEY?: string;
@@ -158,6 +164,54 @@ export default {
         return hoursMeHandler.onRequestOptions({ request, env });
       }
       return hoursMeHandler.onRequestGet({ request, env });
+    }
+
+    // Route 17: Hours Customers & Search (/api/hours/customers, /api/hours/customers/search)
+    if (url.pathname.endsWith("/api/hours/customers") || url.pathname.endsWith("/api/hours/customers/search")) {
+      if (request.method === "OPTIONS") {
+        return hoursCustomersHandler.onRequestOptions({ request, env });
+      }
+      return hoursCustomersHandler.onRequestGet({ request, env });
+    }
+
+    // Route 18: Hours Month Target (/api/hours/month-target)
+    if (url.pathname.endsWith("/api/hours/month-target")) {
+      if (request.method === "OPTIONS") {
+        return hoursMonthTargetHandler.onRequestOptions({ request, env });
+      }
+      return hoursMonthTargetHandler.onRequestGet({ request, env });
+    }
+
+    // Route 19: Hours Sheet Structure (/api/hours/sheet-structure)
+    if (url.pathname.endsWith("/api/hours/sheet-structure")) {
+      if (request.method === "OPTIONS") {
+        return hoursSheetStructureHandler.onRequestOptions({ request, env });
+      }
+      return hoursSheetStructureHandler.onRequestGet({ request, env });
+    }
+
+    // Route 20: Write Rows (/api/hours/write-rows)
+    if (url.pathname.endsWith("/api/hours/write-rows")) {
+      if (request.method === "OPTIONS") {
+        return hoursWriteRowsHandler.onRequestOptions({ request, env });
+      }
+      return hoursWriteRowsHandler.onRequestPost({ request, env });
+    }
+
+    // Route 21: Find Duplicates (/api/hours/find-duplicates)
+    if (url.pathname.endsWith("/api/hours/find-duplicates")) {
+      if (request.method === "OPTIONS") {
+        return hoursFindDuplicatesHandler.onRequestOptions({ request, env });
+      }
+      return hoursFindDuplicatesHandler.onRequestPost({ request, env });
+    }
+
+    // Route 22: Undo Row (/api/hours/undo)
+    if (url.pathname.endsWith("/api/hours/undo")) {
+      if (request.method === "OPTIONS") {
+        return hoursUndoHandler.onRequestOptions({ request, env });
+      }
+      return hoursUndoHandler.onRequestPost({ request, env });
     }
 
     return new Response(

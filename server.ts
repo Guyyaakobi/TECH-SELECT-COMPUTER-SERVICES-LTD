@@ -5,6 +5,15 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import { jsPDF } from "jspdf";
 import { hoursAuthMiddleware } from "./server/hoursAuthMiddleware";
+import {
+  listCustomers,
+  findCustomer,
+  findMonthTarget,
+  readSheetStructure,
+  writeRows,
+  findDuplicates,
+  undoRow,
+} from "./services/graphHours";
 
 // Lazy Gemini client helper with required headers
 function getGeminiClient(): GoogleGenAI {
@@ -4306,6 +4315,114 @@ ${!isAteraCustomer ? `
         oid: user?.oid,
         ...user,
       });
+    });
+
+    // 1. GET /api/hours/customers: list customer folders (10m cache) or search if ?q=...
+    hoursRouter.get("/customers", async (req, res) => {
+      try {
+        const query = req.query.q || req.query.query || req.query.search;
+        const forceRefresh = req.query.refresh === "true";
+        if (typeof query === "string" && query.trim() !== "") {
+          const results = await findCustomer(query.trim(), process.env);
+          return res.json({ query, results });
+        }
+        const customers = await listCustomers(process.env, forceRefresh);
+        return res.json({ customers });
+      } catch (err: any) {
+        console.error("[GET /api/hours/customers] Error:", err);
+        return res.status(500).json({ error: err?.message || "שגיאה בגישה ל-SharePoint" });
+      }
+    });
+
+    // 2. GET /api/hours/customers/search: fuzzy match customer
+    hoursRouter.get("/customers/search", async (req, res) => {
+      try {
+        const query = String(req.query.q || req.query.query || "").trim();
+        const results = await findCustomer(query, process.env);
+        return res.json({ query, results });
+      } catch (err: any) {
+        console.error("[GET /api/hours/customers/search] Error:", err);
+        return res.status(500).json({ error: err?.message || "שגיאה בחיפוש לקוח" });
+      }
+    });
+
+    // 3. GET /api/hours/month-target: find month target file / folder in "{customer}/שעות עבודה"
+    hoursRouter.get("/month-target", async (req, res) => {
+      try {
+        const customer = String(req.query.customer || req.query.customerId || "").trim();
+        const date = String(req.query.date || req.query.month || "").trim();
+        if (!customer) {
+          return res.status(400).json({ error: "חסר פרמטר חובה: customer" });
+        }
+        const result = await findMonthTarget(customer, date, process.env);
+        return res.json(result);
+      } catch (err: any) {
+        console.error("[GET /api/hours/month-target] Error:", err);
+        return res.status(500).json({ error: err?.message || "שגיאה באיתור קובץ חודשי" });
+      }
+    });
+
+    // 4. GET /api/hours/sheet-structure: read table or plain range, detect formats, empty row
+    hoursRouter.get("/sheet-structure", async (req, res) => {
+      try {
+        const fileId = String(req.query.fileId || "").trim();
+        if (!fileId) {
+          return res.status(400).json({ error: "חסר פרמטר חובה: fileId" });
+        }
+        const structure = await readSheetStructure(fileId, process.env);
+        return res.json(structure);
+      } catch (err: any) {
+        console.error("[GET /api/hours/sheet-structure] Error:", err);
+        return res.status(500).json({ error: err?.message || "שגיאה בקריאת מבנה קובץ Excel" });
+      }
+    });
+
+    // 5. POST /api/hours/write-rows: write rows to table or plain range with workbook session & retries
+    hoursRouter.post("/write-rows", async (req, res) => {
+      try {
+        const { fileId, rows } = req.body || {};
+        if (!fileId || !rows || !Array.isArray(rows) || rows.length === 0) {
+          return res.status(400).json({ error: "נדרשים שדות חובה: fileId ומערך שורות rows" });
+        }
+        const user = (req as any).user;
+        const result = await writeRows(fileId, rows, user, process.env);
+        return res.json(result);
+      } catch (err: any) {
+        console.error("[POST /api/hours/write-rows] Error:", err);
+        return res.status(500).json({ error: err?.message || "שגיאה בכתיבת שורות" });
+      }
+    });
+
+    // 6. POST /api/hours/find-duplicates: check existing rows for employee / date / start
+    hoursRouter.post("/find-duplicates", async (req, res) => {
+      try {
+        const { fileId, employee, date, start, duration } = req.body || {};
+        if (!fileId || !employee || !date) {
+          return res.status(400).json({ error: "נדרשים שדות חובה: fileId, employee, date" });
+        }
+        const result = await findDuplicates(fileId, { employee, date, start, duration }, process.env);
+        return res.json(result);
+      } catch (err: any) {
+        console.error("[POST /api/hours/find-duplicates] Error:", err);
+        return res.status(500).json({ error: err?.message || "שגיאה בבדיקת כפילויות" });
+      }
+    });
+
+    // 7. POST /api/hours/undo: undo row written by this tool in the last 10 minutes
+    hoursRouter.post("/undo", async (req, res) => {
+      try {
+        const { fileId, rowAddress, entryId } = req.body || {};
+        const target = rowAddress || entryId;
+        if (!fileId || !target) {
+          return res.status(400).json({ error: "נדרשים שדות חובה: fileId ו-rowAddress" });
+        }
+        const user = (req as any).user;
+        const result = await undoRow(fileId, target, user, process.env);
+        return res.json(result);
+      } catch (err: any) {
+        console.error("[POST /api/hours/undo] Error:", err);
+        return res.status(400).json({ error: err?.message || "שגיאה בביטול שורה" });
+      }
     });
 
     app.use("/api/hours", hoursRouter);

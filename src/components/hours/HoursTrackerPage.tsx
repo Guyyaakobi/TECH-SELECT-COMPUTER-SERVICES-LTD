@@ -18,6 +18,7 @@ import {
   loginWithMicrosoft,
   logoutFromMicrosoft,
 } from "../../services/hoursAuth";
+import { HoursTestPanel } from "./HoursTestPanel";
 import type { PublicClientApplication, AccountInfo } from "@azure/msal-browser";
 
 interface ServerUserInfo {
@@ -285,7 +286,7 @@ export const HoursTrackerPage: React.FC = () => {
 
       {/* Main Content Area */}
       <main className="relative z-10 flex-1 flex flex-col items-center justify-center p-4 sm:p-8 md:p-12">
-        <div className="w-full max-w-lg">
+        <div className={`w-full ${(account || serverUser) ? "max-w-4xl" : "max-w-lg"} transition-all`}>
           {/* Missing System Configuration Screen */}
           {missingConfig && (
             <div className="p-6 sm:p-8 rounded-3xl bg-amber-950/20 border border-amber-500/30 backdrop-blur-xl text-right shadow-2xl">
@@ -384,7 +385,8 @@ export const HoursTrackerPage: React.FC = () => {
 
           {/* Authenticated State: "תיעוד שעות – בקרוב" + Employee Name */}
           {!missingConfig && !loading && (account || serverUser) && (
-            <div className="relative overflow-hidden p-8 sm:p-10 rounded-3xl bg-gradient-to-b from-white/[0.08] to-white/[0.02] border border-white/10 backdrop-blur-2xl shadow-2xl text-center">
+            <>
+              <div className="relative overflow-hidden p-8 sm:p-10 rounded-3xl bg-gradient-to-b from-white/[0.08] to-white/[0.02] border border-white/10 backdrop-blur-2xl shadow-2xl text-center">
               <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-cyan-400 to-blue-600" />
 
               <div className="w-16 h-16 rounded-2xl bg-blue-500/10 border border-blue-400/30 text-blue-400 flex items-center justify-center mx-auto mb-6 shadow-inner">
@@ -435,6 +437,15 @@ export const HoursTrackerPage: React.FC = () => {
                 </button>
               </div>
             </div>
+
+            {/* Stage 2 Test Panel */}
+            <HoursTestPanel
+              currentUser={{
+                name: displayName,
+                email: userEmail,
+              }}
+            />
+          </>
           )}
         </div>
       </main>

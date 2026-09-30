@@ -29,6 +29,12 @@ import * as contactHandler from "./functions/api/contact";
 import * as checkCustomerHandler from "./functions/api/atera/check-customer";
 import * as hoursMeHandler from "./functions/api/hours/me";
 import * as hoursConfigHandler from "./functions/api/hours/config";
+import * as hoursCustomersHandler from "./functions/api/hours/customers";
+import * as hoursMonthTargetHandler from "./functions/api/hours/month-target";
+import * as hoursSheetStructureHandler from "./functions/api/hours/sheet-structure";
+import * as hoursWriteRowsHandler from "./functions/api/hours/write-rows";
+import * as hoursFindDuplicatesHandler from "./functions/api/hours/find-duplicates";
+import * as hoursUndoHandler from "./functions/api/hours/undo";
 
 interface Env {
   ASSETS?: {
@@ -166,6 +172,54 @@ export default {
         return hoursMeHandler.onRequestOptions(context);
       }
       return hoursMeHandler.onRequestGet(context);
+    }
+
+    // 9.2 Hours Customers & Search (/api/hours/customers, /api/hours/customers/search)
+    if (pathname === "/api/hours/customers" || pathname === "/api/hours/customers/search") {
+      if (request.method === "OPTIONS") {
+        return hoursCustomersHandler.onRequestOptions(context);
+      }
+      return hoursCustomersHandler.onRequestGet(context);
+    }
+
+    // 9.3 Hours Month Target File Detection (/api/hours/month-target)
+    if (pathname === "/api/hours/month-target") {
+      if (request.method === "OPTIONS") {
+        return hoursMonthTargetHandler.onRequestOptions(context);
+      }
+      return hoursMonthTargetHandler.onRequestGet(context);
+    }
+
+    // 9.4 Hours Sheet Structure & Format Detection (/api/hours/sheet-structure)
+    if (pathname === "/api/hours/sheet-structure") {
+      if (request.method === "OPTIONS") {
+        return hoursSheetStructureHandler.onRequestOptions(context);
+      }
+      return hoursSheetStructureHandler.onRequestGet(context);
+    }
+
+    // 9.5 Write Rows (/api/hours/write-rows)
+    if (pathname === "/api/hours/write-rows") {
+      if (request.method === "OPTIONS") {
+        return hoursWriteRowsHandler.onRequestOptions(context);
+      }
+      return hoursWriteRowsHandler.onRequestPost(context);
+    }
+
+    // 9.6 Find Duplicates (/api/hours/find-duplicates)
+    if (pathname === "/api/hours/find-duplicates") {
+      if (request.method === "OPTIONS") {
+        return hoursFindDuplicatesHandler.onRequestOptions(context);
+      }
+      return hoursFindDuplicatesHandler.onRequestPost(context);
+    }
+
+    // 9.7 Undo Written Row (/api/hours/undo)
+    if (pathname === "/api/hours/undo") {
+      if (request.method === "OPTIONS") {
+        return hoursUndoHandler.onRequestOptions(context);
+      }
+      return hoursUndoHandler.onRequestPost(context);
     }
 
     // 8. Simulator Activity Logger
