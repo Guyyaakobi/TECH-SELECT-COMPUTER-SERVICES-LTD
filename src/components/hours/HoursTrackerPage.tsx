@@ -17,6 +17,7 @@ import {
 import {
   initMsal,
   getApiToken,
+  setCachedApiToken,
   loginWithMicrosoft,
   logoutFromMicrosoft,
 } from "../../services/hoursAuth";
@@ -153,6 +154,7 @@ export const HoursTrackerPage: React.FC = () => {
 
         try {
           const token = await getApiToken(pca, config.apiScope);
+          setCachedApiToken(token);
           const response = await fetch("/api/hours/me", {
             method: "GET",
             headers: {

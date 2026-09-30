@@ -13,9 +13,37 @@ import {
 
 let msalInstance: PublicClientApplication | null = null;
 let currentConfig: AzureHoursConfig | null = null;
+let cachedUserToken: { token: string; expiresAt: number } | null = null;
 
 export function isMsalInitialized(): boolean {
   return msalInstance !== null;
+}
+
+export function setCachedApiToken(token: string, expiresInSec = 3600): void {
+  if (!token) return;
+  cachedUserToken = {
+    token,
+    expiresAt: Date.now() + Math.max(300, expiresInSec - 120) * 1000,
+  };
+  try {
+    sessionStorage.setItem("hours_bearer_token", token);
+    sessionStorage.setItem("hours_bearer_token_exp", String(cachedUserToken.expiresAt));
+  } catch {}
+}
+
+export function getCachedApiToken(): string | null {
+  if (cachedUserToken && cachedUserToken.expiresAt > Date.now()) {
+    return cachedUserToken.token;
+  }
+  try {
+    const stored = sessionStorage.getItem("hours_bearer_token");
+    const exp = Number(sessionStorage.getItem("hours_bearer_token_exp")) || 0;
+    if (stored && exp > Date.now()) {
+      cachedUserToken = { token: stored, expiresAt: exp };
+      return stored;
+    }
+  } catch {}
+  return null;
 }
 
 export function getMsalInstance(): PublicClientApplication {
@@ -69,17 +97,32 @@ export async function initMsal(config: AzureHoursConfig): Promise<PublicClientAp
 
 /**
  * Helper to acquire API Token:
- * First attempts acquireTokenSilent, falling back to acquireTokenRedirect as required.
+ * Checks memory & sessionStorage cache first.
+ * Then attempts acquireTokenSilent with safe timeout.
  */
 export async function getApiToken(
   pca?: PublicClientApplication,
   customScope?: string
 ): Promise<string> {
-  const instance = pca || getMsalInstance();
+  // 1. Return cached valid token if available
+  const cached = getCachedApiToken();
+  if (cached) {
+    return cached;
+  }
+
+  const instance = pca || (msalInstance ? getMsalInstance() : null);
+  if (!instance) {
+    const stored = sessionStorage.getItem("hours_bearer_token");
+    if (stored) return stored;
+    throw new Error("מערכת האימות טרם אותחלה. יש לבצע התחברות.");
+  }
+
   const accounts = instance.getAllAccounts();
   const activeAccount = instance.getActiveAccount() || (accounts.length > 0 ? accounts[0] : null);
 
   if (!activeAccount) {
+    const stored = sessionStorage.getItem("hours_bearer_token");
+    if (stored) return stored;
     throw new Error("לא נמצא חשבון פעיל מחובר. יש לבצע התחברות למערכת.");
   }
 
@@ -95,20 +138,24 @@ export async function getApiToken(
   };
 
   try {
-    const response = await instance.acquireTokenSilent(tokenRequest);
-    return response.accessToken;
-  } catch (err: any) {
-    console.warn("[getApiToken] Silent token acquisition failed, attempting acquireTokenRedirect fallback:", err);
-    if (
-      err instanceof InteractionRequiredAuthError ||
-      err?.name === "InteractionRequiredAuthError" ||
-      err?.errorCode === "interaction_required"
-    ) {
-      await instance.acquireTokenRedirect(tokenRequest);
-      throw err;
+    const response = await Promise.race([
+      instance.acquireTokenSilent(tokenRequest),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout during silent token refresh")), 7000)
+      ),
+    ]);
+    if (response?.accessToken) {
+      setCachedApiToken(response.accessToken, 3600);
+      return response.accessToken;
     }
-    await instance.acquireTokenRedirect(tokenRequest);
-    throw err;
+    throw new Error("לא התקבל טוקן גישה מ-Microsoft Entra ID");
+  } catch (err: any) {
+    console.warn("[getApiToken] Silent token acquisition failed:", err);
+    const stored = sessionStorage.getItem("hours_bearer_token");
+    if (stored) {
+      return stored;
+    }
+    throw new Error("פג תוקף החיבור ל-Microsoft 365. אנא רענן את העמוד והתחבר שוב.");
   }
 }
 

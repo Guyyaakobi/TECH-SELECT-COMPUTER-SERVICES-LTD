@@ -15,18 +15,34 @@ export async function fetchHoursApi<T = any>(
   }
 
   const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
-  const res = await fetch(cleanEndpoint, {
-    ...options,
-    headers,
-  });
 
-  if (!res.ok) {
-    const errorBody = await res.json().catch(() => ({}));
-    const message = errorBody?.error || `שגיאת שרת (${res.status})`;
-    throw new Error(message);
+  const controller = new AbortController();
+  const timeoutMs = 25000;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(cleanEndpoint, {
+      ...options,
+      headers,
+      signal: options.signal || controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      const errorBody = await res.json().catch(() => ({}));
+      const message = errorBody?.error || `שגיאת שרת (${res.status})`;
+      throw new Error(message);
+    }
+
+    return res.json();
+  } catch (err: any) {
+    clearTimeout(timeoutId);
+    if (err.name === "AbortError") {
+      throw new Error("הבקשה לשרת ארכה זמן רב מהרגיל ולא התקבלה תשובה. נא לנסות שוב.");
+    }
+    throw err;
   }
-
-  return res.json();
 }
 
 export interface CustomersApiResponse {

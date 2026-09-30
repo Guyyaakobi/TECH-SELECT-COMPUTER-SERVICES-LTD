@@ -230,9 +230,20 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
 
   // Send Audio payload to backend
   const handleSendAudio = async (base64Audio: string, mimeType: string) => {
+    let stepTimer1: any = null;
+    let stepTimer2: any = null;
+
     try {
       setLoading(true);
-      setLoadingStep("מתמלל הקלטה ומאתר נתונים ב-SharePoint...");
+      setLoadingStep("מתמלל הקלטה קולית...");
+
+      stepTimer1 = setTimeout(() => {
+        setLoadingStep("מאתר לקוחות ותיקיות ב-SharePoint...");
+      }, 3500);
+
+      stepTimer2 = setTimeout(() => {
+        setLoadingStep("בודק כפילויות ומכין כרטיס דיווח...");
+      }, 7500);
 
       // Prepare conversation history
       const history = messages
@@ -265,6 +276,8 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
         },
       ]);
     } finally {
+      if (stepTimer1) clearTimeout(stepTimer1);
+      if (stepTimer2) clearTimeout(stepTimer2);
       setLoading(false);
     }
   };
@@ -287,9 +300,20 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
 
     setMessages((prev) => [...prev, userMessage]);
 
+    let stepTimer1: any = null;
+    let stepTimer2: any = null;
+
     try {
       setLoading(true);
-      setLoadingStep("מנתח הודעה ובודק נתונים ב-Excel...");
+      setLoadingStep("מנתח הודעה ובודק נתונים...");
+
+      stepTimer1 = setTimeout(() => {
+        setLoadingStep("מאתר לקוחות ותיקיות ב-SharePoint...");
+      }, 3000);
+
+      stepTimer2 = setTimeout(() => {
+        setLoadingStep("בודק קובץ Excel וכפילויות ומכין כרטיס...");
+      }, 6500);
 
       // Prepare conversation history
       const history = [...messages, userMessage]
@@ -319,6 +343,8 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
         },
       ]);
     } finally {
+      if (stepTimer1) clearTimeout(stepTimer1);
+      if (stepTimer2) clearTimeout(stepTimer2);
       setLoading(false);
     }
   };

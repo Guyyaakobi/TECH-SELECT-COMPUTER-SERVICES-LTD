@@ -363,9 +363,22 @@ export async function processAssistantChat(
   }
 
   // 3. Initialize Gemini Client Server-Side
-  const apiKey = activeEnv.GEMINI_API_KEY || process.env.GEMINI_API_KEY;
+  const apiKey =
+    activeEnv?.GEMINI_API_KEY ||
+    activeEnv?.GOOGLE_GENAI_API_KEY ||
+    activeEnv?.GEMINI_KEY ||
+    activeEnv?.GOOGLE_API_KEY ||
+    (typeof process !== "undefined" &&
+      (process.env?.GEMINI_API_KEY ||
+        process.env?.GOOGLE_GENAI_API_KEY ||
+        process.env?.GEMINI_KEY ||
+        process.env?.GOOGLE_API_KEY)) ||
+    (typeof (globalThis as any).GEMINI_API_KEY === "string" ? (globalThis as any).GEMINI_API_KEY : "");
+
   if (!apiKey) {
-    throw new Error("משתנה סביבה GEMINI_API_KEY חסר בשרת.");
+    throw new Error(
+      "מפתח Gemini API חסר בשרת (GEMINI_API_KEY). יש לוודא שהוגדר משתנה סביבה או סוד תואם."
+    );
   }
 
   const ai = new GoogleGenAI({
@@ -612,11 +625,11 @@ followed by your natural Hebrew response or tool calls.`;
   let userTranscript: string | undefined = undefined;
   let isConfirmed = false;
 
-  // Tool execution loop (max 7 iterations)
+  // Tool execution loop (max 4 iterations)
   let loopCount = 0;
   let finalResponseText = "";
 
-  while (loopCount < 7) {
+  while (loopCount < 4) {
     loopCount++;
 
     const response = await ai.models.generateContent({
@@ -639,7 +652,8 @@ followed by your natural Hebrew response or tool calls.`;
       break;
     }
 
-    // Execute tool calls
+    // Execute tool calls and group responses into a single user turn
+    const responseParts: any[] = [];
     for (const call of calls) {
       const { name, args } = call;
       let toolResult: any = {};
@@ -834,16 +848,18 @@ followed by your natural Hebrew response or tool calls.`;
         toolResult = { error: toolErr?.message || "Tool execution failed" };
       }
 
+      responseParts.push({
+        functionResponse: {
+          name,
+          response: toolResult,
+        },
+      });
+    }
+
+    if (responseParts.length > 0) {
       contents.push({
         role: "user",
-        parts: [
-          {
-            functionResponse: {
-              name,
-              response: toolResult,
-            },
-          },
-        ],
+        parts: responseParts,
       });
     }
   }
