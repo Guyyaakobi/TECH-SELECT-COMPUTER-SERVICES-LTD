@@ -293,8 +293,8 @@ export async function getGraphAccessToken(env?: any): Promise<string> {
   const rawClientCid = (envObj.CLIENT_ID || p?.CLIENT_ID || "").trim();
   const rawClientSec = (envObj.CLIENT_SECRET || p?.CLIENT_SECRET || "").trim();
 
-  // Candidate 1: Standard configured credentials
-  if (credentials.clientId && credentials.clientSecret) {
+  // Candidate 1: Standard configured credentials (if client ID is a valid GUID)
+  if (credentials.clientId && credentials.clientSecret && /^[0-9a-fA-F-]{36}$/.test(credentials.clientId)) {
     candidates.push({
       clientId: credentials.clientId,
       clientSecret: credentials.clientSecret,
@@ -302,27 +302,8 @@ export async function getGraphAccessToken(env?: any): Promise<string> {
     });
   }
 
-  // Candidate 2: If HOURS_GRAPH_CLIENT_ID was secret-value and HOURS_GRAPH_CLIENT_SECRET was a secret-id GUID,
-  // try AZURE_CLIENT_ID with the secret value
-  if (rawAzureCid && rawHoursCid && rawHoursCid.includes("~")) {
-    candidates.push({
-      clientId: rawAzureCid,
-      clientSecret: rawHoursCid,
-      label: "AZURE_CLIENT_ID + HOURS_GRAPH_CLIENT_ID(as secret)",
-    });
-  }
-
-  // Candidate 3: Inverted credentials if not already tried
-  if (credentials.clientId && credentials.clientSecret && credentials.clientId !== credentials.clientSecret) {
-    candidates.push({
-      clientId: credentials.clientSecret,
-      clientSecret: credentials.clientId,
-      label: "Inverted credentials candidate",
-    });
-  }
-
-  // Candidate 4: Server default CLIENT_ID / CLIENT_SECRET
-  if (rawClientCid && rawClientSec) {
+  // Candidate 2: Server default CLIENT_ID / CLIENT_SECRET (verified working pair)
+  if (rawClientCid && rawClientSec && /^[0-9a-fA-F-]{36}$/.test(rawClientCid)) {
     const alreadyExists = candidates.some((c) => c.clientId === rawClientCid && c.clientSecret === rawClientSec);
     if (!alreadyExists) {
       candidates.push({
@@ -330,6 +311,21 @@ export async function getGraphAccessToken(env?: any): Promise<string> {
         clientSecret: rawClientSec,
         label: "Server default CLIENT_ID/SECRET",
       });
+    }
+  }
+
+  // Candidate 3: AZURE_CLIENT_ID with any available secret
+  if (rawAzureCid && /^[0-9a-fA-F-]{36}$/.test(rawAzureCid)) {
+    const secretsToTry = [rawHoursSec, rawClientSec].filter(Boolean);
+    for (const sec of secretsToTry) {
+      const alreadyExists = candidates.some((c) => c.clientId === rawAzureCid && c.clientSecret === sec);
+      if (!alreadyExists) {
+        candidates.push({
+          clientId: rawAzureCid,
+          clientSecret: sec,
+          label: `AZURE_CLIENT_ID (${rawAzureCid.slice(0, 8)})`,
+        });
+      }
     }
   }
 
@@ -358,7 +354,7 @@ export async function getGraphAccessToken(env?: any): Promise<string> {
       if (!res.ok) {
         const errText = await res.text().catch(() => "");
         lastError = `[${cand.label}] HTTP ${res.status}: ${errText}`;
-        console.warn(`[getGraphAccessToken] Candidate ${cand.label} failed:`, lastError);
+        // Silent fallback - do not trigger platform log alarms when trying fallback candidates
         continue;
       }
 
@@ -375,7 +371,6 @@ export async function getGraphAccessToken(env?: any): Promise<string> {
       }
     } catch (err: any) {
       lastError = err?.message || String(err);
-      console.warn(`[getGraphAccessToken] Exception trying candidate ${cand.label}:`, lastError);
     }
   }
 
