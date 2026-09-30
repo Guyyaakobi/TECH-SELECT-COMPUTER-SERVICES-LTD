@@ -552,17 +552,13 @@ EXTRACTION RULES:
 
 MANDATORY WORKFLOW:
 1. Ask ONLY for missing mandatory fields (customer, date, duration, description) – all in ONE question.
-2. For each identified customer, call find_month_target with the customer name and entry date.
-3. Call read_sheet_structure to inspect existing columns and formats.
-4. Call find_duplicates to check for existing rows for this employee/date. If duplicates are found, warn the user clearly.
-5. Call propose_entries with the extracted details so summary cards appear in the UI.
-6. Show the summary and ask "מאשר להזין?".
-7. CRITICAL RULE: NEVER call write_rows before explicit confirmation from the employee (such as "אשר והזן", "כן", "מאשר", "תזין", "מאשרת").
-8. Accept corrections in free speech ("תשנה לחצי שעה", "זה היה אצל אלקטרה") and show the summary again.
-9. When the user confirms ("כן", "מאשר", "תזין"), call write_rows, then state "נרשם ✓" with target file and row.
-10. If audio is provided: Your first line MUST be the exact Hebrew transcript:
-[תמלול]: <התמלול המדויק בעברית>
-followed by your natural Hebrew response or tool calls.`;
+2. If customer name is ambiguous or needs SharePoint folder matching, call find_customer.
+3. Call propose_entries directly with the extracted details (customer, date, duration, description, workType).
+   NOTE: propose_entries AUTOMATICALLY finds the customer's month Excel file in SharePoint, inspects sheet structure, and checks duplicates. You do NOT need to call find_month_target or read_sheet_structure manually beforehand.
+4. Show the summary and ask "מאשר להזין?".
+5. CRITICAL RULE: NEVER call write_rows before explicit confirmation from the employee (such as "אשר והזן", "כן", "מאשר", "תזין", "מאשרת").
+6. Accept corrections in free speech ("תשנה לחצי שעה", "זה היה אצל אלקטרה") and show the summary again.
+7. When the user confirms ("כן", "מאשר", "תזין"), call write_rows, then state "נרשם ✓" with target file and row.`;
 
   // Build Conversation Contents for Gemini
   const contents: any[] = [];
@@ -596,35 +592,6 @@ followed by your natural Hebrew response or tool calls.`;
     )}]`;
   }
 
-  // Build current user message parts
-  const currentParts: any[] = [];
-  if (audio && audio.data) {
-    currentParts.push({
-      inlineData: {
-        mimeType: audio.mimeType || "audio/webm",
-        data: audio.data,
-      },
-    });
-    currentParts.push({
-      text: `הקלטת קול מהעובד. תמלל במדויק בקו [תמלול]: ... ופעל לפיה.${activeDraftsPrompt}`,
-    });
-  } else {
-    currentParts.push({
-      text: `${message || ""}${activeDraftsPrompt}`,
-    });
-  }
-
-  contents.push({
-    role: "user",
-    parts: currentParts,
-  });
-
-  // Track state across tool calls
-  let collectedDrafts: HoursAssistantEntryDraft[] = [...activeDrafts];
-  const newWrittenEntries: WrittenEntryResult[] = [];
-  let userTranscript: string | undefined = undefined;
-  let isConfirmed = false;
-
   // Safe timeout wrapper for tools to ensure assistant never hangs on slow Graph calls
   const withSafeTimeout = async <T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> => {
     return Promise.race([
@@ -633,11 +600,52 @@ followed by your natural Hebrew response or tool calls.`;
     ]);
   };
 
-  // Tool execution loop (max 4 iterations)
+  // STEP 1: Dedicated Audio Transcription (Speech-to-Text)
+  let userTranscript: string | undefined = undefined;
+  if (audio && audio.data) {
+    try {
+      const transcribeRes = await withSafeTimeout(
+        ai.models.generateContent({
+          model: "gemini-flash-latest",
+          contents: [
+            {
+              inlineData: {
+                mimeType: audio.mimeType || "audio/webm",
+                data: audio.data,
+              },
+            },
+            {
+              text: "תמלל את הדיבור בהקלטה לעברית באופן מדויק ונאמן למקור. החזר אך ורק את טקסט התמלול המדויק ללא שום הערות או תוספות.",
+            },
+          ],
+        }),
+        25000,
+        null as any
+      );
+      userTranscript = transcribeRes?.text?.trim() || undefined;
+    } catch (transcribeErr) {
+      console.warn("[Assistant Transcribe] Fast transcribe error:", transcribeErr);
+    }
+  }
+
+  // Effective message text: prioritize dedicated transcript if voice was sent, otherwise text message
+  const effectiveUserText = (userTranscript || message || "").trim();
+
+  contents.push({
+    role: "user",
+    parts: [{ text: `${effectiveUserText}${activeDraftsPrompt}` }],
+  });
+
+  // Track state across tool calls
+  let collectedDrafts: HoursAssistantEntryDraft[] = [...activeDrafts];
+  const newWrittenEntries: WrittenEntryResult[] = [];
+  let isConfirmed = false;
+
+  // Tool execution loop (max 6 iterations)
   let loopCount = 0;
   let finalResponseText = "";
 
-  while (loopCount < 4) {
+  while (loopCount < 6) {
     loopCount++;
 
     const response = await withSafeTimeout(
@@ -913,16 +921,23 @@ followed by your natural Hebrew response or tool calls.`;
     }
   }
 
-  // Parse [תמלול]: ... if audio was sent
+  // Parse [תמלול]: ... if present
   let cleanReply = finalResponseText.trim();
   const transcriptMatch = cleanReply.match(/^\[תמלול\]:\s*(.+)$/m);
   if (transcriptMatch) {
-    userTranscript = transcriptMatch[1].trim();
+    if (!userTranscript) {
+      userTranscript = transcriptMatch[1].trim();
+    }
     cleanReply = cleanReply.replace(/^\[תמלול\]:\s*.+$/m, "").trim();
   }
 
+  const defaultReply =
+    collectedDrafts.length > 0
+      ? "הכנתי את פרטי הדיווח בכרטיס למטה. מאשר להזין?"
+      : "במה תרצה שאתעד שעות עבורך?";
+
   return {
-    reply: cleanReply,
+    reply: cleanReply || defaultReply,
     transcript: userTranscript,
     drafts: collectedDrafts,
     writtenEntries:
