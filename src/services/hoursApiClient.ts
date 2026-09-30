@@ -29,14 +29,28 @@ export async function fetchHoursApi<T = any>(
   return res.json();
 }
 
+export interface CustomersApiResponse {
+  siteId?: string;
+  detectedStructure?: "folders" | "libraries";
+  totalCustomers?: number;
+  first10Customers?: string[];
+  customers: any[];
+}
+
 /**
- * 1. Fetch Customers List
+ * 1. Fetch Customers List & Detection Metadata
  */
-export async function apiListCustomers(forceRefresh = false): Promise<any[]> {
-  const data = await fetchHoursApi<{ customers: any[] }>(
+export async function apiListCustomers(forceRefresh = false): Promise<CustomersApiResponse> {
+  const data = await fetchHoursApi<CustomersApiResponse>(
     `/api/hours/customers${forceRefresh ? "?refresh=true" : ""}`
   );
-  return data.customers || [];
+  return {
+    siteId: data.siteId,
+    detectedStructure: data.detectedStructure || "folders",
+    totalCustomers: data.totalCustomers ?? (data.customers || []).length,
+    first10Customers: data.first10Customers || (data.customers || []).slice(0, 10).map((c: any) => c.name || c),
+    customers: data.customers || [],
+  };
 }
 
 /**

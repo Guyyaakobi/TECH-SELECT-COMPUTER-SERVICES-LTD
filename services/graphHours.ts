@@ -18,6 +18,16 @@ export interface CustomerFolder {
   name: string;
   webUrl?: string;
   driveId?: string;
+  hoursFolderId?: string;
+  type?: "folder" | "library";
+}
+
+export interface CustomersDetectionInfo {
+  siteId: string;
+  detectedStructure: "folders" | "libraries";
+  totalCustomers: number;
+  first10Customers: string[];
+  customers: CustomerFolder[];
 }
 
 export interface CustomerMatch {
@@ -111,6 +121,8 @@ const undoLog: UndoLogEntry[] = [];
 // Customers cache (10 minutes TTL)
 interface CustomersCache {
   timestamp: number;
+  siteId: string;
+  detectedStructure: "folders" | "libraries";
   items: CustomerFolder[];
 }
 let customersCache: CustomersCache | null = null;
@@ -160,13 +172,13 @@ export function getGraphHoursConfig(env?: any) {
   const sharepointSite = (
     envObj.SHAREPOINT_SITE ||
     p?.SHAREPOINT_SITE ||
-    "techselect.sharepoint.com:/sites/IT"
+    "techselectltd.sharepoint.com:/sites/Customers"
   ).trim();
 
   const customersRootPath = (
     envObj.CUSTOMERS_ROOT_PATH ||
     p?.CUSTOMERS_ROOT_PATH ||
-    "/Documents/לקוחות"
+    "/"
   ).trim();
 
   const hoursFolderName = "שעות עבודה";
@@ -323,65 +335,216 @@ export async function resolveSharePointDrive(env?: any): Promise<{ siteId: strin
 }
 
 /**
- * 1. listCustomers() – list folders under CUSTOMERS_ROOT_PATH. Cache for 10 minutes.
+ * Auto-detect customer storage structure and list customers:
+ * 1. List customer folders from default document library root:
+ *    GET /sites/{siteId}/drive/root/children (no "root:/:" syntax when path is "/").
+ *    A customer = a folder that contains a subfolder named "שעות עבודה".
+ * 2. If no such folders are found there, list the site's document libraries
+ *    (GET /sites/{siteId}/drives) and treat each library that contains a root folder
+ *    "שעות עבודה" as a customer (customer name = library name).
+ * 3. Use whichever structure is found, and cache it.
  */
-export async function listCustomers(env?: any, forceRefresh = false): Promise<CustomerFolder[]> {
+export async function detectAndListCustomers(
+  env?: any,
+  forceRefresh = false
+): Promise<CustomersDetectionInfo> {
   const now = Date.now();
-  if (!forceRefresh && customersCache && customersCache.timestamp > now - CUSTOMERS_CACHE_TTL_MS) {
-    return customersCache.items;
+  if (
+    !forceRefresh &&
+    customersCache &&
+    customersCache.timestamp > now - CUSTOMERS_CACHE_TTL_MS
+  ) {
+    return {
+      siteId: customersCache.siteId,
+      detectedStructure: customersCache.detectedStructure,
+      totalCustomers: customersCache.items.length,
+      first10Customers: customersCache.items.slice(0, 10).map((c) => c.name),
+      customers: customersCache.items,
+    };
   }
 
-  const { driveId } = await resolveSharePointDrive(env);
-  const { customersRootPath } = getGraphHoursConfig(env);
+  const { siteId, driveId } = await resolveSharePointDrive(env);
+  const { customersRootPath, hoursFolderName } = getGraphHoursConfig(env);
 
   // Normalize path
   let cleanPath = customersRootPath.trim();
-  if (cleanPath.startsWith("/")) cleanPath = cleanPath.slice(1);
-  if (cleanPath.endsWith("/")) cleanPath = cleanPath.slice(0, -1);
+  if (cleanPath === "/" || cleanPath === "") {
+    cleanPath = "";
+  } else {
+    if (cleanPath.startsWith("/")) cleanPath = cleanPath.slice(1);
+    if (cleanPath.endsWith("/")) cleanPath = cleanPath.slice(0, -1);
+  }
 
+  // =========================================================================
+  // 1. Check default document library root: GET /sites/{siteId}/drive/root/children
+  // =========================================================================
   let childrenUrl = "";
   if (!cleanPath) {
-    childrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/root/children?$top=999`;
+    // Strictly no "root:/:" syntax when path is "/"
+    childrenUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root/children?$top=999`;
   } else {
     childrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/root:/${encodeURIComponent(cleanPath)}:/children?$top=999`;
   }
 
-  const res = await fetchGraph(childrenUrl, { method: "GET" }, env);
-  if (!res.ok) {
-    const err = await res.text().catch(() => "");
-    // Fallback: if specific root path was not found, try root children
-    if (res.status === 404 && cleanPath) {
-      console.warn(`[listCustomers] Path /${cleanPath} not found in drive. Falling back to drive root.`);
-      const rootRes = await fetchGraph(`https://graph.microsoft.com/v1.0/drives/${driveId}/root/children?$top=999`, { method: "GET" }, env);
-      if (rootRes.ok) {
-        const rootData: any = await rootRes.json();
-        const folders: CustomerFolder[] = (rootData.value || [])
-          .filter((item: any) => Boolean(item.folder))
-          .map((item: any) => ({
-            id: item.id,
-            name: item.name,
-            webUrl: item.webUrl,
-            driveId,
-          }));
-        customersCache = { timestamp: now, items: folders };
-        return folders;
+  let folderCustomers: CustomerFolder[] = [];
+  try {
+    const res = await fetchGraph(childrenUrl, { method: "GET" }, env);
+    if (res.ok) {
+      const data: any = await res.json();
+      const rootFolders: any[] = (data.value || []).filter((item: any) => Boolean(item.folder));
+
+      // Check which folders contain a subfolder named "שעות עבודה"
+      // Check in concurrent batches of 10
+      const batchSize = 10;
+      for (let i = 0; i < rootFolders.length; i += batchSize) {
+        const batch = rootFolders.slice(i, i + batchSize);
+        const batchResults = await Promise.all(
+          batch.map(async (folder) => {
+            try {
+              const subUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${folder.id}/children?$top=100`;
+              const subRes = await fetchGraph(subUrl, { method: "GET" }, env);
+              if (!subRes.ok) return null;
+              const subData: any = await subRes.json();
+              const subItems: any[] = subData.value || [];
+              const hoursItem = subItems.find(
+                (item) => Boolean(item.folder) && (item.name === hoursFolderName || item.name.includes("שעות"))
+              );
+              if (hoursItem) {
+                return {
+                  id: folder.id,
+                  name: folder.name,
+                  webUrl: folder.webUrl,
+                  driveId,
+                  hoursFolderId: hoursItem.id,
+                  type: "folder" as const,
+                };
+              }
+              return null;
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        for (const item of batchResults) {
+          if (item) folderCustomers.push(item);
+        }
       }
     }
-    throw new Error(`שגיאה בקריאת תיקיות לקוחות מ-SharePoint (${res.status}): ${err}`);
+  } catch (err) {
+    console.warn("[detectAndListCustomers] Error checking default document library:", err);
   }
 
-  const data: any = await res.json();
-  const folders: CustomerFolder[] = (data.value || [])
-    .filter((item: any) => Boolean(item.folder))
-    .map((item: any) => ({
-      id: item.id,
-      name: item.name,
-      webUrl: item.webUrl,
-      driveId,
-    }));
+  // If customer folders with "שעות עבודה" were found in the default document library
+  if (folderCustomers.length > 0) {
+    customersCache = {
+      timestamp: now,
+      siteId,
+      detectedStructure: "folders",
+      items: folderCustomers,
+    };
+    return {
+      siteId,
+      detectedStructure: "folders",
+      totalCustomers: folderCustomers.length,
+      first10Customers: folderCustomers.slice(0, 10).map((c) => c.name),
+      customers: folderCustomers,
+    };
+  }
 
-  customersCache = { timestamp: now, items: folders };
-  return folders;
+  // =========================================================================
+  // 2. If no such folders found: list document libraries (GET /sites/{siteId}/drives)
+  // Treat each library that contains a root folder "שעות עבודה" as a customer (customer name = library name).
+  // =========================================================================
+  let libraryCustomers: CustomerFolder[] = [];
+  try {
+    const drivesUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/drives?$top=999`;
+    const drivesRes = await fetchGraph(drivesUrl, { method: "GET" }, env);
+    if (drivesRes.ok) {
+      const drivesData: any = await drivesRes.json();
+      const allDrives: any[] = (drivesData.value || []).filter(
+        (d: any) => !d.system && d.name !== "Preservation Hold Library"
+      );
+
+      const batchSize = 10;
+      for (let i = 0; i < allDrives.length; i += batchSize) {
+        const batch = allDrives.slice(i, i + batchSize);
+        const batchResults = await Promise.all(
+          batch.map(async (drive) => {
+            try {
+              const driveRootUrl = `https://graph.microsoft.com/v1.0/drives/${drive.id}/root/children?$top=100`;
+              const driveRootRes = await fetchGraph(driveRootUrl, { method: "GET" }, env);
+              if (!driveRootRes.ok) return null;
+              const driveRootData: any = await driveRootRes.json();
+              const driveRootItems: any[] = driveRootData.value || [];
+              const hoursItem = driveRootItems.find(
+                (item) => Boolean(item.folder) && (item.name === hoursFolderName || item.name.includes("שעות"))
+              );
+              if (hoursItem) {
+                return {
+                  id: drive.id,
+                  name: drive.name,
+                  webUrl: drive.webUrl,
+                  driveId: drive.id,
+                  hoursFolderId: hoursItem.id,
+                  type: "library" as const,
+                };
+              }
+              return null;
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        for (const item of batchResults) {
+          if (item) libraryCustomers.push(item);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[detectAndListCustomers] Error checking document libraries:", err);
+  }
+
+  if (libraryCustomers.length > 0) {
+    customersCache = {
+      timestamp: now,
+      siteId,
+      detectedStructure: "libraries",
+      items: libraryCustomers,
+    };
+    return {
+      siteId,
+      detectedStructure: "libraries",
+      totalCustomers: libraryCustomers.length,
+      first10Customers: libraryCustomers.slice(0, 10).map((c) => c.name),
+      customers: libraryCustomers,
+    };
+  }
+
+  // 3. Fallback: if no folder/library has "שעות עבודה" yet, default to folders
+  customersCache = {
+    timestamp: now,
+    siteId,
+    detectedStructure: "folders",
+    items: [],
+  };
+
+  return {
+    siteId,
+    detectedStructure: "folders",
+    totalCustomers: 0,
+    first10Customers: [],
+    customers: [],
+  };
+}
+
+/**
+ * 1. listCustomers() – list customers using detected structure (cached for 10 minutes)
+ */
+export async function listCustomers(env?: any, forceRefresh = false): Promise<CustomerFolder[]> {
+  const result = await detectAndListCustomers(env, forceRefresh);
+  return result.customers;
 }
 
 /**
@@ -666,37 +829,49 @@ export async function findMonthTarget(
     };
   }
 
-  const { driveId } = await resolveSharePointDrive(env);
+  const { driveId: defaultDriveId } = await resolveSharePointDrive(env);
   const { hoursFolderName } = getGraphHoursConfig(env);
+  const driveId = customerFolder.driveId || defaultDriveId;
 
-  // 2. Find "שעות עבודה" inside customer folder
-  const custChildrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${customerFolder.id}/children?$top=100`;
-  const custChildrenRes = await fetchGraph(custChildrenUrl, { method: "GET" }, env);
-  if (!custChildrenRes.ok) {
-    const err = await custChildrenRes.text().catch(() => "");
-    throw new Error(`שגיאה בקריאת תוכן תיקיית הלקוח ${customerFolder.name}: ${err}`);
-  }
+  // 2. Find "שעות עבודה" inside customer folder / library
+  let hoursFolderId = customerFolder.hoursFolderId;
 
-  const custData: any = await custChildrenRes.json();
-  const custItems: any[] = custData.value || [];
+  if (!hoursFolderId) {
+    let custChildrenUrl = "";
+    if (customerFolder.type === "library") {
+      custChildrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/root/children?$top=100`;
+    } else {
+      custChildrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${customerFolder.id}/children?$top=100`;
+    }
 
-  // Look for folder named "שעות עבודה" (or containing "שעות")
-  const hoursFolder = custItems.find(
-    (item) => Boolean(item.folder) && (item.name === hoursFolderName || item.name.includes("שעות"))
-  );
+    const custChildrenRes = await fetchGraph(custChildrenUrl, { method: "GET" }, env);
+    if (!custChildrenRes.ok) {
+      const err = await custChildrenRes.text().catch(() => "");
+      throw new Error(`שגיאה בקריאת תוכן תיקיית הלקוח ${customerFolder.name}: ${err}`);
+    }
 
-  if (!hoursFolder) {
-    return {
-      found: false,
-      message: `תיקיית "${hoursFolderName}" לא קיימת בתוך תיקיית הלקוח "${customerFolder.name}". (קיימות: ${custItems.map((i) => i.name).join(", ") || "אין פריטים"})`,
-      customerName: customerFolder.name,
-      requestedMonth: ym,
-      existingItems: custItems.map((i) => i.name),
-    };
+    const custData: any = await custChildrenRes.json();
+    const custItems: any[] = custData.value || [];
+
+    // Look for folder named "שעות עבודה" (or containing "שעות")
+    const hoursFolder = custItems.find(
+      (item) => Boolean(item.folder) && (item.name === hoursFolderName || item.name.includes("שעות"))
+    );
+
+    if (!hoursFolder) {
+      return {
+        found: false,
+        message: `תיקיית "${hoursFolderName}" לא קיימת בתוך תיקיית הלקוח "${customerFolder.name}". (קיימות: ${custItems.map((i) => i.name).join(", ") || "אין פריטים"})`,
+        customerName: customerFolder.name,
+        requestedMonth: ym,
+        existingItems: custItems.map((i) => i.name),
+      };
+    }
+    hoursFolderId = hoursFolder.id;
   }
 
   // 3. List children inside "שעות עבודה"
-  const hoursChildrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${hoursFolder.id}/children?$top=200`;
+  const hoursChildrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${hoursFolderId}/children?$top=200`;
   const hoursChildrenRes = await fetchGraph(hoursChildrenUrl, { method: "GET" }, env);
   if (!hoursChildrenRes.ok) {
     const err = await hoursChildrenRes.text().catch(() => "");

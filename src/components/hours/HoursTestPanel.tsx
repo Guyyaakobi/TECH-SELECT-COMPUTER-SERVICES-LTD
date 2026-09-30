@@ -42,6 +42,12 @@ export const HoursTestPanel: React.FC<HoursTestPanelProps> = ({ currentUser }) =
   const [customersResult, setCustomersResult] = useState<any[] | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
   const [rawCustomersResult, setRawCustomersResult] = useState<any | null>(null);
+  const [detectionInfo, setDetectionInfo] = useState<{
+    siteId?: string;
+    detectedStructure?: "folders" | "libraries";
+    totalCustomers?: number;
+    first10Customers?: string[];
+  } | null>(null);
 
   // Step 2: Month target
   const today = new Date();
@@ -79,9 +85,24 @@ export const HoursTestPanel: React.FC<HoursTestPanelProps> = ({ currentUser }) =
       setCustomersLoading(true);
       setPanelError(null);
       if (isAll || !customerQuery.trim()) {
-        const list = await apiListCustomers(true);
-        setCustomersResult(list.map((c) => ({ customer: c, score: 1.0, matchReason: "רשימת לקוחות מלאה" })));
-        setRawCustomersResult(list);
+        const data = await apiListCustomers(true);
+        setDetectionInfo({
+          siteId: data.siteId,
+          detectedStructure: data.detectedStructure,
+          totalCustomers: data.totalCustomers,
+          first10Customers: data.first10Customers,
+        });
+        setCustomersResult(
+          (data.customers || []).map((c: any) => ({
+            customer: c,
+            score: 1.0,
+            matchReason:
+              data.detectedStructure === "libraries"
+                ? "ספריית מסמכים (Document Library)"
+                : "תיקיית לקוח",
+          }))
+        );
+        setRawCustomersResult(data);
       } else {
         const matches = await apiSearchCustomer(customerQuery);
         setCustomersResult(matches);
@@ -93,6 +114,11 @@ export const HoursTestPanel: React.FC<HoursTestPanelProps> = ({ currentUser }) =
       setCustomersLoading(false);
     }
   };
+
+  // Auto-detect structure and list customers on mount
+  React.useEffect(() => {
+    handleSearchCustomer(true);
+  }, []);
 
   // 2. Select Customer and Find Month
   const handleSelectCustomer = async (cust: any) => {
@@ -327,6 +353,65 @@ export const HoursTestPanel: React.FC<HoursTestPanelProps> = ({ currentUser }) =
                 <span>טען הכל</span>
               </button>
             </div>
+
+            {/* Auto-Detection Status Card (Requirement 4) */}
+            {detectionInfo && (
+              <div className="p-3.5 rounded-xl bg-gradient-to-r from-blue-950/40 via-cyan-950/30 to-blue-950/40 border border-cyan-500/30 text-xs space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-400">אתר SharePoint שאותר:</span>
+                    <span className="font-mono text-[11px] text-cyan-300 font-semibold" dir="ltr">
+                      {detectionInfo.siteId || "טוען מזהה אתר..."}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-400">מבנה לקוחות שזוהה:</span>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                        detectionInfo.detectedStructure === "libraries"
+                          ? "bg-purple-500/20 text-purple-300 border-purple-500/40"
+                          : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                      }`}
+                    >
+                      {detectionInfo.detectedStructure === "libraries"
+                        ? "ספריות מסמכים (Document Libraries)"
+                        : "תיקיות בספריית מסמכים (Folders in Document Library)"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-400">מספר לקוחות שזוהו עם תיקיית 'שעות עבודה':</span>
+                  <span className="font-bold text-white text-xs bg-cyan-500/20 border border-cyan-500/30 px-2 py-0.5 rounded">
+                    {detectionInfo.totalCustomers ?? 0} לקוחות
+                  </span>
+                </div>
+
+                {detectionInfo.first10Customers && detectionInfo.first10Customers.length > 0 && (
+                  <div>
+                    <span className="text-slate-400 text-[10px] block mb-1 font-medium">
+                      10 הלקוחות הראשונים שזוהו (לחץ לסינון/בחירה):
+                    </span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {detectionInfo.first10Customers.map((custName, idx) => (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => {
+                            setCustomerQuery(custName);
+                            handleSearchCustomer(false);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-black/40 hover:bg-cyan-500/20 text-[11px] text-slate-200 border border-white/10 hover:border-cyan-400/40 cursor-pointer transition-colors flex items-center gap-1"
+                        >
+                          <span className="text-cyan-400 text-[9px] font-mono">{idx + 1}.</span>
+                          <span>{custName}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Customers Search Results List */}
             {customersResult && customersResult.length > 0 && (

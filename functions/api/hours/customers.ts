@@ -1,6 +1,6 @@
 import { authenticateHoursRequest } from "./_auth";
 import { getCorsHeaders } from "../_shared/security";
-import { listCustomers, findCustomer } from "../../../services/graphHours";
+import { detectAndListCustomers, findCustomer } from "../../../services/graphHours";
 
 export async function onRequestOptions(context: any): Promise<Response> {
   const request: Request = context?.request || new Request("https://localhost");
@@ -38,11 +38,20 @@ export async function onRequestGet(context: any): Promise<Response> {
       });
     }
 
-    const customers = await listCustomers(env, forceRefresh);
-    return new Response(JSON.stringify({ customers }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    const detection = await detectAndListCustomers(env, forceRefresh);
+    return new Response(
+      JSON.stringify({
+        siteId: detection.siteId,
+        detectedStructure: detection.detectedStructure,
+        totalCustomers: detection.totalCustomers,
+        first10Customers: detection.first10Customers,
+        customers: detection.customers,
+      }),
+      {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      }
+    );
   } catch (err: any) {
     console.error("[api/hours/customers] Error:", err);
     return new Response(

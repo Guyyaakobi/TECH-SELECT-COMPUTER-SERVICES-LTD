@@ -7,6 +7,7 @@ import { jsPDF } from "jspdf";
 import { hoursAuthMiddleware } from "./server/hoursAuthMiddleware";
 import {
   listCustomers,
+  detectAndListCustomers,
   findCustomer,
   findMonthTarget,
   readSheetStructure,
@@ -4317,7 +4318,7 @@ ${!isAteraCustomer ? `
       });
     });
 
-    // 1. GET /api/hours/customers: list customer folders (10m cache) or search if ?q=...
+    // 1. GET /api/hours/customers: auto-detect structure (folders/libraries) & list customers (10m cache) or search if ?q=...
     hoursRouter.get("/customers", async (req, res) => {
       try {
         const query = req.query.q || req.query.query || req.query.search;
@@ -4326,8 +4327,14 @@ ${!isAteraCustomer ? `
           const results = await findCustomer(query.trim(), process.env);
           return res.json({ query, results });
         }
-        const customers = await listCustomers(process.env, forceRefresh);
-        return res.json({ customers });
+        const detection = await detectAndListCustomers(process.env, forceRefresh);
+        return res.json({
+          siteId: detection.siteId,
+          detectedStructure: detection.detectedStructure,
+          totalCustomers: detection.totalCustomers,
+          first10Customers: detection.first10Customers,
+          customers: detection.customers,
+        });
       } catch (err: any) {
         console.error("[GET /api/hours/customers] Error:", err);
         return res.status(500).json({ error: err?.message || "שגיאה בגישה ל-SharePoint" });
