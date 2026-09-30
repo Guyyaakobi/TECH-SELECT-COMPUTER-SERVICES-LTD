@@ -14,6 +14,7 @@ import {
   Trash2,
   ChevronDown,
   X,
+  ExternalLink,
 } from "lucide-react";
 import {
   apiAssistantChat,
@@ -69,6 +70,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
     title: string;
     details: string;
     instructions: string[];
+    openInNewTabUrl?: string;
   } | null>(null);
 
   // Chat scroll container
@@ -101,16 +103,30 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
       if (!navigator?.mediaDevices || !navigator?.mediaDevices?.getUserMedia) {
         setMicPermissionError({
           title: "הדפדפן אינו תומך בהקלטת שמע",
-          details: "סביבת הדפדפן הנוכחית אינה תומכת בממשק MediaDevices או שרצה בתוך מסגרת מוגבלת.",
+          details: "סביבת הדפדפן הנוכחית אינה תומכת בממשק MediaDevices.",
           instructions: [
-            "אם פתחת את האתר דרך חלון תצוגה מקדימה, פתח אותו בחלון דפדפן נפרד ורגיל.",
+            "פתח את המערכת בחלון דפדפן נפרד ועדכני.",
             "ניתן להקליד את פרטי העבודה בתיבת הטקסט למטה.",
           ],
+          openInNewTabUrl: typeof window !== "undefined" ? window.location.href : undefined,
         });
         return;
       }
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      let stream: MediaStream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+      } catch (advancedErr) {
+        console.warn("[HoursVoice] Advanced audio constraints failed, trying basic audio: true", advancedErr);
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+
       audioChunksRef.current = [];
 
       // Determine mimeType supported by browser
@@ -170,22 +186,39 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
       setIsRecording(false);
       clearInterval(recordingTimerRef.current);
 
+      const isEmbedded = typeof window !== "undefined" && window.self !== window.top;
+
       if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-        setMicPermissionError({
-          title: "הרשאת המיקרופון נדחתה או חסומה בדפדפן",
-          details: "הדפדפן חסם את הגישה למיקרופון עבור אתר זה. יש לאפשר את ההרשאה בהגדרות הדפדפן.",
-          instructions: [
-            "לחץ על סמל המנעול 🔒 או סמל הכוונון 🎛️ ליד שורת הכתובת (URL) בראש הדפדפן.",
-            "אתר את שורת 'מיקרופון' (Microphone) והעבר אותה למצב 'אפשר' (Allow).",
-            "אם אתה משתמש בטלפון סלולרי: פתח הגדרות מכשיר -> יישומים/דפדפן (Chrome / Safari) -> הרשאות -> אפשר מיקרופון.",
-            "לאחר שינוי ההגדרה, רענן את העמוד ונסה שוב.",
-            "ניתן להקליד את הדיווח בתיבת הטקסט ללא צורך במיקרופון.",
-          ],
-        });
+        if (isEmbedded) {
+          setMicPermissionError({
+            title: "המיקרופון חסום בתוך מסגרת תצוגה (iframe)",
+            details:
+              "הדפדפן חוסם בקשות מיקרופון מתוך מסגרת מוטמעת (חלון תצוגה מקדימה), ולכן שאלת האישור (Prompt) כלל אינה מופיעה על המסך. כדי להקליט, פתח את המערכת בלשונית מלאה.",
+            instructions: [
+              "לחץ על הכפתור 'פתח בלשונית נפרדת' למטה.",
+              "בלשונית המלאה, הדפדפן יקפיץ מיד את שאלת האישור ותוכל לאשר.",
+              "באפשרותך גם להקליד כרגיל בתיבת הטקסט כאן — אין הכרח במיקרופון.",
+            ],
+            openInNewTabUrl: typeof window !== "undefined" ? window.location.href : undefined,
+          });
+        } else {
+          setMicPermissionError({
+            title: "הרשאת המיקרופון נדחתה או חסומה",
+            details:
+              "הדפדפן או מערכת ההפעלה חוסמים את הגישה למיקרופון. אם הדפדפן מוגדר על 'שאל לפני' אך לא שואל, ייתכן שקיים מחסום ברמת מערכת ההפעלה או הגדרות האתר.",
+            instructions: [
+              "לחץ על סמל המנעול 🔒 או סמל הכוונון 🎛️ ליד שורת הכתובת בראש הדפדפן -> העבר את 'מיקרופון' למצב 'אפשר' (Allow).",
+              "ב-macOS: עבור אל הגדרות מערכת -> פרטיות ואבטחה -> מיקרופון -> ודא שהדפדפן שלך מסומן ב-V.",
+              "ב-Windows: עבור אל הגדרות -> פרטיות ואבטחה -> מיקרופון -> ודא ש'אפשר ליישומים לגשת למיקרופון' מופעל.",
+              "לאחר שינוי ההגדרה, רענן את העמוד ונסה שוב.",
+              "ניתן להקליד את הדיווח בתיבת הטקסט ללא צורך במיקרופון.",
+            ],
+          });
+        }
       } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
         setMicPermissionError({
           title: "לא זוהה מיקרופון מחובר",
-          details: "הדפדפן לא מצא התקן קלט שמע (מיקרופון) פעיל במכשיר שלך.",
+          details: "הדפדפן לא מצא התקן קלט שמע פעיל במחשב או בטלפון שלך.",
           instructions: [
             "ודא שהמיקרופון או האוזניות מחוברים כראוי.",
             "בדוק בהגדרות מערכת ההפעלה שהמיקרופון מוגדר ופועל.",
@@ -195,7 +228,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
       } else if (err.name === "NotReadableError" || err.name === "TrackStartError") {
         setMicPermissionError({
           title: "המיקרופון תפוס על ידי תוכנה אחרת",
-          details: "יישום אחר (כגון Teams, Zoom או שיחה פעילה) תופס את המיקרופון כעת.",
+          details: "תוכנה אחרת במחשב (כגון Teams, Zoom או שיחה פעילה) תופסת את המיקרופון באופן בלעדי.",
           instructions: [
             "סגור יישומים אחרים המשתמשים במיקרופון.",
             "לחץ שוב על כפתור המיקרופון כדי לנסות מחדש.",
@@ -639,16 +672,29 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
               </ul>
             </div>
 
-            <div className="flex items-center justify-between gap-2 pt-1">
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-amber-500/20">
               <span className="text-[11px] text-slate-400">
                 💡 תוכל להמשיך להקליד כרגיל בתיבת הטקסט שלמטה
               </span>
-              <button
-                onClick={startRecording}
-                className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl transition-colors cursor-pointer"
-              >
-                נסה שוב
-              </button>
+              <div className="flex items-center gap-2">
+                {micPermissionError.openInNewTabUrl && (
+                  <a
+                    href={micPermissionError.openInNewTabUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-xl transition-colors inline-flex items-center gap-1.5 shadow"
+                  >
+                    <span>פתח בלשונית נפרדת</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )}
+                <button
+                  onClick={startRecording}
+                  className="px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black font-bold text-xs rounded-xl transition-colors cursor-pointer"
+                >
+                  נסה שוב
+                </button>
+              </div>
             </div>
           </div>
         )}
