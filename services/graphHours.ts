@@ -3000,7 +3000,17 @@ export function resolveCellValueForHeader(
 
   // M. NOTES (הערות)
   if (isNotesHeader(normHeader)) {
-    return rowObj["הערות"] || rowObj["notes"] || rowObj["remark"] || "";
+    return (
+      rowObj["הערות"] ||
+      rowObj["notes"] ||
+      rowObj["remark"] ||
+      rowObj["תיאור"] ||
+      rowObj["תיאור פעילות"] ||
+      rowObj["פירוט"] ||
+      rowObj["description"] ||
+      rowObj["details"] ||
+      ""
+    );
   }
 
   // N. SIGNATURE / APPROVAL / STATUS (חתימה / סטטוס)
@@ -3172,6 +3182,24 @@ export async function writeRows(
 
       const addRowData: any = await addRowRes.json();
       writtenRowAddress = addRowData.address || `Table:${structure.tableName}[Row]`;
+
+      // Enable text wrapping on the written table row so complete technician documentation is fully visible
+      if (addRowData.address) {
+        try {
+          const formatUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${structure.sheetId}/range(address='${addRowData.address}')/format`;
+          await fetchGraph(
+            formatUrl,
+            {
+              method: "PATCH",
+              headers: sessionHeaders,
+              body: JSON.stringify({ wrapText: true }),
+            },
+            env
+          );
+        } catch (fmtErr) {
+          console.warn("[writeRows] table wrapText notice:", fmtErr);
+        }
+      }
     }
     // CASE B: Plain Range
     else {
@@ -3223,6 +3251,22 @@ export async function writeRows(
       }
 
       writtenRowAddress = targetAddress;
+
+      // Enable text wrapping on the written range so complete technician documentation is fully visible
+      try {
+        const formatUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${targetAddress}')/format`;
+        await fetchGraph(
+          formatUrl,
+          {
+            method: "PATCH",
+            headers: sessionHeaders,
+            body: JSON.stringify({ wrapText: true }),
+          },
+          env
+        );
+      } catch (fmtErr) {
+        console.warn("[writeRows] range wrapText notice:", fmtErr);
+      }
     }
 
     // Get item webUrl

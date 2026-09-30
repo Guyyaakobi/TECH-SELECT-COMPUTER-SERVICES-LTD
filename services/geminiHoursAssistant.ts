@@ -254,8 +254,8 @@ export function buildEnrichedRowPayload(params: {
     חתימה: "",
     "חתימת לקוח": "",
     סטטוס: userOverride["סטטוס"] || "הושלם",
-    הערות: userOverride["הערות"] || "",
-    notes: userOverride["notes"] || "",
+    הערות: userOverride["הערות"] || desc,
+    notes: userOverride["notes"] || desc,
 
     ...userOverride,
   };
@@ -755,7 +755,11 @@ export async function processAssistantChat(
                   type: Type.STRING,
                   description: "Target tab name or activity category (e.g. 'קריאות שירות' / 'tickets', 'ביקור באתר' / 'onsite', 'פרויקטים' / 'project' or real tab name from workbook)",
                 },
-                description: { type: Type.STRING, description: "Professional short Hebrew billing description" },
+                description: {
+                  type: Type.STRING,
+                  description:
+                    "Full, comprehensive, and exact technical documentation of all work performed by the technician. NEVER shorten, summarize, or omit technician details - preserve all steps, systems, and explanations as provided by the technician.",
+                },
                 startTime: { type: Type.STRING, description: "Start time (HH:MM)" },
                 endTime: { type: Type.STRING, description: "End time (HH:MM)" },
                 isTimeSuggested: { type: Type.BOOLEAN, description: "True if times are suggested, false if explicitly set by employee" },
@@ -794,7 +798,11 @@ export async function processAssistantChat(
                   description: "Target tab name or activity category",
                 },
                 hours: { type: Type.NUMBER, description: "Duration in decimal hours (e.g. 0.5, 1.0, 1.5)" },
-                description: { type: Type.STRING, description: "Clear professional billing description" },
+                description: {
+                  type: Type.STRING,
+                  description:
+                    "Full, comprehensive, and exact technical documentation preserving all actions, systems, and steps performed by the technician. NEVER shorten or omit details.",
+                },
                 startTime: { type: Type.STRING, description: "Start time (e.g. '09:00' or '10:00')" },
                 endTime: { type: Type.STRING, description: "End time (e.g. '10:30' or '11:00')" },
                 contactPerson: { type: Type.STRING, description: "Contact person at customer" },
@@ -843,7 +851,11 @@ EXTRACTION RULES:
        * On-site visit / physical presence ("הייתי אצל", "ביקור", "הגעתי פיזית") -> "onsite" or matching visit tab.
        * Remote support / phone calls / tickets / daily maintenance ("דיברתי", "התחברתי", "טלפון", "מרחוק", "איפוס סיסמה", "תמיכה") -> "tickets" or matching support tab.
        * Project work / setup / migration / rollout ("פרויקט", "שדרוג שרת", "מיגרציה", "הקמה") -> "project" or matching project tab.
-  5. Description: rewrite as a short, clear, professional Hebrew sentence suitable for billing, faithful to what was said. Do not invent details.
+  5. Description (תיאור הפעילות / תיעוד טכני מלא - קריטי וסופר חשוב ללקוח):
+     - שמור בדיוק ובמלואו על כל המידע והתיעוד הטכני שהטכנאי הזין או תיאר!
+     - אל תחסוך במילים, אל תקצר, אל תתמצת, ואל תשמיט אף פרט, תקלה שטופלה, רכיב, תוכנה, שרת, מערכת או שלב שבוצע.
+     - מידע זה סופר חשוב ללקוח, ובקובץ האקסל צריך להופיע התיאור המדויק, המלא והעשיר של הטכנאי שמזין את המידע.
+     - אם הטכנאי נתן פירוט ארוך או סדרת שלבים (למשל: מה נבדק, מה הוחלף, שמות שרתים, פקודות, תוכנות, שיחות, בדיקות תקינות), שמור את כל הפירוט במלואו ללא שום השמטה!
   6. Contact person at customer: extract if mentioned (e.g. "דיברתי עם דניאל", "יוסי ביקש").
   7. Ticket number: extract if mentioned (e.g. "טיקט 1234", "קריאה 5678").
   8. Start time / End time (suggested and editable):
@@ -852,6 +864,7 @@ EXTRACTION RULES:
   9. Excel Tab / Work type (editable):
      - The summary card displays the chosen tab name and allows the employee to change it (by tapping or voice: e.g. "תעביר לטאב פרויקטים", "תעביר לטאב קריאות שירות").
      - If the employee asks to switch tabs: immediately update workType to the requested tab and re-issue propose_entries with the updated draft!
+  10. Updating description: If the technician adds more technical details in later messages (e.g. "תוסיף גם שהחלפתי כבל רשת ובדקתי פינג"), append/merge the new details into the full description so nothing is lost!
 
 CRITICAL REQUIREMENT - DYNAMIC COLUMNS PER FILE:
 Fields are mapped to the headers of the chosen worksheet by meaning. If a field has no column in the file (e.g. no ticket number column), it will NOT be written and marked as not existing in file.

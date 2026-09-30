@@ -260,8 +260,8 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
 
         {/* Description */}
         <div className="p-2.5 rounded-xl bg-white border border-emerald-100 text-xs text-slate-800 leading-relaxed mb-3 shadow-xs">
-          <span className="text-[10px] text-slate-500 block mb-0.5">תיאור חיוב:</span>
-          {written.description}
+          <span className="text-[10px] text-slate-600 font-bold block mb-1">תיעוד הפעילות שנרשם בקובץ:</span>
+          <p className="whitespace-pre-wrap">{written.description}</p>
         </div>
 
         {/* Link to Excel File */}
@@ -440,12 +440,15 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
           </div>
 
           <div>
-            <label className="block text-[11px] text-slate-600 font-medium mb-1">תיאור חיוב:</label>
+            <label className="block text-[11px] text-slate-700 font-bold mb-1">
+              תיאור פעילות / תיעוד טכני מלא (קריטי ללקוח ולקובץ האקסל):
+            </label>
             <textarea
-              rows={2}
+              rows={4}
               value={editDescription}
               onChange={(e) => setEditDescription(e.target.value)}
-              className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 shadow-xs"
+              className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 shadow-xs resize-y"
+              placeholder="פרט את כל הפעולות שבוצעו, שרתים, תקלות, בדיקות - אל תחסוך במילים"
             />
           </div>
 
@@ -654,8 +657,10 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
 
           {/* Description */}
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-800 leading-relaxed mb-3 shadow-xs">
-            <span className="text-[10px] text-slate-500 block mb-0.5">תיאור חיוב:</span>
-            <p className="font-medium text-slate-900">{draft.description || "טרם הוזן תיאור"}</p>
+            <span className="text-[10px] text-slate-600 font-bold block mb-1">
+              תיאור פעילות / תיעוד טכני מלא:
+            </span>
+            <p className="font-medium text-slate-900 whitespace-pre-wrap">{draft.description || "טרם הוזן תיאור"}</p>
           </div>
 
           {/* File Path & Target Row Info with Manual File Selector */}
