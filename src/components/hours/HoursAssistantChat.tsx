@@ -514,224 +514,168 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
     setInputText("");
   };
 
-  // State: Empty Start Screen (Exactly like the video)
-  if (messages.length === 0 && activeDrafts.length === 0 && !loading) {
-    return (
-      <div className="w-full flex flex-col items-center justify-center py-10 sm:py-16 text-right relative">
-        {/* Soft Ethereal Blue Glow in the Center */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[34rem] h-[22rem] bg-gradient-to-tr from-sky-200/40 via-blue-100/35 to-indigo-100/25 rounded-full blur-3xl pointer-events-none -z-10" />
+  // Unified Render: Full viewport height, no nested boxed cube, mobile-native layout
+  return (
+    <div className="w-full h-full flex flex-col flex-1 relative overflow-hidden bg-transparent">
+      {/* Soft Ethereal Radial Glow */}
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[30rem] sm:w-[42rem] h-[20rem] sm:h-[28rem] bg-gradient-to-tr from-sky-200/40 via-blue-100/30 to-indigo-100/20 rounded-full blur-3xl pointer-events-none -z-10" />
 
-        {/* Big Calm Heading (Exactly like the video) */}
-        <div className="text-center mb-7">
-          <h1 className="text-3xl sm:text-4xl font-normal text-slate-800 tracking-tight mb-2">
-            Where should we start?
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 font-medium">
-            מה תרצה לתעד היום? הקלד או הקלט בקולך
-          </p>
-        </div>
+      {/* Main Scrollable Canvas / Feed */}
+      <div className="flex-1 overflow-y-auto w-full max-w-2xl mx-auto px-3 sm:px-4 pt-3 sm:pt-4 pb-32 flex flex-col">
+        {/* Empty Start View (Clean, spacious, matching the video) */}
+        {messages.length === 0 && activeDrafts.length === 0 && !loading ? (
+          <div className="my-auto py-6 sm:py-12 flex flex-col items-center justify-center text-center">
+            {/* Big Calm Heading */}
+            <h1 className="text-2xl sm:text-4xl font-normal text-slate-800 tracking-tight mb-2">
+              Where should we start?
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-500 font-medium mb-6 sm:mb-8">
+              מה תרצה לתעד היום? הקלד או הקלט בקולך
+            </p>
 
-        {/* Floating Center Pill (The exact input pill from the video) */}
-        <div className="w-full max-w-xl mx-auto rounded-full bg-white border border-slate-200/90 shadow-lg shadow-slate-200/40 hover:shadow-xl hover:border-slate-300 transition-all p-2 pr-4 flex items-center gap-2.5 relative">
-          {/* Plus icon on right (start) */}
-          <div
-            className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 shrink-0"
-            title="תיעוד חדש"
-          >
-            <Plus className="w-4 h-4" />
-          </div>
+            {/* Microphone Permission Error Banner */}
+            {micPermissionError && (
+              <div className="w-full max-w-lg mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex flex-col gap-2 text-right">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold flex items-center gap-1.5 text-amber-800">
+                    <MicOff className="w-4 h-4" /> {micPermissionError.title}
+                  </span>
+                  <button
+                    onClick={() => setMicPermissionError(null)}
+                    className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <p>{micPermissionError.details}</p>
+              </div>
+            )}
 
-          {/* Text Input */}
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSendText();
-              }
-            }}
-            disabled={loading || isRecording}
-            placeholder={isRecording ? "מקליט כעת..." : "Ask Gemini..."}
-            className="flex-1 bg-transparent text-slate-800 placeholder-slate-400 text-sm focus:outline-none py-1"
-          />
-
-          {/* Tag */}
-          <div className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200 text-[11px] font-medium text-slate-600 shrink-0">
-            <span>Tech-Select</span>
-          </div>
-
-          {/* Microphone icon */}
-          <button
-            onClick={isRecording ? stopRecording : startRecording}
-            disabled={loading}
-            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all shrink-0 cursor-pointer ${
-              isRecording
-                ? "bg-red-500 text-white animate-pulse"
-                : "text-slate-500 hover:text-blue-600 hover:bg-slate-100"
-            }`}
-            title={isRecording ? "עצור הקלטה" : "הקלט הודעה קולית"}
-          >
-            {isRecording ? <Square className="w-4 h-4 fill-white" /> : <Mic className="w-4 h-4" />}
-          </button>
-
-          {/* Send icon if text */}
-          {inputText.trim() && (
-            <button
-              onClick={() => handleSendText()}
-              disabled={loading}
-              className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shadow-xs transition-all shrink-0 cursor-pointer"
-            >
-              <Send className="w-3.5 h-3.5 -scale-x-100" />
-            </button>
-          )}
-        </div>
-
-        {/* Active Audio Recording Bar if user started recording from empty state */}
-        {isRecording && (
-          <div className="w-full max-w-xl mx-auto mt-4 flex items-center justify-between p-3 rounded-2xl bg-red-50 border border-red-200 animate-pulse">
-            <div className="flex items-center gap-2.5">
-              <span className="w-3 h-3 rounded-full bg-red-500 animate-ping" />
-              <span className="text-xs font-bold text-red-700">מקליט...</span>
-              <span className="font-mono text-xs text-red-900 bg-white px-2 py-0.5 rounded-lg border border-red-200">
-                {formatRecordingTime(recordingSeconds)}
-              </span>
+            {/* 3 Prompt Suggestions (Clean touch-friendly pills for mobile) */}
+            <div className="w-full max-w-lg space-y-2.5 text-right">
+              {quickSuggestions.map((item, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => handleSendText(item.prompt)}
+                  className="w-full p-3 sm:p-3.5 rounded-2xl bg-white/90 hover:bg-white border border-slate-200/80 hover:border-slate-300 shadow-2xs hover:shadow-xs text-right flex items-center justify-between transition-all cursor-pointer group active:scale-[0.99]"
+                >
+                  <div className="flex items-center gap-2.5 sm:gap-3 truncate">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-slate-50 group-hover:bg-blue-50 text-slate-500 group-hover:text-blue-600 flex items-center justify-center shrink-0 transition-colors">
+                      {item.icon}
+                    </div>
+                    <span className="text-xs sm:text-sm text-slate-700 group-hover:text-slate-900 font-medium truncate">
+                      {item.prompt}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-slate-400 group-hover:text-slate-600 bg-slate-50 px-2 py-0.5 rounded-full border border-slate-200/60 shrink-0">
+                    {item.tag}
+                  </span>
+                </button>
+              ))}
             </div>
-
-            <button
-              onClick={stopRecording}
-              className="py-1 px-3.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
-            >
-              <Square className="w-3.5 h-3.5 fill-white" />
-              <span>עצור ושלח</span>
-            </button>
           </div>
-        )}
+        ) : (
+          /* Active Chat Stream */
+          <div className="w-full space-y-4">
+            {/* Top Stream Bar */}
+            <div className="w-full flex items-center justify-between py-1 px-1 mb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-semibold text-slate-500">שיחה פעילה</span>
+                {activeDrafts.length > 0 && (
+                  <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-medium">
+                    {activeDrafts.length} טיוטות
+                  </span>
+                )}
+              </div>
 
-        {/* Microphone Permission Error Banner */}
-        {micPermissionError && (
-          <div className="w-full max-w-xl mx-auto mt-4 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="font-bold flex items-center gap-1.5 text-amber-800">
-                <MicOff className="w-4 h-4" /> {micPermissionError.title}
-              </span>
               <button
-                onClick={() => setMicPermissionError(null)}
-                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                onClick={handleResetChat}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white hover:bg-slate-100 border border-slate-200 text-xs text-slate-600 hover:text-slate-900 transition-colors shadow-2xs cursor-pointer"
+                title="התחל שיחה חדשה"
               >
-                <X className="w-4 h-4" />
+                <RotateCcw className="w-3.5 h-3.5 text-slate-400" />
+                <span>שיחה חדשה</span>
               </button>
             </div>
-            <p>{micPermissionError.details}</p>
-          </div>
-        )}
 
-        {/* 3 Prompt Suggestions Beneath the Pill (Exactly like the video) */}
-        <div className="mt-8 space-y-2.5 w-full max-w-xl mx-auto">
-          {quickSuggestions.map((item, idx) => (
-            <button
-              key={idx}
-              onClick={() => handleSendText(item.prompt)}
-              className="w-full p-3.5 rounded-2xl bg-white/90 hover:bg-white border border-slate-200/80 hover:border-slate-300 shadow-xs hover:shadow-sm text-right flex items-center justify-between transition-all cursor-pointer group"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-slate-50 group-hover:bg-blue-50 text-slate-500 group-hover:text-blue-600 flex items-center justify-center transition-colors">
-                  {item.icon}
-                </div>
-                <span className="text-xs sm:text-sm text-slate-700 group-hover:text-slate-900 font-medium">
-                  {item.prompt}
-                </span>
-              </div>
-              <span className="text-[10px] text-slate-400 group-hover:text-slate-600 bg-slate-50 px-2 py-0.5 rounded-full border border-slate-200/60">
-                {item.tag}
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-    );
-  }
+            {/* Messages Feed */}
+            {messages.map((msg) => {
+              const isUser = msg.role === "user";
 
-  // Active Chat State (Clean, light aesthetic)
-  return (
-    <div className="w-full flex flex-col h-[78vh] sm:h-[82vh] max-h-[850px] bg-white/95 border border-slate-200/90 rounded-3xl overflow-hidden shadow-lg relative text-right">
-      {/* Header Bar */}
-      <div className="px-4 sm:px-6 py-3.5 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between z-10">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shadow-xs">
-            <Sparkles className="w-4 h-4" />
-          </div>
-          <div>
-            <h2 className="text-sm font-bold text-slate-900 tracking-wide">Where should we start?</h2>
-            <p className="text-[11px] text-slate-500">
-              עובד: <span className="text-slate-800 font-medium">{currentUser.name}</span>
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          {activeDrafts.length > 0 && (
-            <span className="text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-medium flex items-center gap-1 shadow-xs">
-              <Clock className="w-3 h-3 text-blue-600" />
-              <span>{activeDrafts.length} טיוטות</span>
-            </span>
-          )}
-
-          <button
-            onClick={handleResetChat}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white hover:bg-slate-100 border border-slate-200 text-xs text-slate-600 hover:text-slate-900 transition-colors cursor-pointer shadow-xs"
-            title="חזור למסך הראשי"
-          >
-            <RotateCcw className="w-3 h-3 text-slate-400" />
-            <span>שיחה חדשה</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Messages Feed */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 z-10 selection:bg-blue-600 selection:text-white bg-slate-50/30">
-        {messages.map((msg) => {
-          const isUser = msg.role === "user";
-
-          return (
-            <div
-              key={msg.id}
-              className={`flex flex-col ${isUser ? "items-start" : "items-end"} space-y-2`}
-            >
-              <div
-                className={`max-w-[90%] sm:max-w-[80%] rounded-2xl p-3.5 sm:p-4 text-xs sm:text-sm leading-relaxed shadow-xs ${
-                  isUser
-                    ? "bg-blue-600 text-white rounded-br-xs"
-                    : "bg-white border border-slate-200/90 text-slate-800 rounded-bl-xs"
-                }`}
-              >
-                {/* Voice badge if message came from voice */}
-                {msg.isVoice && (
-                  <div className="flex items-center gap-1.5 text-[11px] text-blue-200 mb-1 font-semibold pb-1 border-b border-white/20">
-                    <Volume2 className="w-3.5 h-3.5" />
-                    <span>תמלול קולי</span>
-                  </div>
-                )}
-
-                <p className="whitespace-pre-line">{msg.text}</p>
-
+              return (
                 <div
-                  className={`text-[10px] mt-1.5 flex items-center ${
-                    isUser ? "text-blue-100 justify-start" : "text-slate-400 justify-end"
-                  }`}
+                  key={msg.id}
+                  className={`flex flex-col ${isUser ? "items-start" : "items-end"} space-y-2`}
                 >
-                  <span>{msg.timestamp}</span>
-                </div>
-              </div>
+                  <div
+                    className={`max-w-[92%] sm:max-w-[85%] rounded-2xl p-3 sm:p-4 text-xs sm:text-sm leading-relaxed shadow-2xs ${
+                      isUser
+                        ? "bg-blue-600 text-white rounded-br-xs self-start"
+                        : "bg-white border border-slate-200/90 text-slate-800 rounded-bl-xs self-end"
+                    }`}
+                  >
+                    {/* Voice badge if message came from voice */}
+                    {msg.isVoice && (
+                      <div className="flex items-center gap-1.5 text-[11px] text-blue-200 mb-1 font-semibold pb-1 border-b border-white/20">
+                        <Volume2 className="w-3.5 h-3.5" />
+                        <span>תמלול קולי</span>
+                      </div>
+                    )}
 
-              {/* Render Cards attached to this turn or global active drafts */}
-              {!isUser && msg.drafts && msg.drafts.length > 0 && (
-                <div className="w-full sm:max-w-[90%] space-y-2 mt-1">
-                  {msg.drafts.map((d) => (
+                    <p className="whitespace-pre-line text-right">{msg.text}</p>
+
+                    <div
+                      className={`text-[10px] mt-1.5 flex items-center ${
+                        isUser ? "text-blue-100 justify-start" : "text-slate-400 justify-end"
+                      }`}
+                    >
+                      <span>{msg.timestamp}</span>
+                    </div>
+                  </div>
+
+                  {/* Render Cards attached to this turn */}
+                  {!isUser && msg.drafts && msg.drafts.length > 0 && (
+                    <div className="w-full space-y-2 mt-1">
+                      {msg.drafts.map((d) => (
+                        <HoursEntryCard
+                          key={d.id}
+                          draft={activeDrafts.find((ad) => ad.id === d.id) || d}
+                          onConfirm={handleConfirmEntry}
+                          onUpdateDraft={handleUpdateDraft}
+                          isConfirming={loading}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Render Written Entries */}
+                  {!isUser && msg.writtenEntries && msg.writtenEntries.length > 0 && (
+                    <div className="w-full space-y-2 mt-1">
+                      {msg.writtenEntries.map((w) => (
+                        <HoursEntryCard
+                          key={w.id}
+                          written={w}
+                          onUndo={handleUndoEntry}
+                          isUndoing={loading}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+
+            {/* Global Active Drafts if not in the last message */}
+            {activeDrafts.length > 0 &&
+              !messages[messages.length - 1]?.drafts?.length && (
+                <div className="w-full space-y-2 pt-2">
+                  <div className="text-[11px] text-blue-600 font-semibold mb-1 text-right">
+                    טיוטות ממתינות לאישורך:
+                  </div>
+                  {activeDrafts.map((d) => (
                     <HoursEntryCard
                       key={d.id}
-                      draft={activeDrafts.find((ad) => ad.id === d.id) || d}
+                      draft={d}
                       onConfirm={handleConfirmEntry}
                       onUpdateDraft={handleUpdateDraft}
                       isConfirming={loading}
@@ -740,128 +684,102 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
                 </div>
               )}
 
-              {/* Render Written Entries */}
-              {!isUser && msg.writtenEntries && msg.writtenEntries.length > 0 && (
-                <div className="w-full sm:max-w-[90%] space-y-2 mt-1">
-                  {msg.writtenEntries.map((w) => (
-                    <HoursEntryCard
-                      key={w.id}
-                      written={w}
-                      onUndo={handleUndoEntry}
-                      isUndoing={loading}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-
-        {/* Global Active Drafts if not in the last message */}
-        {activeDrafts.length > 0 &&
-          !messages[messages.length - 1]?.drafts?.length && (
-            <div className="w-full sm:max-w-[90%] mr-auto space-y-2 pt-2">
-              <div className="text-[11px] text-blue-600 font-semibold mb-1">
-                טיוטות ממתינות לאישורך:
+            {/* Loading Indicator */}
+            {loading && (
+              <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-white border border-slate-200 max-w-[80%] sm:max-w-[70%] mr-auto shadow-2xs animate-pulse">
+                <div className="w-4 h-4 rounded-full border-2 border-blue-600 border-t-transparent animate-spin flex-shrink-0" />
+                <span className="text-xs text-slate-700 font-medium">{loadingStep}</span>
               </div>
-              {activeDrafts.map((d) => (
-                <HoursEntryCard
-                  key={d.id}
-                  draft={d}
-                  onConfirm={handleConfirmEntry}
-                  onUpdateDraft={handleUpdateDraft}
-                  isConfirming={loading}
-                />
-              ))}
-            </div>
-          )}
+            )}
 
-        {/* Loading Indicator */}
-        {loading && (
-          <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-white border border-slate-200 max-w-[75%] mr-auto shadow-xs animate-pulse">
-            <div className="w-4 h-4 rounded-full border-2 border-blue-600 border-t-transparent animate-spin flex-shrink-0" />
-            <span className="text-xs text-slate-700 font-medium">{loadingStep}</span>
+            <div ref={chatEndRef} />
           </div>
         )}
-
-        <div ref={chatEndRef} />
       </div>
 
-      {/* Docked Floating Pill Input at the Bottom */}
-      <div className="p-3 sm:p-4 border-t border-slate-200/80 bg-white z-10 flex flex-col gap-2.5">
-        {/* Active Audio Recording Bar */}
-        {isRecording && (
-          <div className="flex items-center justify-between p-3 rounded-2xl bg-red-50 border border-red-200 animate-pulse">
-            <div className="flex items-center gap-2.5">
-              <span className="w-3 h-3 rounded-full bg-red-500 animate-ping" />
-              <span className="text-xs font-bold text-red-700">מקליט...</span>
-              <span className="font-mono text-xs text-red-900 bg-white px-2 py-0.5 rounded-lg border border-red-200">
-                {formatRecordingTime(recordingSeconds)}
-              </span>
+      {/* Floating Pill Input Bar Fixed at the Bottom (Always docked, Mobile First) */}
+      <div className="fixed bottom-0 left-0 right-0 z-30 pointer-events-none pb-3 sm:pb-5 pt-4 bg-gradient-to-t from-[#fafafc] via-[#fafafc]/95 to-transparent">
+        <div className="w-full max-w-2xl mx-auto px-3 sm:px-4 pointer-events-auto flex flex-col gap-2">
+          {/* Active Audio Recording Bar */}
+          {isRecording && (
+            <div className="flex items-center justify-between p-3 rounded-2xl bg-red-50 border border-red-200 animate-pulse shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <span className="w-3 h-3 rounded-full bg-red-500 animate-ping" />
+                <span className="text-xs font-bold text-red-700">מקליט...</span>
+                <span className="font-mono text-xs text-red-900 bg-white px-2 py-0.5 rounded-lg border border-red-200">
+                  {formatRecordingTime(recordingSeconds)}
+                </span>
+              </div>
+
+              <button
+                onClick={stopRecording}
+                className="py-1 px-3.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Square className="w-3.5 h-3.5 fill-white" />
+                <span>עצור ושלח</span>
+              </button>
+            </div>
+          )}
+
+          {/* Floating Center Pill */}
+          <div className="w-full rounded-full bg-white border border-slate-200/90 shadow-lg shadow-slate-200/50 hover:shadow-xl hover:border-slate-300 transition-all p-1.5 sm:p-2 pr-3.5 sm:pr-4 flex items-center gap-2 sm:gap-2.5">
+            {/* Plus icon on right (start) */}
+            <button
+              type="button"
+              onClick={handleResetChat}
+              className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors shrink-0 cursor-pointer shadow-2xs"
+              title="שיחה חדשה"
+            >
+              <Plus className="w-4 h-4" />
+            </button>
+
+            {/* Text Input - text-base prevents iOS Safari zoom on focus */}
+            <input
+              type="text"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendText();
+                }
+              }}
+              disabled={loading || isRecording}
+              placeholder={isRecording ? "מקליט כעת..." : "Ask Gemini..."}
+              className="flex-1 bg-transparent text-slate-800 placeholder-slate-400 text-base sm:text-sm focus:outline-none py-1 text-right"
+              dir="rtl"
+            />
+
+            {/* Tag on sm+ */}
+            <div className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200 text-[11px] font-medium text-slate-600 shrink-0">
+              <span>Tech-Select</span>
             </div>
 
+            {/* Microphone icon */}
             <button
-              onClick={stopRecording}
-              className="py-1 px-3.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
-            >
-              <Square className="w-3.5 h-3.5 fill-white" />
-              <span>עצור ושלח</span>
-            </button>
-          </div>
-        )}
-
-        {/* Floating Pill Input Bar */}
-        <div className="w-full rounded-full bg-slate-50 border border-slate-200/90 shadow-xs hover:border-slate-300 transition-all p-2 pr-4 flex items-center gap-2.5">
-          {/* Plus icon on right (start) */}
-          <button
-            type="button"
-            onClick={handleResetChat}
-            className="w-8 h-8 rounded-full bg-white hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors shrink-0 shadow-xs cursor-pointer"
-            title="נקה ופתח שיחה חדשה"
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-
-          {/* Text Input */}
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSendText();
-              }
-            }}
-            disabled={loading || isRecording}
-            placeholder={isRecording ? "מקליט כעת..." : "Ask Gemini..."}
-            className="flex-1 bg-transparent text-slate-800 placeholder-slate-400 text-sm focus:outline-none py-1"
-          />
-
-          {/* Microphone icon */}
-          <button
-            onClick={isRecording ? stopRecording : startRecording}
-            disabled={loading}
-            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all shrink-0 cursor-pointer ${
-              isRecording
-                ? "bg-red-500 text-white animate-pulse"
-                : "text-slate-500 hover:text-blue-600 hover:bg-white"
-            }`}
-            title={isRecording ? "עצור הקלטה" : "הקלט הודעה קולית"}
-          >
-            {isRecording ? <Square className="w-4 h-4 fill-white" /> : <Mic className="w-4 h-4" />}
-          </button>
-
-          {/* Send icon if text */}
-          {inputText.trim() && (
-            <button
-              onClick={() => handleSendText()}
+              onClick={isRecording ? stopRecording : startRecording}
               disabled={loading}
-              className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shadow-xs transition-all shrink-0 cursor-pointer"
+              className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-all shrink-0 cursor-pointer ${
+                isRecording
+                  ? "bg-red-500 text-white animate-pulse"
+                  : "text-slate-500 hover:text-blue-600 hover:bg-slate-100"
+              }`}
+              title={isRecording ? "עצור הקלטה" : "הקלט הודעה קולית"}
             >
-              <Send className="w-3.5 h-3.5 -scale-x-100" />
+              {isRecording ? <Square className="w-4 h-4 fill-white" /> : <Mic className="w-4 h-4 sm:w-4.5 sm:h-4.5" />}
             </button>
-          )}
+
+            {/* Send icon if text */}
+            {inputText.trim() && (
+              <button
+                onClick={() => handleSendText()}
+                disabled={loading}
+                className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shadow-xs transition-all shrink-0 cursor-pointer"
+              >
+                <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4 -scale-x-100" />
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </div>
