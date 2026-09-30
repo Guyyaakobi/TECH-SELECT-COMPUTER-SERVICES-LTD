@@ -256,168 +256,80 @@ export const HoursTrackerPage: React.FC = () => {
   return (
     <div
       dir="rtl"
-      className={`min-h-screen ${
-        colorPalette === "amber" ? "bg-[#090a0e] selection:bg-amber-600" : "bg-[#07090e] selection:bg-blue-600"
-      } text-slate-100 flex flex-col font-sans transition-colors duration-500 selection:text-white`}
+      className="min-h-screen bg-[#fafafc] text-slate-800 flex flex-col font-sans selection:bg-blue-600 selection:text-white relative overflow-x-hidden"
     >
-      {/* Background Tech Ambient Glow */}
-      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
-        {colorPalette === "amber" ? (
-          <>
-            <div className="absolute top-0 right-1/4 w-[32rem] h-[32rem] bg-amber-600/10 rounded-full blur-3xl animate-pulse" />
-            <div className="absolute bottom-0 left-1/4 w-[32rem] h-[32rem] bg-orange-500/10 rounded-full blur-3xl" />
-          </>
-        ) : (
-          <>
-            <div className="absolute top-0 right-1/4 w-[32rem] h-[32rem] bg-blue-600/10 rounded-full blur-3xl" />
-            <div className="absolute bottom-0 left-1/4 w-[32rem] h-[32rem] bg-cyan-500/10 rounded-full blur-3xl" />
-          </>
-        )}
+      {/* Soft Ethereal Blue Glow in the Center (Exactly like the video) */}
+      <div className="fixed inset-0 pointer-events-none z-0 flex items-center justify-center overflow-hidden">
+        <div className="w-[36rem] sm:w-[46rem] h-[26rem] sm:h-[32rem] bg-gradient-to-tr from-sky-200/50 via-blue-100/45 to-indigo-100/30 rounded-full blur-3xl opacity-80" />
       </div>
 
-      {/* Top Header */}
-      <header className="relative z-20 border-b border-white/10 bg-[#07090e]/85 backdrop-blur-xl sticky top-0 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-sm">
+      {/* Top Header - Ultra-clean, translucent white */}
+      <header className="relative z-20 border-b border-slate-200/70 bg-white/80 backdrop-blur-md sticky top-0 px-4 sm:px-8 py-3.5 flex items-center justify-between shadow-xs">
         <div className="flex items-center gap-3">
-          <div
-            className={`w-9 h-9 rounded-xl flex items-center justify-center transition-colors duration-300 shadow-sm ${
-              colorPalette === "amber"
-                ? "bg-amber-500/20 border border-amber-500/40 text-amber-400"
-                : "bg-blue-600/20 border border-blue-500/40 text-blue-400"
-            }`}
-          >
+          <div className="w-9 h-9 rounded-xl bg-blue-50 border border-blue-200/80 flex items-center justify-center text-blue-600 shadow-xs">
             <Clock className="w-4 h-4" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-extrabold text-white tracking-wider">TECH-SELECT</span>
-              <span
-                className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border transition-colors ${
-                  colorPalette === "amber"
-                    ? "bg-amber-500/15 text-amber-300 border-amber-500/30"
-                    : "bg-blue-500/15 text-cyan-300 border-blue-500/30"
-                }`}
-              >
+              <span className="text-xs font-extrabold text-slate-900 tracking-wider">TECH-SELECT</span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-blue-50 text-blue-600 border border-blue-200/80">
                 פורטל פנימי
               </span>
             </div>
-            <h1 className="text-sm font-semibold text-slate-300">תיעוד שעות</h1>
+            <h1 className="text-sm font-semibold text-slate-600">תיעוד שעות</h1>
           </div>
         </div>
 
-        {/* User Status, Palette Switcher & Actions */}
+        {/* User Status & Actions */}
         <div className="flex items-center gap-2.5 sm:gap-3.5">
-          {/* Palette Switcher Button */}
-          <div className="relative">
-            <button
-              onClick={() => setShowPaletteMenu(!showPaletteMenu)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-slate-200 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 transition-all duration-200 ease-out hover:scale-[1.03] active:scale-[0.97] cursor-pointer shadow-sm"
-              title="החלף פלטת צבעים"
-            >
-              <Palette className={`w-3.5 h-3.5 ${colorPalette === "amber" ? "text-amber-400" : "text-cyan-400"}`} />
-              <span className="hidden md:inline text-slate-400 text-[11px]">ערכה:</span>
-              <span className="font-semibold text-xs text-white">
-                {colorPalette === "cyan" ? "Cyber Cyan" : "Obsidian Amber"}
-              </span>
-              <ChevronDown className="w-3 h-3 text-slate-400" />
-            </button>
-
-            {showPaletteMenu && (
-              <div className="absolute left-0 mt-2 w-60 p-2.5 rounded-2xl bg-[#0d111d]/95 border border-white/15 backdrop-blur-2xl shadow-2xl z-50 animate-in fade-in zoom-in-95 duration-150 text-right">
-                <p className="text-[10px] text-slate-400 px-2 py-1 font-semibold mb-1">בחר פלטת צבעים מודרנית:</p>
-
-                <button
-                  onClick={() => handlePaletteChange("cyan")}
-                  className={`w-full p-2.5 rounded-xl text-right text-xs flex items-center justify-between transition-all duration-200 mb-1.5 cursor-pointer border ${
-                    colorPalette === "cyan"
-                      ? "bg-blue-600/30 border-cyan-400/50 text-white font-bold"
-                      : "bg-white/[0.02] border-transparent hover:bg-white/5 text-slate-300"
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-3.5 h-3.5 rounded-full bg-gradient-to-r from-blue-500 to-cyan-400 ring-2 ring-cyan-400/40 shrink-0" />
-                    <div>
-                      <p className="font-semibold text-white">Cyber Cyan</p>
-                      <p className="text-[10px] text-slate-400">כחול נייבי עמוק, סייאן וקובלט</p>
-                    </div>
-                  </div>
-                  {colorPalette === "cyan" && <Check className="w-4 h-4 text-cyan-400 shrink-0 mr-1" />}
-                </button>
-
-                <button
-                  onClick={() => handlePaletteChange("amber")}
-                  className={`w-full p-2.5 rounded-xl text-right text-xs flex items-center justify-between transition-all duration-200 cursor-pointer border ${
-                    colorPalette === "amber"
-                      ? "bg-amber-600/30 border-amber-400/50 text-white font-bold"
-                      : "bg-white/[0.02] border-transparent hover:bg-white/5 text-slate-300"
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-3.5 h-3.5 rounded-full bg-gradient-to-r from-amber-500 to-orange-400 ring-2 ring-amber-400/40 shrink-0" />
-                    <div>
-                      <p className="font-semibold text-white">Obsidian Amber</p>
-                      <p className="text-[10px] text-slate-400">גרפיט פחם עמוק, ענבר וזהב</p>
-                    </div>
-                  </div>
-                  {colorPalette === "amber" && <Check className="w-4 h-4 text-amber-400 shrink-0 mr-1" />}
-                </button>
-              </div>
-            )}
-          </div>
-
           {(account || serverUser) ? (
             <>
-              <div className="flex items-center gap-2.5 text-right bg-white/5 border border-white/10 rounded-full py-1 px-3 sm:px-4">
-                <div
-                  className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold border ${
-                    colorPalette === "amber"
-                      ? "bg-amber-600/30 text-amber-300 border-amber-400/40"
-                      : "bg-blue-600/30 text-blue-300 border-blue-400/40"
-                  }`}
-                >
+              <div className="flex items-center gap-2.5 text-right bg-slate-100/80 border border-slate-200 rounded-full py-1 px-3 sm:px-4 shadow-xs">
+                <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold">
                   {displayName.charAt(0)}
                 </div>
                 <div className="hidden sm:block">
-                  <p className="text-xs font-medium text-slate-200 leading-tight">{displayName}</p>
-                  {userEmail && <p className="text-[10px] text-slate-400 leading-none">{userEmail}</p>}
+                  <p className="text-xs font-semibold text-slate-800 leading-tight">{displayName}</p>
+                  {userEmail && <p className="text-[10px] text-slate-500 leading-none">{userEmail}</p>}
                 </div>
               </div>
 
               <button
                 onClick={handleLogout}
                 disabled={loading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-slate-300 hover:text-white bg-white/5 hover:bg-red-500/20 border border-white/10 hover:border-red-500/40 transition-all duration-200 cursor-pointer hover:scale-[1.03] active:scale-[0.97]"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium text-slate-600 hover:text-red-600 bg-white hover:bg-red-50 border border-slate-200 hover:border-red-200 transition-all duration-200 cursor-pointer hover:scale-[1.02] active:scale-[0.98] shadow-xs"
                 title="התנתק מחשבון Microsoft 365"
               >
-                <LogOut className="w-3.5 h-3.5 text-red-400" />
+                <LogOut className="w-3.5 h-3.5 text-slate-400 group-hover:text-red-500" />
                 <span className="hidden sm:inline">התנתק</span>
               </button>
             </>
           ) : (
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+            <div className="flex items-center gap-2 text-xs text-slate-500 bg-white border border-slate-200 px-3 py-1 rounded-full shadow-xs">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
               <span>נדרש זיהוי עובד</span>
             </div>
           )}
         </div>
       </header>
 
-      {/* Main Content Area - Generous Breathing Spacing */}
-      <main className="relative z-10 flex-1 flex flex-col items-center justify-start py-8 sm:py-12 md:py-14 px-4 sm:px-8 md:px-12">
-        <div className={`w-full ${(account || serverUser) ? "max-w-4xl" : "max-w-lg"} transition-all space-y-6`}>
+      {/* Main Content Area - Clean, Spacious, Breathing */}
+      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 sm:px-8 py-6 sm:py-10">
+        <div className={`w-full ${(account || serverUser) ? "max-w-3xl" : "max-w-md"} transition-all`}>
           {/* Missing System Configuration Screen */}
           {missingConfig && (
-            <div className="p-6 sm:p-8 rounded-3xl bg-amber-950/20 border border-amber-500/30 backdrop-blur-xl text-right shadow-2xl">
-              <div className="flex items-center gap-3 text-amber-400 mb-4">
+            <div className="p-6 sm:p-8 rounded-3xl bg-amber-50 border border-amber-200 text-right shadow-sm mb-6">
+              <div className="flex items-center gap-3 text-amber-700 mb-3">
                 <AlertCircle className="w-6 h-6 flex-shrink-0" />
-                <h3 className="text-base font-bold text-white">
+                <h3 className="text-base font-bold text-amber-900">
                   חסרה הגדרת מערכת: {missingConfig}
                 </h3>
               </div>
-              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed mb-4">
+              <p className="text-xs sm:text-sm text-amber-800 leading-relaxed mb-4">
                 השרת אינו מוגדר עם המשתנה הנדרש עבור אימות Microsoft 365.
-                יש להגדיר את <span className="font-mono text-amber-300 font-semibold" dir="ltr">{missingConfig}</span> בסביבת השרת (Cloudflare Environment Bindings / .env).
+                יש להגדיר את <span className="font-mono text-amber-900 font-semibold" dir="ltr">{missingConfig}</span> בסביבת השרת (Cloudflare Environment Bindings / .env).
               </p>
-              <div className="p-3.5 rounded-xl bg-black/40 border border-white/10 text-xs text-slate-400 font-mono" dir="ltr">
+              <div className="p-3 rounded-xl bg-amber-100/70 border border-amber-200 text-xs text-amber-900 font-mono" dir="ltr">
                 GET /api/hours/config &rarr; {missingConfig} is empty
               </div>
             </div>
@@ -425,27 +337,27 @@ export const HoursTrackerPage: React.FC = () => {
 
           {/* Loading State Spinner */}
           {!missingConfig && loading && (
-            <div className="p-8 sm:p-10 rounded-3xl bg-white/[0.03] border border-white/10 backdrop-blur-xl text-center shadow-2xl">
-              <div className="w-12 h-12 rounded-full border-2 border-blue-500/20 border-t-blue-400 animate-spin mx-auto mb-4" />
-              <p className="text-base font-semibold text-white mb-1">{loadingMessage}</p>
-              <p className="text-xs text-slate-400">אימות ארגוני ישיר &middot; Single-Tenant Entra ID</p>
+            <div className="p-8 sm:p-12 rounded-3xl bg-white/90 border border-slate-200/80 backdrop-blur-xl text-center shadow-lg">
+              <div className="w-12 h-12 rounded-full border-3 border-blue-100 border-t-blue-600 animate-spin mx-auto mb-4" />
+              <p className="text-base font-semibold text-slate-800 mb-1">{loadingMessage}</p>
+              <p className="text-xs text-slate-500">אימות ארגוני ישיר &middot; Single-Tenant Entra ID</p>
             </div>
           )}
 
           {/* Error Message Screen */}
           {!missingConfig && !loading && errorMessage && (
-            <div className="p-6 rounded-2xl bg-red-950/30 border border-red-500/40 backdrop-blur-xl text-right shadow-2xl mb-6">
-              <div className="flex items-center gap-3 text-red-400 mb-2">
+            <div className="p-6 rounded-2xl bg-red-50 border border-red-200 text-right shadow-sm mb-6">
+              <div className="flex items-center gap-3 text-red-600 mb-2">
                 <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                <h3 className="text-sm font-bold">הודעת מערכת</h3>
+                <h3 className="text-sm font-bold text-red-900">הודעת מערכת</h3>
               </div>
-              <p className="text-xs sm:text-sm text-slate-300 leading-relaxed whitespace-pre-line mb-4">
+              <p className="text-xs sm:text-sm text-red-800 leading-relaxed whitespace-pre-line mb-4">
                 {errorMessage}
               </p>
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setErrorMessage(null)}
-                  className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs text-slate-200 transition-colors cursor-pointer"
+                  className="px-3.5 py-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-xs font-semibold text-red-800 transition-colors cursor-pointer"
                 >
                   סגור הודעה
                 </button>
@@ -455,34 +367,32 @@ export const HoursTrackerPage: React.FC = () => {
 
           {/* Fallback Screen (Only visible if automatic redirect failed or encountered error) */}
           {!missingConfig && !loading && !account && !serverUser && (showFallbackButton || errorMessage) && (
-            <div className="relative overflow-hidden p-6 sm:p-10 rounded-3xl bg-gradient-to-b from-white/[0.08] to-white/[0.02] border border-white/10 backdrop-blur-2xl shadow-2xl text-center">
-              <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-600 via-cyan-400 to-blue-600" />
-
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600/30 to-cyan-500/10 border border-blue-500/40 text-blue-400 flex items-center justify-center mx-auto mb-6 shadow-xl shadow-blue-500/10">
-                <ShieldCheck className="w-8 h-8 text-cyan-300" />
+            <div className="p-6 sm:p-10 rounded-3xl bg-white/95 border border-slate-200 shadow-xl text-center relative overflow-hidden">
+              <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center mx-auto mb-6 shadow-sm">
+                <ShieldCheck className="w-8 h-8 text-blue-600" />
               </div>
 
-              <h2 className="text-xl sm:text-2xl font-extrabold text-white mb-2 tracking-tight">
+              <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2 tracking-tight">
                 מסך זיהוי עובד
               </h2>
-              <p className="text-xs sm:text-sm text-cyan-300/90 font-medium mb-6">
+              <p className="text-xs sm:text-sm text-slate-500 font-medium mb-6">
                 מערכת תיעוד ודיווח שעות &middot; TECH-SELECT LTD
               </p>
 
-              <div className="p-4 rounded-xl bg-black/40 border border-white/10 text-right mb-6">
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-right mb-6">
                 <div className="flex items-start gap-2.5">
-                  <Lock className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-slate-400 leading-relaxed">
+                  <Lock className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-slate-600 leading-relaxed">
                     גישה מורשית לעובדי החברה בלבד. יש להזדהות באמצעות חשבון Microsoft 365 הארגוני המשויך לדומיין{" "}
-                    <span className="text-cyan-300 font-mono" dir="ltr">@tech-select.co.il</span>.
+                    <span className="text-blue-600 font-mono font-semibold" dir="ltr">@tech-select.co.il</span>.
                   </p>
                 </div>
               </div>
 
-              {/* Fallback button */}
+              {/* Login button */}
               <button
                 onClick={handleManualLogin}
-                className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 text-white font-bold text-sm sm:text-base flex items-center justify-center gap-3 transition-all duration-200 shadow-xl shadow-blue-600/25 cursor-pointer active:scale-98 border border-blue-400/30 mb-4"
+                className="w-full py-3.5 px-6 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm sm:text-base flex items-center justify-center gap-3 transition-all duration-200 shadow-lg shadow-blue-500/20 cursor-pointer active:scale-98 mb-4"
               >
                 <div className="grid grid-cols-2 gap-0.5 w-4 h-4 flex-shrink-0">
                   <div className="w-1.5 h-1.5 bg-[#f25022] rounded-xs" />
@@ -493,17 +403,17 @@ export const HoursTrackerPage: React.FC = () => {
                 <span>התחברות באמצעות Microsoft 365</span>
               </button>
 
-              <div className="flex items-center justify-center gap-1.5 text-xs text-slate-400">
-                <Building2 className="w-3.5 h-3.5 text-blue-400" />
+              <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500">
+                <Building2 className="w-3.5 h-3.5 text-blue-600" />
                 <span>אימות ארגוני ישיר (Single-Tenant Entra ID)</span>
               </div>
             </div>
           )}
 
-          {/* Authenticated State: Stage 3 AI Assistant + Collapsible Test Panel */}
+          {/* Authenticated State: Clean Stage 3 AI Assistant */}
           {!missingConfig && !loading && (account || serverUser) && (
-            <>
-              {/* Stage 3 AI Assistant (Voice + Text, Mobile-First) */}
+            <div className="w-full flex flex-col items-center">
+              {/* Stage 3 AI Assistant (Voice + Text, Clean Center Pill Aesthetic) */}
               <HoursAssistantChat
                 currentUser={{
                   name: displayName,
@@ -511,13 +421,13 @@ export const HoursTrackerPage: React.FC = () => {
                 }}
               />
 
-              {/* Stage 2 Technical Test Panel (hidden by default behind small toggle) */}
+              {/* Stage 2 Technical Test Panel (hidden by default behind subtle toggle) */}
               <div className="w-full mt-6 flex flex-col items-center">
                 <button
                   onClick={() => setShowTestPanel(!showTestPanel)}
-                  className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                  className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-white hover:bg-slate-100 border border-slate-200 text-[11px] text-slate-500 hover:text-slate-800 transition-colors cursor-pointer shadow-xs"
                 >
-                  <span>מצב בדיקה (טכני / Stage 2)</span>
+                  <span>מצב בדיקה טכני (Stage 2)</span>
                   {showTestPanel ? (
                     <ChevronUp className="w-3.5 h-3.5" />
                   ) : (
@@ -526,7 +436,7 @@ export const HoursTrackerPage: React.FC = () => {
                 </button>
 
                 {showTestPanel && (
-                  <div className="w-full mt-4">
+                  <div className="w-full mt-4 bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
                     <HoursTestPanel
                       currentUser={{
                         name: displayName,
@@ -536,13 +446,13 @@ export const HoursTrackerPage: React.FC = () => {
                   </div>
                 )}
               </div>
-            </>
+            </div>
           )}
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="relative z-10 py-4 text-center text-slate-500 text-xs border-t border-white/5">
+      {/* Clean Light Footer */}
+      <footer className="relative z-10 py-4 text-center text-slate-400 text-xs border-t border-slate-200/60 bg-white/50">
         TECH-SELECT LTD &copy; {new Date().getFullYear()} &middot; מערכת פנימית מוגנת &middot; מסך זיהוי עובד
       </footer>
     </div>
