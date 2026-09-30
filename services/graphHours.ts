@@ -75,6 +75,7 @@ export interface SheetStructureResult {
 export interface WriteRowsResult {
   success: boolean;
   rowAddress: string;
+  sheetName?: string;
   webUrl?: string;
   entryId: string;
   timestamp: number;
@@ -1230,22 +1231,107 @@ export async function resolveDriveForItem(
 }
 
 /**
+ * Matches an Excel worksheet by workType:
+ * "ביקור באתר" -> tab containing "ביקור", "באתר", "site", "visit"
+ * "טיקטים" -> tab containing "טיקט", "קריאות", "תמיכה", "שוטף", "ticket", "helpdesk"
+ * "פרוייקטים" -> tab containing "פרוייקט", "פרויקט", "project"
+ */
+export function matchWorksheetByWorkType(sheets: any[], workType?: string): any {
+  if (!sheets || sheets.length === 0) return null;
+  if (!workType) return sheets[0];
+
+  const wt = workType.trim().toLowerCase();
+
+  // 1. Exact name match
+  const exact = sheets.find((s) => (s.name || "").trim().toLowerCase() === wt);
+  if (exact) return exact;
+
+  // 2. Specific workType tab keywords
+  if (wt.includes("ביקור") || wt.includes("באתר") || wt.includes("site") || wt.includes("visit")) {
+    const found = sheets.find((s) => {
+      const name = (s.name || "").toLowerCase();
+      return name.includes("ביקור") || name.includes("באתר") || name.includes("site") || name.includes("visit") || name.includes("שטח");
+    });
+    if (found) return found;
+  }
+
+  if (
+    wt.includes("טיקט") ||
+    wt.includes("ticket") ||
+    wt.includes("קריא") ||
+    wt.includes("תמיכ") ||
+    wt.includes("טלפון") ||
+    wt.includes("מרחוק")
+  ) {
+    const found = sheets.find((s) => {
+      const name = (s.name || "").toLowerCase();
+      return (
+        name.includes("טיקט") ||
+        name.includes("ticket") ||
+        name.includes("קריא") ||
+        name.includes("תמיכ") ||
+        name.includes("שוטף") ||
+        name.includes("ריטיינר") ||
+        name.includes("helpdesk")
+      );
+    });
+    if (found) return found;
+  }
+
+  if (wt.includes("פרויקט") || wt.includes("פרוייקט") || wt.includes("project")) {
+    const found = sheets.find((s) => {
+      const name = (s.name || "").toLowerCase();
+      return name.includes("פרויקט") || name.includes("פרוייקט") || name.includes("project");
+    });
+    if (found) return found;
+  }
+
+  // 3. Fallback: substring match
+  const partial = sheets.find((s) => {
+    const name = (s.name || "").toLowerCase();
+    return name.includes(wt) || wt.includes(name);
+  });
+  if (partial) return partial;
+
+  // 4. Default to first sheet
+  return sheets[0];
+}
+
+/**
  * 4. readSheetStructure(fileId) – open the workbook:
- * - If there is an Excel Table -> return table name, headers, last 5 rows.
- * - Otherwise -> read the used range, detect the header row, the columns, the last data row,
- *   and whether there is a totals/summary row below. Return headers, last 5 rows,
- *   and the exact address of the next empty row (above any totals row).
- * - Detect the formats used in existing rows (date format, time format, hours as decimal or hh:mm).
+ * - Detects all worksheets and matches the tab corresponding to workType (ביקור באתר, טיקטים, פרוייקטים).
+ * - If there is an Excel Table on that worksheet -> return table name, headers, last 5 rows.
+ * - Otherwise -> read the used range of that specific worksheet.
  */
 export async function readSheetStructure(
   fileId: string,
   env?: any,
-  explicitDriveId?: string
+  explicitDriveId?: string,
+  targetWorkType?: string
 ): Promise<SheetStructureResult> {
   const driveId = await resolveDriveForItem(fileId, explicitDriveId, env);
 
-  // 1. Check for Excel Tables first
-  const tablesUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables?$top=10`;
+  // 1. Fetch all worksheets from Excel workbook
+  const sheetsUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets?$top=20`;
+  const sheetsRes = await fetchGraph(sheetsUrl, { method: "GET" }, env);
+  if (!sheetsRes.ok) {
+    const err = await sheetsRes.text().catch(() => "");
+    throw new Error(`שגיאה בקריאת גליונות עבודה מקובץ Excel (${sheetsRes.status}): ${err}`);
+  }
+
+  const sheetsData: any = await sheetsRes.json();
+  const sheets: any[] = sheetsData.value || [];
+  if (sheets.length === 0) {
+    throw new Error("קובץ ה-Excel ריק מגיליונות עבודה");
+  }
+
+  // Target the specific tab/worksheet corresponding to the work type
+  const targetSheet = matchWorksheetByWorkType(sheets, targetWorkType) || sheets[0];
+  const sheetId = targetSheet.id;
+  const sheetName = targetSheet.name;
+
+  // 2. Check for Excel Table specifically on this worksheet
+  const tablesUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/tables?$top=10`;
   const tablesRes = await fetchGraph(tablesUrl, { method: "GET" }, env);
 
   if (tablesRes.ok) {
@@ -1289,6 +1375,8 @@ export async function readSheetStructure(
         isTable: true,
         tableName,
         tableId,
+        sheetName,
+        sheetId,
         headers,
         last5Rows,
         totalDataRows,
@@ -1299,25 +1387,7 @@ export async function readSheetStructure(
     }
   }
 
-  // 2. No Excel Table -> Read the used range of the active/first worksheet
-  const sheetsUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets?$top=5`;
-  const sheetsRes = await fetchGraph(sheetsUrl, { method: "GET" }, env);
-  if (!sheetsRes.ok) {
-    const err = await sheetsRes.text().catch(() => "");
-    throw new Error(`שגיאה בקריאת גליונות עבודה מקובץ Excel (${sheetsRes.status}): ${err}`);
-  }
-
-  const sheetsData: any = await sheetsRes.json();
-  const sheets: any[] = sheetsData.value || [];
-  if (sheets.length === 0) {
-    throw new Error("קובץ ה-Excel ריק מגיליונות עבודה");
-  }
-
-  const sheet = sheets[0];
-  const sheetId = sheet.id;
-  const sheetName = sheet.name;
-
-  // Read used range with values, formulas, and address
+  // 3. No Excel Table on this worksheet -> Read the used range of the matched worksheet
   const usedRangeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/usedRange`;
   const usedRangeRes = await fetchGraph(usedRangeUrl, { method: "GET" }, env);
   if (!usedRangeRes.ok) {
@@ -1527,7 +1597,8 @@ export async function writeRows(
   rows: Record<string, any>[],
   userContext?: { name?: string; email?: string },
   env?: any,
-  explicitDriveId?: string
+  explicitDriveId?: string,
+  explicitWorkType?: string
 ): Promise<WriteRowsResult> {
   if (!rows || rows.length === 0) {
     throw new Error("לא סופקו שורות לכתיבה");
@@ -1537,6 +1608,14 @@ export async function writeRows(
   const now = Date.now();
   const entryId = `entry_${now}_${Math.random().toString(36).substring(2, 8)}`;
   const userName = userContext?.name || userContext?.email || "עובד מערכת";
+
+  // Infer or get target work type to select the right tab in the workbook
+  const targetWorkType =
+    explicitWorkType ||
+    rows[0]?.["סוג עבודה"] ||
+    rows[0]?.workType ||
+    rows[0]?.type ||
+    "";
 
   // 1. Attempt to create a workbook session, with seamless fallback to session-less writes
   let sessionHeaders: Record<string, string> = {};
@@ -1570,9 +1649,10 @@ export async function writeRows(
   }
 
   try {
-    // 2. Read current sheet structure under this drive
-    const structure = await readSheetStructure(fileId, env, driveId);
+    // 2. Read current sheet structure under this drive and specific workType tab (ביקור באתר, טיקטים, פרוייקטים)
+    const structure = await readSheetStructure(fileId, env, driveId, targetWorkType);
     const headers = structure.headers;
+    const sheetName = structure.sheetName || targetWorkType || "";
 
     // Map rows into matrix of values according to headers
     const rowValuesMatrix = rows.map((rowObj) => {
@@ -1701,6 +1781,7 @@ export async function writeRows(
     return {
       success: true,
       rowAddress: writtenRowAddress,
+      sheetName,
       webUrl,
       entryId,
       timestamp: now,

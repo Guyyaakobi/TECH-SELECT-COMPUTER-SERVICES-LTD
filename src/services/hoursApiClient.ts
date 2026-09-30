@@ -173,7 +173,7 @@ export interface HoursAssistantEntryDraft {
   durationFormatted: string;
   startTime?: string;
   endTime?: string;
-  workType: "טלפון" | "שלט רחוק" | "באתר";
+  workType: "ביקור באתר" | "טיקטים" | "פרוייקטים";
   contactPerson?: string;
   ticketNumber?: string;
   description: string;
@@ -188,6 +188,7 @@ export interface WrittenEntryResult {
   fileId: string;
   fileName: string;
   filePath: string;
+  sheetName?: string;
   webUrl: string;
   targetRow: number | string;
   rowAddress: string;

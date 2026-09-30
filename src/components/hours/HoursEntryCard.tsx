@@ -17,6 +17,8 @@ import {
   Laptop,
   MapPin,
   Sparkles,
+  Ticket,
+  FolderKanban,
 } from "lucide-react";
 import {
   HoursAssistantEntryDraft,
@@ -46,8 +48,8 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   const [editCustomer, setEditCustomer] = useState(draft?.customerName || "");
   const [editDate, setEditDate] = useState(draft?.date || "");
   const [editDuration, setEditDuration] = useState(draft?.durationFormatted || "");
-  const [editWorkType, setEditWorkType] = useState<"טלפון" | "שלט רחוק" | "באתר">(
-    draft?.workType || "טלפון"
+  const [editWorkType, setEditWorkType] = useState<"ביקור באתר" | "טיקטים" | "פרוייקטים">(
+    (draft?.workType as any) || "טיקטים"
   );
   const [editDescription, setEditDescription] = useState(draft?.description || "");
 
@@ -92,9 +94,9 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   };
 
   const getWorkTypeIcon = (wt: string) => {
-    if (wt === "שלט רחוק") return <Laptop className="w-3.5 h-3.5" />;
-    if (wt === "באתר") return <MapPin className="w-3.5 h-3.5" />;
-    return <Phone className="w-3.5 h-3.5" />;
+    if (wt === "ביקור באתר" || wt === "באתר") return <MapPin className="w-3.5 h-3.5 text-amber-400" />;
+    if (wt === "פרוייקטים" || wt === "פרויקטים") return <FolderKanban className="w-3.5 h-3.5 text-purple-400" />;
+    return <Ticket className="w-3.5 h-3.5 text-cyan-400" />;
   };
 
   // ==========================================
@@ -143,10 +145,10 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             <span className="font-semibold text-emerald-300">{written.durationFormatted}</span>
           </div>
           <div className="p-2 rounded-lg bg-black/30 border border-white/5">
-            <span className="text-slate-400 block text-[10px]">סוג</span>
+            <span className="text-slate-400 block text-[10px]">טאב באקסל</span>
             <span className="font-semibold text-slate-200 inline-flex items-center gap-1">
               {getWorkTypeIcon(written.workType)}
-              {written.workType}
+              {written.sheetName || written.workType}
             </span>
           </div>
           <div className="p-2 rounded-lg bg-black/30 border border-white/5">
@@ -271,16 +273,16 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
           </div>
 
           <div>
-            <label className="block text-[11px] text-slate-400 mb-1">סוג עבודה:</label>
+            <label className="block text-[11px] text-slate-400 mb-1">סוג עבודה (טאב באקסל):</label>
             <div className="grid grid-cols-3 gap-1.5">
-              {(["טלפון", "שלט רחוק", "באתר"] as const).map((wt) => (
+              {(["ביקור באתר", "טיקטים", "פרוייקטים"] as const).map((wt) => (
                 <button
                   key={wt}
                   type="button"
                   onClick={() => setEditWorkType(wt)}
-                  className={`py-1 px-2 rounded-lg text-xs font-medium border flex items-center justify-center gap-1 cursor-pointer transition-colors ${
+                  className={`py-1.5 px-2 rounded-lg text-xs font-medium border flex items-center justify-center gap-1 cursor-pointer transition-colors ${
                     editWorkType === wt
-                      ? "bg-blue-600 text-white border-blue-400"
+                      ? "bg-blue-600 text-white border-blue-400 shadow-md shadow-blue-500/20"
                       : "bg-white/5 text-slate-300 border-white/10 hover:bg-white/10"
                   }`}
                 >
@@ -342,7 +344,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             <div className="p-2.5 rounded-xl bg-black/30 border border-white/5 col-span-2 sm:col-span-1">
               <span className="text-slate-400 block text-[10px] flex items-center gap-1">
                 {getWorkTypeIcon(draft.workType)}
-                סוג עבודה
+                סוג עבודה (טאב באקסל)
               </span>
               <span className="font-semibold text-slate-200 mt-0.5 block">{draft.workType}</span>
             </div>

@@ -26,7 +26,7 @@ export interface HoursAssistantEntryDraft {
   durationFormatted: string; // e.g. "15 דקות (0.25 שעה)"
   startTime?: string;
   endTime?: string;
-  workType: "טלפון" | "שלט רחוק" | "באתר";
+  workType: "ביקור באתר" | "טיקטים" | "פרוייקטים";
   contactPerson?: string;
   ticketNumber?: string;
   description: string;
@@ -41,6 +41,7 @@ export interface WrittenEntryResult {
   fileId: string;
   fileName: string;
   filePath: string;
+  sheetName?: string;
   webUrl: string;
   targetRow: number | string;
   rowAddress: string;
@@ -223,22 +224,21 @@ export function roundToQuarterHour(input: string | number): {
 }
 
 /**
- * Infer Work Type
+ * Infer Work Type matching Excel tabs: "ביקור באתר", "טיקטים", "פרוייקטים"
  */
-export function inferWorkType(text: string): "טלפון" | "שלט רחוק" | "באתר" {
-  if (!text) return "טלפון";
+export function inferWorkType(text: string): "ביקור באתר" | "טיקטים" | "פרוייקטים" {
+  if (!text) return "טיקטים";
   const s = text.toLowerCase();
   if (
-    s.includes("שלט רחוק") ||
-    s.includes("מרחוק") ||
-    s.includes("התחברתי") ||
-    s.includes("שליטה") ||
-    s.includes("אנידסק") ||
-    s.includes("anydesk") ||
-    s.includes("teamviewer") ||
-    s.includes("השתלטתי")
+    s.includes("פרויקט") ||
+    s.includes("פרוייקט") ||
+    s.includes("project") ||
+    s.includes("הקמה") ||
+    s.includes("מיגרציה") ||
+    s.includes("שדרוג") ||
+    s.includes("הטמעה")
   ) {
-    return "שלט רחוק";
+    return "פרוייקטים";
   }
   if (
     s.includes("באתר") ||
@@ -247,11 +247,13 @@ export function inferWorkType(text: string): "טלפון" | "שלט רחוק" | 
     s.includes("ביקור") ||
     s.includes("במשרד") ||
     s.includes("אצל הלקוח") ||
-    s.includes("פיזית")
+    s.includes("פיזית") ||
+    s.includes("site") ||
+    s.includes("visit")
   ) {
-    return "באתר";
+    return "ביקור באתר";
   }
-  return "טלפון";
+  return "טיקטים";
 }
 
 /**
@@ -329,7 +331,7 @@ export async function processAssistantChat(
       תיאור: targetDraft.description,
     };
 
-    const writeRes = await writeRows(targetDraft.fileId, [rowPayload], user, activeEnv, targetDraft.driveId);
+    const writeRes = await writeRows(targetDraft.fileId, [rowPayload], user, activeEnv, targetDraft.driveId, targetDraft.workType);
     const rowNumMatch = (writeRes.rowAddress || "").match(/\d+/);
     const targetRow = rowNumMatch ? parseInt(rowNumMatch[0], 10) : 1;
 
@@ -338,6 +340,7 @@ export async function processAssistantChat(
       fileId: targetDraft.fileId,
       fileName: targetDraft.fileName || "hours.xlsx",
       filePath: targetDraft.filePath || "",
+      sheetName: writeRes.sheetName || targetDraft.workType,
       webUrl: writeRes.webUrl || targetDraft.webUrl || "",
       targetRow,
       rowAddress: writeRes.rowAddress || `Row ${targetRow}`,
@@ -356,7 +359,7 @@ export async function processAssistantChat(
     const remainingDrafts = activeDrafts.filter((d) => d.id !== cardId);
 
     return {
-      reply: `נרשם בהצלחה ✓ השורה נוספה לקובץ ${targetDraft.fileName || ""} בשורה ${writtenItem.targetRow}.`,
+      reply: `נרשם בהצלחה ✓ השורה נוספה לטאב "${writtenItem.sheetName}" בקובץ ${targetDraft.fileName || ""} (שורה ${writtenItem.targetRow}).`,
       drafts: remainingDrafts,
       writtenEntries: [writtenItem, ...Array.from(sessionWrittenEntries.values()).filter((w) => w.id !== writtenItem.id)],
       undoneCardIds: [],
@@ -483,7 +486,11 @@ export async function processAssistantChat(
                 customerName: { type: Type.STRING, description: "Customer name" },
                 date: { type: Type.STRING, description: "Date in YYYY-MM-DD or DD/MM/YYYY" },
                 duration: { type: Type.STRING, description: "Duration e.g. '15 דקות' / '0.25 שעה'" },
-                workType: { type: Type.STRING, description: "Work type: 'טלפון' | 'שלט רחוק' | 'באתר'" },
+                workType: {
+                  type: Type.STRING,
+                  enum: ["ביקור באתר", "טיקטים", "פרוייקטים"],
+                  description: "Work type tab in Excel: 'ביקור באתר' (on-site visit) | 'טיקטים' (tickets/support/remote) | 'פרוייקטים' (projects/setup)",
+                },
                 description: { type: Type.STRING, description: "Professional short Hebrew billing description" },
                 startTime: { type: Type.STRING, description: "Optional start time" },
                 contactPerson: { type: Type.STRING, description: "Optional contact person" },
@@ -547,7 +554,10 @@ EXTRACTION RULES:
   1. Date: default today (${jCtx.todayIso}, Asia/Jerusalem). Understand "אתמול" (${jCtx.yesterdayIso}), "ביום ראשון", "שלשום", or explicit dates. If last month is mentioned (e.g. August, "חודש שעבר"), target last month's file (${jCtx.lastMonthYear}-${jCtx.lastMonth < 10 ? "0" + jCtx.lastMonth : jCtx.lastMonth}).
   2. Customer: call find_customer. If customer match is ambiguous (multiple options with close scores), ask the employee to choose between the options.
   3. Duration: round to 15 minutes (15 min = 0.25h, 30 min = 0.5h, 45 min = 0.75h, 60 min = 1h). If missing, ask for it!
-  4. Work type: "טלפון" / "שלט רחוק" / "באתר" – infer from wording (e.g. "דיברתי", "שיחה" -> טלפון; "התחברתי", "שליטה מרחוק", "AnyDesk" -> שלט רחוק; "ביקור", "הייתי אצל", "באתר" -> באתר).
+  4. Work type: strictly one of ["ביקור באתר", "טיקטים", "פרוייקטים"] – matches the exact tabs in the Excel file!
+     - "ביקור באתר": on-site visit / physical presence ("הייתי אצל", "ביקור", "הגעתי פיזית").
+     - "טיקטים": remote support, phone calls, tickets, daily maintenance ("דיברתי", "התחברתי", "טלפון", "מרחוק", "איפוס סיסמה", "תמיכה").
+     - "פרוייקטים": project work, setup, migration, rollout ("פרויקט", "שדרוג שרת", "מיגרציה", "הקמה").
   5. Description: rewrite as a short, clear, professional Hebrew sentence suitable for billing, faithful to what was said. Do not invent details.
   6. Contact person at customer (optional).
   7. Ticket number (optional).
@@ -856,8 +866,9 @@ MANDATORY WORKFLOW:
           const fileId = String(args.fileId || "");
           const rows: any[] = Array.isArray(args.rows) ? args.rows : [];
           const matchingDraft = collectedDrafts.find((d) => d.fileId === fileId);
+          const firstRowWorkType = rows[0]?.["סוג עבודה"] || rows[0]?.workType || matchingDraft?.workType;
           const writeRes = await withSafeTimeout(
-            writeRows(fileId, rows, user, activeEnv, matchingDraft?.driveId),
+            writeRows(fileId, rows, user, activeEnv, matchingDraft?.driveId, firstRowWorkType),
             30000,
             { success: false, rowAddress: "", webUrl: "" } as any
           );
@@ -874,6 +885,7 @@ MANDATORY WORKFLOW:
               fileId,
               fileName: "hours.xlsx",
               filePath: "",
+              sheetName: writeRes.sheetName || firstRowWorkType || "טיקטים",
               webUrl: writeRes.webUrl || "",
               targetRow,
               rowAddress: writeRes.rowAddress || `Row ${targetRow}`,
@@ -882,7 +894,7 @@ MANDATORY WORKFLOW:
               date: r.date || r.תאריך || jCtx.todayIso,
               durationFormatted: `${r.hours || r.משך || r.שעות || ""} שעות`,
               description: r.description || r.תיאור || "",
-              workType: r.workType || r["סוג עבודה"] || "טלפון",
+              workType: r.workType || r["סוג עבודה"] || firstRowWorkType || "טיקטים",
               writtenAt: writeRes.timestamp || Date.now(),
               expiresAt: (writeRes.timestamp || Date.now()) + 10 * 60 * 1000,
               canUndo: true,
