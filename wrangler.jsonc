@@ -6,6 +6,17 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
+  "routes": [
+    {
+      "pattern": "www.tech-select.co.il/*",
+      "zone_name": "tech-select.co.il"
+    },
+    {
+      "pattern": "tech-select.co.il",
+      "zone_name": "tech-select.co.il",
+      "custom_domain": true
+    }
+  ],
   "build": {
     "command": "npm run build"
   },
