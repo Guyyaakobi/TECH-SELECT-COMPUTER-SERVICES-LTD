@@ -604,284 +604,300 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
     setInputText("");
   };
 
-  // State: Empty Start Screen (Exactly like the video)
+  const firstName = (currentUser.name || "").split(" ")[0] || currentUser.name || "עובד";
+
+  // State 1: Empty Start Screen (Authentic Gemini Full-Window Workspace)
   if (messages.length === 0 && activeDrafts.length === 0 && !loading) {
     return (
-      <div className="w-full flex flex-col items-center justify-center py-10 sm:py-16 text-right relative">
-        {/* Soft Ethereal Blue Glow in the Center */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[34rem] h-[22rem] bg-gradient-to-tr from-sky-200/40 via-blue-100/35 to-indigo-100/25 rounded-full blur-3xl pointer-events-none -z-10" />
+      <div className="w-full h-full flex flex-col justify-between overflow-y-auto px-4 py-8 sm:py-12 relative bg-[#f8fafd] text-right">
+        {/* Soft Ethereal Glow in the Center */}
+        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[38rem] h-[24rem] bg-gradient-to-tr from-sky-200/35 via-purple-100/30 to-indigo-100/20 rounded-full blur-3xl pointer-events-none -z-10" />
 
-        {/* Big Calm Heading (Exactly like the video) */}
-        <div className="text-center mb-7">
-          <h1 className="text-3xl sm:text-4xl font-normal text-slate-800 tracking-tight mb-2">
-            Where should we start?
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 font-medium">
-            מה תרצה לתעד היום? הקלד או הקלט בקולך
-          </p>
-        </div>
-
-        {/* Floating Center Pill (The exact input pill from the video) */}
-        <div className="w-full max-w-xl mx-auto rounded-full bg-white border border-slate-200/90 shadow-lg shadow-slate-200/40 hover:shadow-xl hover:border-slate-300 transition-all p-2 pr-4 flex items-center gap-2.5 relative">
-          {/* Plus icon on right (start) */}
-          <div
-            className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-600 shrink-0"
-            title="תיעוד חדש"
-          >
-            <Plus className="w-4 h-4" />
+        {/* Center Content: Gemini Greeting & Suggestion Cards */}
+        <div className="flex-1 flex flex-col items-center justify-center w-full max-w-3xl mx-auto my-auto">
+          {/* Sparkles Icon */}
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] flex items-center justify-center text-white shadow-md shadow-indigo-500/20 mb-5">
+            <Sparkles className="w-6 h-6 animate-pulse" />
           </div>
 
-          {/* Text Input */}
-          <input
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSendText();
-              }
-            }}
-            disabled={loading || isRecording}
-            placeholder={isRecording ? "מקליט כעת (עד 2 דקות)..." : "תאר את שעות העבודה או הקלט הודעה קולית..."}
-            className="flex-1 bg-transparent text-slate-800 placeholder-slate-400 text-sm focus:outline-none py-1"
-          />
-
-          {/* Tag */}
-          <div className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200 text-[11px] font-medium text-slate-600 shrink-0">
-            <span>Tech-Select</span>
-          </div>
-
-          {/* Microphone icon */}
-          <button
-            onClick={isRecording ? stopRecording : startRecording}
-            disabled={loading}
-            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all shrink-0 cursor-pointer ${
-              isRecording
-                ? "bg-red-500 text-white animate-pulse"
-                : "text-slate-500 hover:text-blue-600 hover:bg-slate-100"
-            }`}
-            title={isRecording ? "עצור הקלטה" : "הקלט הודעה קולית"}
-          >
-            {isRecording ? <Square className="w-4 h-4 fill-white" /> : <Mic className="w-4 h-4" />}
-          </button>
-
-          {/* Send icon if text */}
-          {inputText.trim() && (
-            <button
-              onClick={() => handleSendText()}
-              disabled={loading}
-              className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shadow-xs transition-all shrink-0 cursor-pointer"
-            >
-              <Send className="w-3.5 h-3.5 -scale-x-100" />
-            </button>
-          )}
-        </div>
-
-        {/* Active Audio Recording Bar if user started recording from empty state */}
-        {isRecording && (
-          <div className="w-full max-w-xl mx-auto mt-4 flex items-center justify-between p-3 rounded-2xl bg-red-50 border border-red-200 animate-pulse">
-            <div className="flex items-center gap-2.5">
-              <span className="w-3 h-3 rounded-full bg-red-500 animate-ping" />
-              <span className="text-xs font-bold text-red-700">מקליט...</span>
-              <span className="font-mono text-xs text-red-900 bg-white px-2 py-0.5 rounded-lg border border-red-200">
-                {formatRecordingTime(recordingSeconds)}
+          {/* Big Gemini Headline */}
+          <div className="text-center mb-8">
+            <h1 className="text-4xl sm:text-5xl font-medium tracking-tight mb-3">
+              <span className="bg-gradient-to-r from-[#1a73e8] via-[#7c3aed] to-[#d946ef] bg-clip-text text-transparent">
+                שלום, {firstName}
               </span>
-            </div>
-
-            <button
-              onClick={stopRecording}
-              className="py-1 px-3.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
-            >
-              <Square className="w-3.5 h-3.5 fill-white" />
-              <span>עצור ושלח</span>
-            </button>
+            </h1>
+            <p className="text-base sm:text-xl font-normal text-slate-500">
+              איך אוכל לעזור לך לתעד שעות היום?
+            </p>
           </div>
-        )}
 
-        {/* Microphone Permission Error Banner */}
-        {micPermissionError && (
-          <div className="w-full max-w-xl mx-auto mt-4 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="font-bold flex items-center gap-1.5 text-amber-800">
-                <MicOff className="w-4 h-4" /> {micPermissionError.title}
-              </span>
+          {/* 3 Gemini Prompt Suggestions */}
+          <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-3.5 mb-8">
+            {quickSuggestions.map((item, idx) => (
               <button
-                onClick={() => setMicPermissionError(null)}
-                className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                key={idx}
+                onClick={() => handleSendText(item.prompt)}
+                className="p-4 rounded-2xl bg-white hover:bg-white/90 border border-slate-200/80 hover:border-blue-400 hover:shadow-md transition-all text-right flex flex-col justify-between gap-3 cursor-pointer group min-h-[110px]"
               >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <p>{micPermissionError.details}</p>
-          </div>
-        )}
-
-        {/* 3 Prompt Suggestions Beneath the Pill (Exactly like the video) */}
-        <div className="mt-8 space-y-2.5 w-full max-w-xl mx-auto">
-          {quickSuggestions.map((item, idx) => (
-            <button
-              key={idx}
-              onClick={() => handleSendText(item.prompt)}
-              className="w-full p-3.5 rounded-2xl bg-white/90 hover:bg-white border border-slate-200/80 hover:border-slate-300 shadow-xs hover:shadow-sm text-right flex items-center justify-between transition-all cursor-pointer group"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-slate-50 group-hover:bg-blue-50 text-slate-500 group-hover:text-blue-600 flex items-center justify-center transition-colors">
-                  {item.icon}
+                <div className="flex items-center justify-between w-full">
+                  <div className="w-8 h-8 rounded-xl bg-slate-50 group-hover:bg-blue-50 text-slate-500 group-hover:text-blue-600 flex items-center justify-center transition-colors">
+                    {item.icon}
+                  </div>
+                  <span className="text-[10px] text-slate-400 group-hover:text-blue-600 bg-slate-100 group-hover:bg-blue-50 px-2 py-0.5 rounded-full font-medium transition-colors">
+                    {item.tag}
+                  </span>
                 </div>
-                <span className="text-xs sm:text-sm text-slate-700 group-hover:text-slate-900 font-medium">
+                <span className="text-xs sm:text-sm text-slate-700 group-hover:text-slate-900 font-medium leading-snug">
                   {item.prompt}
                 </span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Bottom Docked Gemini Floating Prompt Pill */}
+        <div className="w-full max-w-3xl mx-auto mt-auto">
+          {/* Active Audio Recording Bar */}
+          {isRecording && (
+            <div className="mb-3 flex items-center justify-between p-3.5 rounded-2xl bg-red-50 border border-red-200 animate-pulse shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <span className="w-3 h-3 rounded-full bg-red-500 animate-ping" />
+                <span className="text-xs font-bold text-red-700">מקליט כעת...</span>
+                <span className="font-mono text-xs text-red-900 bg-white px-2 py-0.5 rounded-lg border border-red-200">
+                  {formatRecordingTime(recordingSeconds)}
+                </span>
               </div>
-              <span className="text-[10px] text-slate-400 group-hover:text-slate-600 bg-slate-50 px-2 py-0.5 rounded-full border border-slate-200/60">
-                {item.tag}
-              </span>
+
+              <button
+                onClick={stopRecording}
+                className="py-1 px-3.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Square className="w-3.5 h-3.5 fill-white" />
+                <span>עצור ושלח</span>
+              </button>
+            </div>
+          )}
+
+          {/* Microphone Permission Error Banner */}
+          {micPermissionError && (
+            <div className="mb-3 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex flex-col gap-2">
+              <div className="flex items-center justify-between">
+                <span className="font-bold flex items-center gap-1.5 text-amber-800">
+                  <MicOff className="w-4 h-4" /> {micPermissionError.title}
+                </span>
+                <button
+                  onClick={() => setMicPermissionError(null)}
+                  className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <p>{micPermissionError.details}</p>
+            </div>
+          )}
+
+          {/* Floating Pill Input Bar */}
+          <div className="w-full rounded-3xl bg-[#f0f4f9] hover:bg-[#e9eef6] focus-within:bg-white focus-within:shadow-xl border border-slate-200/90 transition-all p-2.5 pl-4 flex items-center gap-3">
+            {/* Plus / Reset */}
+            <div
+              className="w-9 h-9 rounded-full bg-white flex items-center justify-center text-slate-600 shadow-xs shrink-0 cursor-default"
+              title="תיעוד חדש"
+            >
+              <Sparkles className="w-4 h-4 text-purple-600" />
+            </div>
+
+            {/* Text Input */}
+            <input
+              type="text"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendText();
+                }
+              }}
+              disabled={loading || isRecording}
+              placeholder={isRecording ? "מקליט כעת (עד 2 דקות)..." : "הזן דיווח טכני מפורט או הקלט הודעה קולית..."}
+              className="flex-1 bg-transparent text-slate-800 placeholder-slate-400 text-sm focus:outline-none py-1.5"
+            />
+
+            {/* Microphone button */}
+            <button
+              onClick={isRecording ? stopRecording : startRecording}
+              disabled={loading}
+              className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shrink-0 cursor-pointer ${
+                isRecording
+                  ? "bg-red-500 text-white animate-pulse"
+                  : "text-slate-500 hover:text-blue-600 hover:bg-white"
+              }`}
+              title={isRecording ? "עצור הקלטה" : "הקלט הודעה קולית"}
+            >
+              {isRecording ? <Square className="w-4 h-4 fill-white" /> : <Mic className="w-4 h-4" />}
             </button>
-          ))}
+
+            {/* Send button */}
+            {inputText.trim() && (
+              <button
+                onClick={() => handleSendText()}
+                disabled={loading}
+                className="w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shadow-md transition-all shrink-0 cursor-pointer"
+              >
+                <Send className="w-4 h-4 -scale-x-100" />
+              </button>
+            )}
+          </div>
+
+          <div className="text-center mt-2.5 text-[11px] text-slate-400">
+            Tech-Select Assistant &middot; דיווח שעות מקצועי מסונכרן ישירות ל-SharePoint ו-Excel דרך Microsoft Graph
+          </div>
         </div>
       </div>
     );
   }
 
-  // Active Chat State (Clean, light aesthetic)
+  // State 2: Active Chat State (Authentic Full-Window Gemini Conversation)
   return (
-    <div className="w-full flex flex-col h-[78vh] sm:h-[82vh] max-h-[850px] bg-white/95 border border-slate-200/90 rounded-3xl overflow-hidden shadow-lg relative text-right">
-      {/* Header Bar */}
-      <div className="px-4 sm:px-6 py-3.5 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between z-10">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shadow-xs">
-            <Sparkles className="w-4 h-4" />
-          </div>
-          <div>
-            <h2 className="text-sm font-bold text-slate-900 tracking-wide">Where should we start?</h2>
-            <p className="text-[11px] text-slate-500">
-              עובד: <span className="text-slate-800 font-medium">{currentUser.name}</span>
-            </p>
-          </div>
-        </div>
-
+    <div className="w-full h-full flex flex-col justify-between overflow-hidden relative bg-[#f8fafd] text-right">
+      {/* Top Subtle Status Bar */}
+      <div className="px-4 sm:px-6 py-2.5 border-b border-slate-200/60 bg-white/70 backdrop-blur-xs flex items-center justify-between shrink-0 z-10">
         <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] flex items-center justify-center text-white shadow-2xs">
+            <Sparkles className="w-3 h-3" />
+          </div>
+          <span className="text-xs font-semibold text-slate-700">עוזר דיווח שעות</span>
           {activeDrafts.length > 0 && (
-            <span className="text-xs px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-medium flex items-center gap-1 shadow-xs">
+            <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-semibold flex items-center gap-1">
               <Clock className="w-3 h-3 text-blue-600" />
               <span>{activeDrafts.length} טיוטות</span>
             </span>
           )}
-
-          <button
-            onClick={handleResetChat}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-white hover:bg-slate-100 border border-slate-200 text-xs text-slate-600 hover:text-slate-900 transition-colors cursor-pointer shadow-xs"
-            title="חזור למסך הראשי"
-          >
-            <RotateCcw className="w-3 h-3 text-slate-400" />
-            <span>שיחה חדשה</span>
-          </button>
         </div>
+
+        <button
+          onClick={handleResetChat}
+          className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-white hover:bg-slate-100 border border-slate-200 text-xs text-slate-600 hover:text-slate-900 transition-colors cursor-pointer shadow-xs"
+          title="שיחה חדשה"
+        >
+          <RotateCcw className="w-3 h-3 text-slate-400" />
+          <span>שיחה חדשה</span>
+        </button>
       </div>
 
-      {/* Messages Feed */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 z-10 selection:bg-blue-600 selection:text-white bg-slate-50/30">
-        {messages.map((msg) => {
-          const isUser = msg.role === "user";
+      {/* Messages Feed: Full Viewport Width, Comfortable Centered Max-Width Reading Column */}
+      <div className="flex-1 overflow-y-auto px-4 py-6 scroll-smooth">
+        <div className="max-w-3xl mx-auto w-full space-y-6">
+          {messages.map((msg) => {
+            const isUser = msg.role === "user";
 
-          return (
-            <div
-              key={msg.id}
-              className={`flex flex-col ${isUser ? "items-start" : "items-end"} space-y-2`}
-            >
+            return (
               <div
-                className={`max-w-[90%] sm:max-w-[80%] rounded-2xl p-3.5 sm:p-4 text-xs sm:text-sm leading-relaxed shadow-xs ${
-                  isUser
-                    ? "bg-blue-600 text-white rounded-br-xs"
-                    : "bg-white border border-slate-200/90 text-slate-800 rounded-bl-xs"
-                }`}
+                key={msg.id}
+                className={`flex flex-col ${isUser ? "items-start" : "items-stretch"} space-y-2.5`}
               >
-                {/* Voice badge if message came from voice */}
-                {msg.isVoice && (
-                  <div className="flex items-center gap-1.5 text-[11px] text-blue-200 mb-1 font-semibold pb-1 border-b border-white/20">
-                    <Volume2 className="w-3.5 h-3.5" />
-                    <span>תמלול קולי</span>
+                {/* User Message Bubble */}
+                {isUser ? (
+                  <div className="bg-[#f0f4f9] text-slate-900 rounded-3xl px-5 py-3.5 text-sm sm:text-base leading-relaxed max-w-[85%] shadow-xs">
+                    {msg.isVoice && (
+                      <div className="flex items-center gap-1.5 text-xs text-blue-600 mb-1.5 font-semibold pb-1 border-b border-slate-200">
+                        <Volume2 className="w-3.5 h-3.5" />
+                        <span>תמלול קולי</span>
+                      </div>
+                    )}
+                    <p className="whitespace-pre-line">{msg.text}</p>
+                    <div className="text-[10px] text-slate-400 mt-1.5 text-left">
+                      {msg.timestamp}
+                    </div>
+                  </div>
+                ) : (
+                  /* Model / Assistant Message: Gemini Canvas Style */
+                  <div className="flex items-start gap-3 w-full">
+                    {/* Gemini Sparkles Avatar */}
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5">
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+
+                    <div className="flex-1 space-y-3">
+                      <div className="text-sm sm:text-base text-slate-800 leading-relaxed font-normal">
+                        <p className="whitespace-pre-line">{msg.text}</p>
+                      </div>
+
+                      {/* Render Cards attached to this turn */}
+                      {msg.drafts && msg.drafts.length > 0 && (
+                        <div className="w-full space-y-2 pt-1">
+                          {msg.drafts.map((d) => (
+                            <HoursEntryCard
+                              key={d.id}
+                              draft={activeDrafts.find((ad) => ad.id === d.id) || d}
+                              onConfirm={handleConfirmEntry}
+                              onUpdateDraft={handleUpdateDraft}
+                              isConfirming={loading}
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Render Written Entries */}
+                      {msg.writtenEntries && msg.writtenEntries.length > 0 && (
+                        <div className="w-full space-y-2 pt-1">
+                          {msg.writtenEntries.map((w) => (
+                            <HoursEntryCard
+                              key={w.id}
+                              written={w}
+                              onUndo={handleUndoEntry}
+                              isUndoing={loading}
+                            />
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="text-[10px] text-slate-400">
+                        {msg.timestamp}
+                      </div>
+                    </div>
                   </div>
                 )}
-
-                <p className="whitespace-pre-line">{msg.text}</p>
-
-                <div
-                  className={`text-[10px] mt-1.5 flex items-center ${
-                    isUser ? "text-blue-100 justify-start" : "text-slate-400 justify-end"
-                  }`}
-                >
-                  <span>{msg.timestamp}</span>
-                </div>
               </div>
+            );
+          })}
 
-              {/* Render Cards attached to this turn or global active drafts */}
-              {!isUser && msg.drafts && msg.drafts.length > 0 && (
-                <div className="w-full sm:max-w-[90%] space-y-2 mt-1">
-                  {msg.drafts.map((d) => (
-                    <HoursEntryCard
-                      key={d.id}
-                      draft={activeDrafts.find((ad) => ad.id === d.id) || d}
-                      onConfirm={handleConfirmEntry}
-                      onUpdateDraft={handleUpdateDraft}
-                      isConfirming={loading}
-                    />
-                  ))}
+          {/* Global Active Drafts if not in the last message */}
+          {activeDrafts.length > 0 &&
+            !messages[messages.length - 1]?.drafts?.length && (
+              <div className="w-full space-y-2 pt-2 pr-11">
+                <div className="text-xs text-blue-600 font-semibold mb-1">
+                  טיוטות ממתינות לאישורך:
                 </div>
-              )}
-
-              {/* Render Written Entries */}
-              {!isUser && msg.writtenEntries && msg.writtenEntries.length > 0 && (
-                <div className="w-full sm:max-w-[90%] space-y-2 mt-1">
-                  {msg.writtenEntries.map((w) => (
-                    <HoursEntryCard
-                      key={w.id}
-                      written={w}
-                      onUndo={handleUndoEntry}
-                      isUndoing={loading}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-
-        {/* Global Active Drafts if not in the last message */}
-        {activeDrafts.length > 0 &&
-          !messages[messages.length - 1]?.drafts?.length && (
-            <div className="w-full sm:max-w-[90%] mr-auto space-y-2 pt-2">
-              <div className="text-[11px] text-blue-600 font-semibold mb-1">
-                טיוטות ממתינות לאישורך:
+                {activeDrafts.map((d) => (
+                  <HoursEntryCard
+                    key={d.id}
+                    draft={d}
+                    onConfirm={handleConfirmEntry}
+                    onUpdateDraft={handleUpdateDraft}
+                    isConfirming={loading}
+                  />
+                ))}
               </div>
-              {activeDrafts.map((d) => (
-                <HoursEntryCard
-                  key={d.id}
-                  draft={d}
-                  onConfirm={handleConfirmEntry}
-                  onUpdateDraft={handleUpdateDraft}
-                  isConfirming={loading}
-                />
-              ))}
+            )}
+
+          {/* Loading Indicator */}
+          {loading && (
+            <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-white border border-slate-200 max-w-[75%] shadow-xs animate-pulse pr-11">
+              <div className="w-4 h-4 rounded-full border-2 border-blue-600 border-t-transparent animate-spin flex-shrink-0" />
+              <span className="text-xs text-slate-700 font-medium">{loadingStep}</span>
             </div>
           )}
 
-        {/* Loading Indicator */}
-        {loading && (
-          <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-white border border-slate-200 max-w-[75%] mr-auto shadow-xs animate-pulse">
-            <div className="w-4 h-4 rounded-full border-2 border-blue-600 border-t-transparent animate-spin flex-shrink-0" />
-            <span className="text-xs text-slate-700 font-medium">{loadingStep}</span>
-          </div>
-        )}
-
-        <div ref={chatEndRef} />
+          <div ref={chatEndRef} />
+        </div>
       </div>
 
       {/* Docked Floating Pill Input at the Bottom */}
-      <div className="p-3 sm:p-4 border-t border-slate-200/80 bg-white z-10 flex flex-col gap-2.5">
+      <div className="w-full max-w-3xl mx-auto px-4 pb-4 pt-2 shrink-0">
         {/* Active Audio Recording Bar */}
         {isRecording && (
-          <div className="flex items-center justify-between p-3 rounded-2xl bg-red-50 border border-red-200 animate-pulse">
+          <div className="mb-2 flex items-center justify-between p-3.5 rounded-2xl bg-red-50 border border-red-200 animate-pulse shadow-sm">
             <div className="flex items-center gap-2.5">
               <span className="w-3 h-3 rounded-full bg-red-500 animate-ping" />
               <span className="text-xs font-bold text-red-700">מקליט...</span>
@@ -901,12 +917,12 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
         )}
 
         {/* Floating Pill Input Bar */}
-        <div className="w-full rounded-full bg-slate-50 border border-slate-200/90 shadow-xs hover:border-slate-300 transition-all p-2 pr-4 flex items-center gap-2.5">
+        <div className="w-full rounded-3xl bg-[#f0f4f9] hover:bg-[#e9eef6] focus-within:bg-white focus-within:shadow-xl border border-slate-200/90 transition-all p-2.5 pl-4 flex items-center gap-3">
           {/* Plus icon on right (start) */}
           <button
             type="button"
             onClick={handleResetChat}
-            className="w-8 h-8 rounded-full bg-white hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors shrink-0 shadow-xs cursor-pointer"
+            className="w-9 h-9 rounded-full bg-white hover:bg-slate-200 flex items-center justify-center text-slate-600 transition-colors shrink-0 shadow-xs cursor-pointer"
             title="נקה ופתח שיחה חדשה"
           >
             <Plus className="w-4 h-4" />
@@ -924,15 +940,15 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
               }
             }}
             disabled={loading || isRecording}
-            placeholder={isRecording ? "מקליט כעת (עד 2 דקות)..." : "תאר את שעות העבודה או הקלט הודעה קולית..."}
-            className="flex-1 bg-transparent text-slate-800 placeholder-slate-400 text-sm focus:outline-none py-1"
+            placeholder={isRecording ? "מקליט כעת (עד 2 דקות)..." : "הזן דיווח טכני מפורט או הקלט הודעה קולית..."}
+            className="flex-1 bg-transparent text-slate-800 placeholder-slate-400 text-sm focus:outline-none py-1.5"
           />
 
           {/* Microphone icon */}
           <button
             onClick={isRecording ? stopRecording : startRecording}
             disabled={loading}
-            className={`w-9 h-9 rounded-full flex items-center justify-center transition-all shrink-0 cursor-pointer ${
+            className={`w-10 h-10 rounded-full flex items-center justify-center transition-all shrink-0 cursor-pointer ${
               isRecording
                 ? "bg-red-500 text-white animate-pulse"
                 : "text-slate-500 hover:text-blue-600 hover:bg-white"
@@ -947,11 +963,15 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
             <button
               onClick={() => handleSendText()}
               disabled={loading}
-              className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shadow-xs transition-all shrink-0 cursor-pointer"
+              className="w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shadow-md transition-all shrink-0 cursor-pointer"
             >
-              <Send className="w-3.5 h-3.5 -scale-x-100" />
+              <Send className="w-4 h-4 -scale-x-100" />
             </button>
           )}
+        </div>
+
+        <div className="text-center mt-2 text-[11px] text-slate-400">
+          Tech-Select Assistant &middot; דיווח שעות מקצועי מסונכרן ישירות ל-SharePoint ו-Excel
         </div>
       </div>
     </div>
