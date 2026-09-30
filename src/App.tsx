@@ -468,19 +468,19 @@ function MainApp() {
   );
 }
 
+const checkIsHoursRoute = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  const path = window.location.pathname.toLowerCase().replace(/\/+$/, '');
+  const target = `/t/${RANDOM_SLUG}`.toLowerCase();
+  return path === target || path.startsWith(`${target}/`);
+};
+
 export default function App() {
-  const [isHoursRoute, setIsHoursRoute] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    const cleanPath = window.location.pathname.replace(/\/+$/, '').toLowerCase();
-    const targetPath = `/t/${RANDOM_SLUG}`.toLowerCase();
-    return cleanPath === targetPath;
-  });
+  const [isHoursRoute, setIsHoursRoute] = useState(checkIsHoursRoute);
 
   useEffect(() => {
     const handleLocationChange = () => {
-      const cleanPath = window.location.pathname.replace(/\/+$/, '').toLowerCase();
-      const targetPath = `/t/${RANDOM_SLUG}`.toLowerCase();
-      setIsHoursRoute(cleanPath === targetPath);
+      setIsHoursRoute(checkIsHoursRoute());
     };
 
     window.addEventListener('popstate', handleLocationChange);

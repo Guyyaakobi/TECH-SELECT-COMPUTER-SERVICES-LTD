@@ -6,38 +6,47 @@ import {
   AccountInfo,
 } from "@azure/msal-browser";
 import {
-  AZURE_TENANT_ID,
-  AZURE_CLIENT_ID,
-  API_SCOPE,
+  getActiveTenantId,
+  getActiveClientId,
+  getActiveApiScope,
   getAuthority,
   getRedirectUri,
 } from "../config/hoursConfig";
 
-// Configuration for MSAL Single-Tenant Microsoft 365
-const msalConfig: Configuration = {
-  auth: {
-    clientId: AZURE_CLIENT_ID || "00000000-0000-0000-0000-000000000000",
-    authority: getAuthority(AZURE_TENANT_ID),
-    redirectUri: typeof window !== "undefined" ? getRedirectUri() : "",
-    postLogoutRedirectUri: typeof window !== "undefined" ? getRedirectUri() : "",
-  },
-  cache: {
-    cacheLocation: "localStorage",
-  },
-  system: {
-    loggerOptions: {
-      logLevel: LogLevel.Warning,
-      loggerCallback: (level, message, containsPii) => {
-        if (!containsPii && level === LogLevel.Error) {
-          console.error("[MSAL]", message);
-        }
+export function createMsalConfig(): Configuration {
+  const tenantId = getActiveTenantId();
+  const clientId = getActiveClientId() || "00000000-0000-0000-0000-000000000000";
+
+  return {
+    auth: {
+      clientId,
+      authority: getAuthority(tenantId),
+      redirectUri: typeof window !== "undefined" ? getRedirectUri() : "",
+      postLogoutRedirectUri: typeof window !== "undefined" ? getRedirectUri() : "",
+    },
+    cache: {
+      cacheLocation: "localStorage",
+    },
+    system: {
+      loggerOptions: {
+        logLevel: LogLevel.Warning,
+        loggerCallback: (level, message, containsPii) => {
+          if (!containsPii && level === LogLevel.Error) {
+            console.error("[MSAL]", message);
+          }
+        },
       },
     },
-  },
-};
+  };
+}
 
 let msalInstance: PublicClientApplication | null = null;
 let msalInitPromise: Promise<PublicClientApplication> | null = null;
+
+export function resetMsalInstance(): void {
+  msalInstance = null;
+  msalInitPromise = null;
+}
 
 /**
  * Returns the initialized MSAL singleton instance
@@ -52,7 +61,8 @@ export async function getMsalInstance(): Promise<PublicClientApplication> {
   }
 
   msalInitPromise = (async () => {
-    const instance = new PublicClientApplication(msalConfig);
+    const config = createMsalConfig();
+    const instance = new PublicClientApplication(config);
     await instance.initialize();
     msalInstance = instance;
     return instance;
@@ -79,8 +89,9 @@ export async function getApiToken(pca?: PublicClientApplication): Promise<string
     instance.setActiveAccount(activeAccount);
   }
 
+  const scope = getActiveApiScope();
   const tokenRequest = {
-    scopes: [API_SCOPE],
+    scopes: [scope],
     account: activeAccount,
     redirectUri: getRedirectUri(),
   };
@@ -101,12 +112,13 @@ export async function getApiToken(pca?: PublicClientApplication): Promise<string
 }
 
 /**
- * Redirect immediately to Microsoft 365 sign-in page
+ * Redirect to Microsoft 365 sign-in page
  */
 export async function loginWithMicrosoft(pca?: PublicClientApplication): Promise<void> {
   const instance = pca || (await getMsalInstance());
+  const scope = getActiveApiScope();
   const loginRequest = {
-    scopes: [API_SCOPE],
+    scopes: [scope],
     redirectUri: getRedirectUri(),
     prompt: "select_account",
   };

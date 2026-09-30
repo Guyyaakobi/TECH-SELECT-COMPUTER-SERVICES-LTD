@@ -1,8 +1,13 @@
 /**
  * Configuration for Internal Hours Tracking Tool ("תיעוד שעות")
  * 
- * Fill in your Microsoft 365 / Azure Entra ID credentials below or via environment variables.
- * Note: Never store client secrets here. Secrets belong on the server only.
+ * Microsoft 365 / Azure Entra ID credentials can be configured via:
+ * 1. Environment variables (.env or Cloudflare Pages env vars):
+ *    - VITE_AZURE_TENANT_ID
+ *    - VITE_AZURE_CLIENT_ID
+ *    - VITE_AZURE_API_SCOPE (optional)
+ *    - VITE_HOURS_SLUG (optional)
+ * 2. Or directly configured via the internal identification portal screen
  */
 
 // 1. Hidden Route Slug - A long random unguessable string
@@ -13,24 +18,55 @@ export const RANDOM_SLUG =
 
 export const HIDDEN_ROUTE_PATH = `/t/${RANDOM_SLUG}`;
 
-// 2. Azure Entra ID / Microsoft 365 Single-Tenant Configuration
-// Fill in your Azure Tenant ID and App Registration Client ID below,
-// or specify VITE_AZURE_TENANT_ID and VITE_AZURE_CLIENT_ID in your .env file.
-export const AZURE_TENANT_ID =
-  (typeof import.meta !== "undefined" && import.meta.env?.VITE_AZURE_TENANT_ID) ||
-  "";
+// Helper to get active Tenant ID (env var priority, fallback to local storage)
+export const getActiveTenantId = (): string => {
+  const envVal = (typeof import.meta !== "undefined" && import.meta.env?.VITE_AZURE_TENANT_ID) || "";
+  if (envVal && envVal.trim()) return envVal.trim();
+  if (typeof window !== "undefined") {
+    const saved = localStorage.getItem("TECHSELECT_AZURE_TENANT_ID");
+    if (saved && saved.trim()) return saved.trim();
+  }
+  return "";
+};
 
-export const AZURE_CLIENT_ID =
-  (typeof import.meta !== "undefined" && import.meta.env?.VITE_AZURE_CLIENT_ID) ||
-  "";
+// Helper to get active Client ID (env var priority, fallback to local storage)
+export const getActiveClientId = (): string => {
+  const envVal = (typeof import.meta !== "undefined" && import.meta.env?.VITE_AZURE_CLIENT_ID) || "";
+  if (envVal && envVal.trim()) return envVal.trim();
+  if (typeof window !== "undefined") {
+    const saved = localStorage.getItem("TECHSELECT_AZURE_CLIENT_ID");
+    if (saved && saved.trim()) return saved.trim();
+  }
+  return "";
+};
 
-// 3. API Scope for token acquisition (e.g. api://{CLIENT_ID}/access_as_user)
-export const API_SCOPE =
-  (typeof import.meta !== "undefined" && import.meta.env?.VITE_AZURE_API_SCOPE) ||
-  (AZURE_CLIENT_ID ? `api://${AZURE_CLIENT_ID}/access_as_user` : "User.Read");
+export const saveAzureCredentials = (tenantId: string, clientId: string): void => {
+  if (typeof window !== "undefined") {
+    if (tenantId && tenantId.trim()) {
+      localStorage.setItem("TECHSELECT_AZURE_TENANT_ID", tenantId.trim());
+    }
+    if (clientId && clientId.trim()) {
+      localStorage.setItem("TECHSELECT_AZURE_CLIENT_ID", clientId.trim());
+    }
+  }
+};
+
+// Backward-compatible exports
+export const AZURE_TENANT_ID = getActiveTenantId();
+export const AZURE_CLIENT_ID = getActiveClientId();
+
+// 3. API Scope for token acquisition
+export const getActiveApiScope = (): string => {
+  const customScope = (typeof import.meta !== "undefined" && import.meta.env?.VITE_AZURE_API_SCOPE) || "";
+  if (customScope) return customScope;
+  const clientId = getActiveClientId();
+  return clientId ? `api://${clientId}/access_as_user` : "User.Read";
+};
+
+export const API_SCOPE = getActiveApiScope();
 
 // 4. Single-Tenant Authority URL
-export const getAuthority = (tenantId = AZURE_TENANT_ID): string => {
+export const getAuthority = (tenantId = getActiveTenantId()): string => {
   const cleanTenant = (tenantId || "").trim();
   return cleanTenant ? `https://login.microsoftonline.com/${cleanTenant}` : "https://login.microsoftonline.com/common";
 };

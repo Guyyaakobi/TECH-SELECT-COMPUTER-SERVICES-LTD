@@ -25,6 +25,7 @@ import { handleDiagnosticGet as handleDiagnostic } from "../functions/api/ai-dis
 import { handleContactSubmission } from "../functions/api/contact";
 import { handleSendOtp } from "../functions/api/auth/send-otp";
 import { handleVerifyOtp } from "../functions/api/auth/verify-otp";
+import * as hoursMeHandler from "../functions/api/hours/me";
 
 export interface Env {
   GEMINI_API_KEY?: string;
@@ -140,6 +141,14 @@ export default {
     // Route 14: Atera Customer Verification & Random Tech Greeting
     if (url.pathname.endsWith("/api/atera/check-customer") || url.pathname.endsWith("/api/customer/verify")) {
       return handleCheckCustomer(request, env);
+    }
+
+    // Route 15: Internal Hours Token Validation (/api/hours/me)
+    if (url.pathname.endsWith("/api/hours/me")) {
+      if (request.method === "OPTIONS") {
+        return hoursMeHandler.onRequestOptions({ request, env });
+      }
+      return hoursMeHandler.onRequestGet({ request, env });
     }
 
     return new Response(
