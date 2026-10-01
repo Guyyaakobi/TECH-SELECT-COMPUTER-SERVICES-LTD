@@ -313,7 +313,7 @@ export const HoursTrackerPage: React.FC = () => {
               {serverUser?.isAdmin && (
                 <button
                   onClick={() => setShowTestPanel(!showTestPanel)}
-                  className={`text-xs px-3 py-1.5 rounded-full border font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
+                  className={`btn-hover-subtle text-xs px-3 py-1.5 rounded-full border font-medium flex items-center gap-1.5 cursor-pointer ${
                     showTestPanel
                       ? "bg-purple-600 text-white border-purple-600 shadow-xs"
                       : "bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300"
@@ -335,7 +335,7 @@ export const HoursTrackerPage: React.FC = () => {
               <button
                 onClick={handleLogout}
                 disabled={loading}
-                className="p-1.5 sm:px-2.5 sm:py-1 rounded-full text-xs font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 transition-colors cursor-pointer"
+                className="btn-icon-subtle p-1.5 sm:px-2.5 sm:py-1 rounded-full text-xs font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 cursor-pointer"
                 title="התנתק"
               >
                 <LogOut className="w-3.5 h-3.5" />
