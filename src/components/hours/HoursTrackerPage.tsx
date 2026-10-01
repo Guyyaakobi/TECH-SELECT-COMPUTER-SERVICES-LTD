@@ -266,13 +266,24 @@ export const HoursTrackerPage: React.FC = () => {
     }
   };
 
+  useEffect(() => {
+    const originalBodyBg = document.body.style.backgroundColor;
+    const originalHtmlBg = document.documentElement.style.backgroundColor;
+    document.body.style.backgroundColor = "#f8fafd";
+    document.documentElement.style.backgroundColor = "#f8fafd";
+    return () => {
+      document.body.style.backgroundColor = originalBodyBg;
+      document.documentElement.style.backgroundColor = originalHtmlBg;
+    };
+  }, []);
+
   const displayName = serverUser?.name || account?.name || "עובד Tech-Select";
   const userEmail = serverUser?.email || account?.username || "";
 
   return (
     <div
       dir="rtl"
-      className="min-h-screen bg-[#fafafc] text-slate-800 flex flex-col font-sans selection:bg-blue-600 selection:text-white relative overflow-x-hidden"
+      className="min-h-[100dvh] h-[100dvh] w-full bg-[#f8fafd] text-slate-800 flex flex-col font-sans selection:bg-blue-600 selection:text-white relative overflow-hidden"
     >
       {/* Soft Ethereal Blue Glow in the Center (Exactly like the video) */}
       <div className="fixed inset-0 pointer-events-none z-0 flex items-center justify-center overflow-hidden">
@@ -341,7 +352,7 @@ export const HoursTrackerPage: React.FC = () => {
 
       {/* Main Content Area: Full Viewport Gemini Window when authenticated */}
       {(account || serverUser) ? (
-        <main className="relative z-10 flex-1 w-full h-[calc(100vh-56px)] overflow-hidden flex flex-col bg-[#f8fafd]">
+        <main className="relative z-10 flex-1 w-full h-[calc(100dvh-3.5rem)] overflow-hidden flex flex-col bg-[#f8fafd]">
           {/* Admin Test Panel Modal Overlay */}
           {showTestPanel && serverUser?.isAdmin && (
             <div className="absolute inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">

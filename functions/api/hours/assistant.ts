@@ -36,6 +36,8 @@ export async function onRequestPost(context: { request: Request; env: any }): Pr
         cardId: body.cardId,
         draftData: body.draftData,
         activeDrafts: body.activeDrafts,
+        undoData: body.undoData,
+        writtenEntries: body.writtenEntries,
         env,
       },
       env

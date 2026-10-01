@@ -46,7 +46,19 @@ export async function onRequestPost(context: any): Promise<Response> {
   }
 
   try {
-    const result = await undoRow(fileId, rowAddress, auth.user, env);
+    const result = await undoRow(
+      {
+        driveId: body.driveId,
+        itemId: fileId,
+        fileId: fileId,
+        rowAddress: rowAddress,
+        writtenValues: body.writtenValues,
+        writtenAt: body.writtenAt,
+        sheetName: body.sheetName,
+      },
+      auth.user,
+      env
+    );
     return new Response(JSON.stringify(result), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

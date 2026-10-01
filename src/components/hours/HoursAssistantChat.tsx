@@ -626,7 +626,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
   // State 1: Empty Start Screen (Authentic Gemini Full-Window Workspace)
   if (messages.length === 0 && activeDrafts.length === 0 && !loading) {
     return (
-      <div className="w-full h-full flex flex-col justify-between overflow-y-auto px-4 py-8 sm:py-12 relative bg-[#f8fafd] text-right">
+      <div className="w-full h-full flex flex-col justify-between overflow-y-auto px-4 pt-4 sm:pt-8 pb-3 sm:pb-6 relative bg-[#f8fafd] text-right">
         {/* Soft Ethereal Glow in the Center */}
         <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[38rem] h-[24rem] bg-gradient-to-tr from-sky-200/35 via-purple-100/30 to-indigo-100/20 rounded-full blur-3xl pointer-events-none -z-10" />
 
@@ -743,7 +743,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
             )}
           </div>
 
-          <div className="text-center mt-2.5 text-[11px] text-slate-400">
+          <div className="text-center mt-2 pb-1 text-[11px] text-slate-400">
             Tech-Select Assistant &middot; דיווח שעות מקצועי מסונכרן ישירות ל-SharePoint ו-Excel דרך Microsoft Graph
           </div>
         </div>
