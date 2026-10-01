@@ -16,9 +16,6 @@ import {
   X,
   ExternalLink,
   Plus,
-  Compass,
-  Lightbulb,
-  FileText,
   RotateCcw,
 } from "lucide-react";
 import {
@@ -603,24 +600,19 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
     setActiveDrafts((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
   };
 
-  // Quick Action Suggestions (as shown in the video)
-  const quickSuggestions = [
-    {
-      icon: <Lightbulb className="w-4 h-4 text-amber-500" />,
-      prompt: "שעתיים תמיכה מרחוק ופתרון תקלות",
-      tag: "שעות עבודה",
-    },
-    {
-      icon: <Compass className="w-4 h-4 text-blue-500" />,
-      prompt: "שעה וחצי טיפול בתקלת שרת והגדרות אבטחה",
-      tag: "טיקטים",
-    },
-    {
-      icon: <FileText className="w-4 h-4 text-purple-500" />,
-      prompt: "ביקור באתר, 3 שעות תחזוקת רשת",
-      tag: "ביקור באתר",
-    },
-  ];
+  // Helper for human time-of-day greeting (e.g. בוקר טוב, צהריים טובים, ערב טוב)
+  const getTimeBasedGreeting = () => {
+    const hour = new Date().getHours();
+    if (hour >= 5 && hour < 12) {
+      return "בוקר טוב";
+    } else if (hour >= 12 && hour < 17) {
+      return "צהריים טובים";
+    } else if (hour >= 17 && hour < 21) {
+      return "ערב טוב";
+    } else {
+      return "לילה טוב";
+    }
+  };
 
   const handleResetChat = () => {
     setMessages([]);
@@ -629,6 +621,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
   };
 
   const firstName = (currentUser.name || "").split(" ")[0] || currentUser.name || "עובד";
+  const greeting = getTimeBasedGreeting();
 
   // State 1: Empty Start Screen (Authentic Gemini Full-Window Workspace)
   if (messages.length === 0 && activeDrafts.length === 0 && !loading) {
@@ -637,7 +630,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
         {/* Soft Ethereal Glow in the Center */}
         <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[38rem] h-[24rem] bg-gradient-to-tr from-sky-200/35 via-purple-100/30 to-indigo-100/20 rounded-full blur-3xl pointer-events-none -z-10" />
 
-        {/* Center Content: Gemini Greeting & Suggestion Cards */}
+        {/* Center Content: Gemini Greeting */}
         <div className="flex-1 flex flex-col items-center justify-center w-full max-w-3xl mx-auto my-auto">
           {/* Sparkles Icon */}
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] flex items-center justify-center text-white shadow-md shadow-indigo-500/20 mb-5">
@@ -648,35 +641,12 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({ currentU
           <div className="text-center mb-8">
             <h1 className="text-4xl sm:text-5xl font-medium tracking-tight mb-3">
               <span className="bg-gradient-to-r from-[#1a73e8] via-[#7c3aed] to-[#d946ef] bg-clip-text text-transparent">
-                שלום, {firstName}
+                {greeting}, {firstName}
               </span>
             </h1>
             <p className="text-base sm:text-xl font-normal text-slate-500">
               איך אוכל לעזור לך לתעד שעות היום?
             </p>
-          </div>
-
-          {/* 3 Gemini Prompt Suggestions */}
-          <div className="w-full grid grid-cols-1 sm:grid-cols-3 gap-3.5 mb-8">
-            {quickSuggestions.map((item, idx) => (
-              <button
-                key={idx}
-                onClick={() => handleSendText(item.prompt)}
-                className="p-4 rounded-2xl bg-white hover:bg-white/90 border border-slate-200/80 hover:border-blue-400 hover:shadow-md transition-all text-right flex flex-col justify-between gap-3 cursor-pointer group min-h-[110px]"
-              >
-                <div className="flex items-center justify-between w-full">
-                  <div className="w-8 h-8 rounded-xl bg-slate-50 group-hover:bg-blue-50 text-slate-500 group-hover:text-blue-600 flex items-center justify-center transition-colors">
-                    {item.icon}
-                  </div>
-                  <span className="text-[10px] text-slate-400 group-hover:text-blue-600 bg-slate-100 group-hover:bg-blue-50 px-2 py-0.5 rounded-full font-medium transition-colors">
-                    {item.tag}
-                  </span>
-                </div>
-                <span className="text-xs sm:text-sm text-slate-700 group-hover:text-slate-900 font-medium leading-snug">
-                  {item.prompt}
-                </span>
-              </button>
-            ))}
           </div>
         </div>
 

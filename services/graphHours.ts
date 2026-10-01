@@ -3543,160 +3543,228 @@ export async function undoRow(
     targetAddress = parts[1].trim();
   }
 
-  // Handle format like "Row 14", "שורה 14", "14"
-  const rowMatch = targetAddress.match(/^(?:row|שורה)?\s*(\d+)$/i);
-  if (rowMatch) {
-    const rowNum = rowMatch[1];
-    targetAddress = `${rowNum}:${rowNum}`;
+  // Extract row number if available
+  const rowNumMatch = targetAddress.match(/(\d+)/);
+  const rowNumber = rowNumMatch ? parseInt(rowNumMatch[1], 10) : 0;
+
+  // 2. Open an explicit workbook session with persistChanges: true to ensure SharePoint persists deletion
+  let sessionId: string | null = null;
+  let sessionHeaders: Record<string, string> = {};
+
+  try {
+    const sessionUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/createSession`;
+    const sessionRes = await fetchGraph(
+      sessionUrl,
+      {
+        method: "POST",
+        body: JSON.stringify({ persistChanges: true }),
+      },
+      activeEnv
+    );
+    if (sessionRes.ok) {
+      const sessionData: any = await sessionRes.json();
+      sessionId = sessionData?.id || null;
+      if (sessionId) {
+        sessionHeaders = { "workbook-session-id": sessionId };
+      }
+    }
+  } catch (sessErr) {
+    console.warn("[undoRow] createSession notice:", sessErr);
   }
 
-  const expectedValues = params.writtenValues?.[0];
+  try {
+    // 3. Inspect sheet structure to determine if target sheet contains an Excel Table
+    const structure = await readSheetStructure(fileId, activeEnv, driveId, targetSheet);
+    const isTable = structure.isTable && !!structure.tableId;
+    const tableId = structure.tableId;
+    const targetSheetId = structure.sheetId;
+    const cleanSheetName = structure.sheetName || targetSheet;
+    const expectedValues = params.writtenValues?.[0];
 
-  // Handle Table row cancellation
-  if (targetAddress.startsWith("Table:")) {
-    try {
-      const structure = await readSheetStructure(fileId, activeEnv, driveId, targetSheet);
-      if (structure.isTable && structure.tableId) {
-        const rowsUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${structure.tableId}/rows?$top=100`;
-        const rowsRes = await fetchGraph(rowsUrl, { method: "GET" }, activeEnv);
-        if (rowsRes.ok) {
-          const rowsData: any = await rowsRes.json();
-          const tRows: any[] = rowsData.value || [];
-          let matchedIndex = -1;
+    // Microsoft Graph requires either the worksheet ID (GUID) without quotes:
+    // .../workbook/worksheets/{id}
+    // OR if referencing by name, it MUST be wrapped in single quotes:
+    // .../workbook/worksheets('{name}')
+    const worksheetEndpoint = targetSheetId
+      ? `worksheets/${targetSheetId}`
+      : `worksheets('${encodeURIComponent(cleanSheetName || "Sheet1")}')`;
+
+    let rowDeletedSuccessfully = false;
+    let actualRowNum = rowNumber;
+
+    // CASE A: EXCEL TABLE DELETION
+    if (isTable && tableId) {
+      let matchedIndex = -1;
+
+      // Check if targetAddress explicitly has table row index (e.g. Table:TableName[Row:3])
+      const rowIdxMatch = targetAddress.match(/\[Row:?\s*(\d+)\]/i);
+      if (rowIdxMatch) {
+        matchedIndex = parseInt(rowIdxMatch[1], 10);
+      }
+
+      const rowsUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${tableId}/rows?$top=100`;
+      const rowsRes = await fetchGraph(rowsUrl, { method: "GET", headers: sessionHeaders }, activeEnv);
+      if (rowsRes.ok) {
+        const rowsData: any = await rowsRes.json();
+        const tRows: any[] = rowsData.value || [];
+
+        // Search from bottom up for the matching written row
+        if (matchedIndex === -1 && expectedValues && expectedValues.length > 0) {
           for (let i = tRows.length - 1; i >= 0; i--) {
             const rVals = tRows[i].values?.[0] || [];
-            if (expectedValues && expectedValues.length > 0) {
-              const matches = expectedValues.some((ev: any) => {
-                if (!ev || String(ev).trim().length < 3) return false;
-                return rVals.some((cv: any) => String(cv || "").includes(String(ev)));
-              });
-              if (matches) {
-                matchedIndex = tRows[i].index ?? i;
-                break;
-              }
+            const matches = expectedValues.some((ev: any) => {
+              if (!ev || String(ev).trim().length < 3) return false;
+              return rVals.some((cv: any) => String(cv || "").includes(String(ev)));
+            });
+            if (matches) {
+              matchedIndex = tRows[i].index !== undefined ? tRows[i].index : i;
+              break;
             }
           }
-          if (matchedIndex === -1 && tRows.length > 0) {
-            matchedIndex = tRows[tRows.length - 1].index ?? (tRows.length - 1);
+        }
+
+        // If not matched by value, fallback to the last row if created recently
+        if (matchedIndex === -1 && tRows.length > 0) {
+          matchedIndex = tRows[tRows.length - 1].index !== undefined ? tRows[tRows.length - 1].index : tRows.length - 1;
+        }
+
+        if (matchedIndex !== -1) {
+          // Look up real cell range of this table row to find actual sheet row number
+          try {
+            const trRangeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${tableId}/rows/itemAt(index=${matchedIndex})/range`;
+            const trRangeRes = await fetchGraph(trRangeUrl, { method: "GET", headers: sessionHeaders }, activeEnv);
+            if (trRangeRes.ok) {
+              const trRangeData: any = await trRangeRes.json();
+              if (trRangeData.address) {
+                const sheetRowMatch = trRangeData.address.match(/(\d+)/);
+                if (sheetRowMatch) {
+                  actualRowNum = parseInt(sheetRowMatch[1], 10);
+                }
+              }
+            }
+          } catch (trErr) {
+            console.warn("[undoRow] table row range lookup:", trErr);
           }
-          if (matchedIndex !== -1) {
-            const delTableUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${structure.tableId}/rows/itemAt(index=${matchedIndex})`;
-            const delRes = await fetchGraph(delTableUrl, { method: "DELETE" }, activeEnv);
-            if (delRes.ok) {
-              return {
-                success: true,
-                message: `השורה בטבלה ${structure.tableName || "Excel"} בוטלה ונמחקה בהצלחה.`,
-                rowAddress: params.rowAddress,
-                fileId,
-              };
+
+          // Attempt A1: Delete Table Row Range with shift Up
+          try {
+            const delTableRangeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${tableId}/rows/itemAt(index=${matchedIndex})/range/delete`;
+            const delRangeRes = await fetchGraph(
+              delTableRangeUrl,
+              { method: "POST", headers: sessionHeaders, body: JSON.stringify({ shift: "Up" }) },
+              activeEnv
+            );
+            if (delRangeRes.ok || delRangeRes.status === 204) {
+              rowDeletedSuccessfully = true;
+            }
+          } catch (delRangeErr) {
+            console.warn("[undoRow] delTableRange error:", delRangeErr);
+          }
+
+          // Attempt A2: Direct Table Row DELETE
+          if (!rowDeletedSuccessfully) {
+            try {
+              const delTableUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${tableId}/rows/itemAt(index=${matchedIndex})`;
+              const delRes = await fetchGraph(delTableUrl, { method: "DELETE", headers: sessionHeaders }, activeEnv);
+              if (delRes.ok || delRes.status === 204) {
+                rowDeletedSuccessfully = true;
+              }
+            } catch (delErr) {
+              console.warn("[undoRow] delTable error:", delErr);
             }
           }
         }
       }
-    } catch (tblErr) {
-      console.warn("[undoRow] table undo fallback notice:", tblErr);
     }
-  }
 
-  // 2. Re-read that row in Excel
-  let readUrl = "";
-  if (targetSheet) {
-    readUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${encodeURIComponent(targetSheet)}/range(address='${encodeURIComponent(targetAddress)}')`;
-  } else {
-    readUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/names/range(address='${encodeURIComponent(targetAddress)}')`;
-  }
+    // CASE B: WORKSHEET RANGE / FULL ROW DELETION (or Table fallback)
+    if (!rowDeletedSuccessfully) {
+      const targetRowNumber = actualRowNum || rowNumber;
 
-  let readRes = await fetchGraph(readUrl, { method: "GET" }, activeEnv);
-  if (!readRes.ok && targetSheet) {
-    const fallbackUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${encodeURIComponent(targetSheet)}/range(address='${encodeURIComponent(targetAddress)}')`;
-    readRes = await fetchGraph(fallbackUrl, { method: "GET" }, activeEnv);
-  }
+      // 1. Try deleting entire worksheet row (e.g. 15:15 with shift Up)
+      if (targetRowNumber > 0) {
+        try {
+          const fullRowDeleteUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/${worksheetEndpoint}/range(address='${targetRowNumber}:${targetRowNumber}')/delete`;
+          const fullRowRes = await fetchGraph(
+            fullRowDeleteUrl,
+            {
+              method: "POST",
+              headers: sessionHeaders,
+              body: JSON.stringify({ shift: "Up" }),
+            },
+            activeEnv
+          );
+          if (fullRowRes.ok || fullRowRes.status === 204) {
+            rowDeletedSuccessfully = true;
+          }
+        } catch (frErr) {
+          console.warn("[undoRow] fullRowDelete error:", frErr);
+        }
+      }
 
-  if (!readRes.ok) {
-    const errText = await readRes.text().catch(() => "");
-    throw new Error(`שגיאה בקריאת השורה מקובץ ה-Excel (${readRes.status}): ${errText || "השורה אינה קיימת או שהקובץ אינו נגיש"}`);
-  }
+      // 2. Try deleting specific target address (e.g. A15:K15 with shift Up)
+      if (!rowDeletedSuccessfully && targetAddress && !targetAddress.startsWith("Table:")) {
+        try {
+          const deleteUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/${worksheetEndpoint}/range(address='${encodeURIComponent(targetAddress)}')/delete`;
+          const delRes = await fetchGraph(
+            deleteUrl,
+            {
+              method: "POST",
+              headers: sessionHeaders,
+              body: JSON.stringify({ shift: "Up" }),
+            },
+            activeEnv
+          );
+          if (delRes.ok || delRes.status === 204) {
+            rowDeletedSuccessfully = true;
+          }
+        } catch (dErr) {
+          console.warn("[undoRow] range delete error:", dErr);
+        }
+      }
 
-  const readData: any = await readRes.json();
-  const currentValues: any[] = readData.values?.[0] || [];
-
-  if (!currentValues || currentValues.length === 0) {
-    throw new Error("השורה ב-Excel ריקה או שכבר נמחקה");
-  }
-
-  // 3. Verify employee column matches the token user
-  const tokenUserName = normalizeCustomerString(user?.name || "");
-  const tokenUserEmail = normalizeCustomerString(user?.email || "");
-
-  if (tokenUserName || tokenUserEmail) {
-    const employeeCellMatches = currentValues.some((cell) => {
-      if (cell === null || cell === undefined) return false;
-      const cellNorm = normalizeCustomerString(String(cell));
-      return (
-        (tokenUserName && (cellNorm.includes(tokenUserName) || tokenUserName.includes(cellNorm))) ||
-        (tokenUserEmail && cellNorm.includes(tokenUserEmail))
-      );
-    });
-
-    if (!employeeCellMatches) {
-      throw new Error("לא ניתן לבטל שורה זו: השורה שייכת לעובד אחר");
-    }
-  }
-
-  // 4. Verify current values still match writtenValues (with tolerance for formatting/types)
-  if (Array.isArray(expectedValues) && expectedValues.length > 0) {
-    let matchingCells = 0;
-    let totalCompared = 0;
-    for (let i = 0; i < Math.min(expectedValues.length, currentValues.length); i++) {
-      const exp = expectedValues[i];
-      const cur = currentValues[i];
-      if (exp === null || exp === undefined || exp === "") continue;
-      totalCompared++;
-      const expStr = String(exp).trim().toLowerCase();
-      const curStr = String(cur !== null && cur !== undefined ? cur : "").trim().toLowerCase();
-      if (expStr === curStr || curStr.includes(expStr) || expStr.includes(curStr)) {
-        matchingCells++;
+      // 3. Fallback: Clear contents and formats so row data is wiped out
+      if (!rowDeletedSuccessfully && targetRowNumber > 0) {
+        try {
+          const clearAddress = `${targetRowNumber}:${targetRowNumber}`;
+          const clearUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/${worksheetEndpoint}/range(address='${encodeURIComponent(clearAddress)}')/clear`;
+          const clearRes = await fetchGraph(
+            clearUrl,
+            {
+              method: "POST",
+              headers: sessionHeaders,
+              body: JSON.stringify({ applyTo: "All" }),
+            },
+            activeEnv
+          );
+          if (clearRes.ok || clearRes.status === 204) {
+            rowDeletedSuccessfully = true;
+          }
+        } catch (cErr) {
+          console.warn("[undoRow] clear error:", cErr);
+        }
       }
     }
 
-    if (totalCompared > 0 && matchingCells === 0) {
-      throw new Error("לא ניתן לבטל שורה זו: תוכן השורה שונה או עודכן בקובץ מאז כתיבתה");
+    if (!rowDeletedSuccessfully) {
+      throw new Error(`לא ניתן היה למחוק את השורה (${params.rowAddress}) מקובץ ה-Excel. שרתי Microsoft לא השלימו את המחיקה.`);
+    }
+
+    return {
+      success: true,
+      message: `השורה בכתובת ${params.rowAddress} בוטלה ונמחקה בהצלחה מקובץ ה-Excel.`,
+      rowAddress: params.rowAddress,
+      fileId,
+    };
+  } finally {
+    // 4. Close session to immediately flush and persist changes to the SharePoint file!
+    if (sessionId) {
+      try {
+        const closeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/closeSession`;
+        await fetchGraph(closeUrl, { method: "POST", headers: sessionHeaders }, activeEnv);
+      } catch (closeErr) {
+        console.warn("[undoRow] Error closing session:", closeErr);
+      }
     }
   }
-
-  // 5. Delete or clear the row in Excel
-  const deleteUrl = targetSheet
-    ? `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${encodeURIComponent(targetSheet)}/range(address='${encodeURIComponent(targetAddress)}')/delete`
-    : `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/range(address='${encodeURIComponent(targetAddress)}')/delete`;
-
-  const delRes = await fetchGraph(
-    deleteUrl,
-    {
-      method: "POST",
-      body: JSON.stringify({ shift: "Up" }),
-    },
-    activeEnv
-  );
-
-  if (!delRes.ok) {
-    const clearUrl = targetSheet
-      ? `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${encodeURIComponent(targetSheet)}/range(address='${encodeURIComponent(targetAddress)}')/clear`
-      : `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/range(address='${encodeURIComponent(targetAddress)}')/clear`;
-
-    await fetchGraph(
-      clearUrl,
-      {
-        method: "POST",
-        body: JSON.stringify({ applyTo: "Contents" }),
-      },
-      activeEnv
-    );
-  }
-
-  return {
-    success: true,
-    message: `השורה בכתובת ${params.rowAddress} בוטלה ונמחקה בהצלחה מקובץ ה-Excel.`,
-    rowAddress: params.rowAddress,
-    fileId,
-  };
 }

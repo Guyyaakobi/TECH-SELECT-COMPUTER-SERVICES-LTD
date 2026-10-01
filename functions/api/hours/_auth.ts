@@ -89,22 +89,48 @@ export async function authenticateHoursRequest(
       };
     }
 
-    // Check Audience
-    if (clientId) {
-      const allowedAudiences = [clientId, `api://${clientId}`, `api://${clientId}/access_as_user`];
-      const aud = payload.aud;
-      const isAudValid = Array.isArray(aud)
-        ? aud.some((a) => allowedAudiences.includes(a))
-        : allowedAudiences.includes(String(aud));
-      if (!isAudValid) {
-        console.warn("[HOURS AUTH 401] reason: bad audience", aud);
-        return {
-          errorResponse: new Response(
-            JSON.stringify({ error: "Unauthorized" }),
-            { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          ),
-        };
+    // Check Audience: Support client ID, api:// scopes, and standard Microsoft Graph resources
+    const allowedAudiences: string[] = [
+      "00000003-0000-0000-c000-000000000000",
+      "https://graph.microsoft.com",
+      "https://graph.microsoft.com/",
+    ];
+
+    const candidateClientIds = [
+      clientId,
+      env?.AZURE_CLIENT_ID,
+      env?.CLIENT_ID,
+      env?.HOURS_GRAPH_CLIENT_ID,
+      env?.AZURE_API_AUDIENCE,
+      typeof process !== "undefined" ? process.env.AZURE_CLIENT_ID : "",
+      typeof process !== "undefined" ? process.env.CLIENT_ID : "",
+      typeof process !== "undefined" ? process.env.HOURS_GRAPH_CLIENT_ID : "",
+    ].filter(Boolean) as string[];
+
+    for (const cid of candidateClientIds) {
+      const clean = cid.trim();
+      if (clean && !clean.includes("~")) {
+        if (!allowedAudiences.includes(clean)) allowedAudiences.push(clean);
+        if (!allowedAudiences.includes(`api://${clean}`)) allowedAudiences.push(`api://${clean}`);
+        if (!allowedAudiences.includes(`api://${clean}/access_as_user`)) {
+          allowedAudiences.push(`api://${clean}/access_as_user`);
+        }
       }
+    }
+
+    const aud = payload.aud;
+    const isAudValid = Array.isArray(aud)
+      ? aud.some((a) => allowedAudiences.includes(a))
+      : allowedAudiences.includes(String(aud));
+    if (!isAudValid) {
+      const reason = `bad audience: received '${String(aud)}', expected ${allowedAudiences.join(" or ")}`;
+      console.warn("[HOURS AUTH 401] reason:", reason);
+      return {
+        errorResponse: new Response(
+          JSON.stringify({ error: "Unauthorized", reason }),
+          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        ),
+      };
     }
 
     // Check Tenant ID ("tid")

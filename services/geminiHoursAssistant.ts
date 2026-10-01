@@ -132,7 +132,7 @@ export function buildEnrichedRowPayload(params: {
 
   const prefixedDesc = prefixDescriptionWithAuthor(desc, userName);
 
-  return {
+  const result: Record<string, any> = {
     תאריך: date,
     date: date,
     "תאריך עבודה": date,
@@ -257,11 +257,32 @@ export function buildEnrichedRowPayload(params: {
     חתימה: "",
     "חתימת לקוח": "",
     סטטוס: userOverride["סטטוס"] || "הושלם",
-    הערות: userOverride["הערות"] || desc,
-    notes: userOverride["notes"] || desc,
-
-    ...userOverride,
+    הערות: prefixDescriptionWithAuthor(userOverride["הערות"] || desc, userName),
+    notes: prefixDescriptionWithAuthor(userOverride["notes"] || desc, userName),
   };
+
+  // Merge user overrides if any
+  Object.assign(result, userOverride);
+
+  // Guarantee that description fields always retain author prefix (e.g. "גיא כתב: " / "ודים כתב: ")
+  const finalDesc = prefixDescriptionWithAuthor(
+    userOverride["תיאור"] || userOverride["description"] || userOverride["details"] || prefixedDesc,
+    userName
+  );
+  result["תיאור"] = finalDesc;
+  result["תיאור פעילות"] = finalDesc;
+  result["תיאור הפעילות"] = finalDesc;
+  result["תיאור הטיפול"] = finalDesc;
+  result["description"] = finalDesc;
+  result["details"] = finalDesc;
+
+  if (userOverride["הערות"] || userOverride["notes"]) {
+    const finalNotes = prefixDescriptionWithAuthor(userOverride["הערות"] || userOverride["notes"], userName);
+    result["הערות"] = finalNotes;
+    result["notes"] = finalNotes;
+  }
+
+  return result;
 }
 
 export interface WrittenEntryResult {
@@ -864,7 +885,11 @@ EXTRACTION RULES:
 - Extract per entry:
   1. Date: default today (${jCtx.todayIso}, Asia/Jerusalem). Understand "אתמול" (${jCtx.yesterdayIso}), "ביום ראשון", "שלשום", or explicit dates. If last month is mentioned (e.g. August, "חודש שעבר"), target last month's file (${jCtx.lastMonthYear}-${jCtx.lastMonth < 10 ? "0" + jCtx.lastMonth : jCtx.lastMonth}).
   2. Customer: call find_customer. If customer match is ambiguous (multiple options with close scores), ask the employee to choose between the options.
-  3. Duration: round to 15 minutes (15 min = 0.25h, 30 min = 0.5h, 45 min = 0.75h, 60 min = 1h). If missing, ask for it!
+  3. Duration / משך זמן (קריטי):
+     - עגל תמיד ל-15 דקות (15 דקות = 0.25 שעות, 30 דקות = 0.5 שעות, 45 דקות = 0.75 שעות, 60 דקות = 1 שעה).
+     - אם חסר משך זמן (למשל המשתמש ציין לקוח ומה עשה, אך לא ציין כמה שעות או זמן ארך הטיפול):
+       חובה לשאול ישירות ובמדויק: "כמה שעות / זמן לתעד עבור הפעילות ב-[שם הלקוח]?" (או "כמה זמן ארך הטיפול?").
+       בשום פנים ואופן אל תשאל "במה תרצה שאתעד שעות עבורך?"! המשתמש כבר אמר לך במה הוא טיפל. שאל אך ורק על כמות הזמן או השעות החסרים!
   4. Work type / Tab selection (dynamic & semantic per file):
      - Each customer's Excel file contains its own real worksheets discovered live.
      - Match activity semantics:
@@ -902,7 +927,7 @@ NEVER write to signature or approval columns (e.g. "חתימת לקוח", "אי�
 If the entry type has no matching tab in that customer's file, ask the employee which real tab to use from the existing tabs in the file.
 
 MANDATORY WORKFLOW:
-1. Ask ONLY for missing mandatory fields (customer, date, duration, description) – all in ONE question.
+1. Ask ONLY for missing mandatory fields (customer, date, duration, description) – all in ONE question. אם חסר רק משך זמן/שעות: שאל ישירות: "כמה שעות או זמן לתעד עבור הטיפול?" (ולא "במה תרצה שאתעד שעות עבורך?").
 2. If customer name is ambiguous or needs SharePoint folder matching, call find_customer.
 3. Call propose_entries directly with the extracted details (customer, date, duration, description, workType, startTime, endTime, isTimeSuggested, contactPerson, ticketNumber).
    NOTE: propose_entries AUTOMATICALLY finds the customer's month Excel file in SharePoint, inspects sheet structure and real tabs, and checks duplicates.
@@ -1117,7 +1142,8 @@ MANDATORY WORKFLOW:
 
             // Work type / semantic tab request
             const rawWorkType = String(raw.workType || matchingActiveDraft?.targetTabName || matchingActiveDraft?.workType || "").trim();
-            const desc = String(raw.description || matchingActiveDraft?.description || "").trim();
+            const rawDesc = String(raw.description || matchingActiveDraft?.description || "").trim();
+            const desc = prefixDescriptionWithAuthor(rawDesc, user?.name, user?.email);
             const inferredCategory = inferWorkType(desc);
 
             // Calculate or suggest Start and End Times
@@ -1509,15 +1535,20 @@ MANDATORY WORKFLOW:
     cleanReply = cleanReply.replace(/^\[תמלול\]:\s*.+$/m, "").trim();
   }
 
+  let fallbackReply = "איזה שעות תרצה לתעד?";
+  if (message && message.trim().length > 2) {
+    fallbackReply = "כמה שעות או זמן לתעד עבור הפעילות?";
+  }
+
   const defaultReply =
     collectedDrafts.length > 0
       ? "הכנתי את פרטי הדיווח בכרטיס למטה. מאשר להזין?"
-      : "במה תרצה שאתעד שעות עבורך?";
+      : fallbackReply;
 
   const effectiveWritten = [
     ...newWrittenEntries,
     ...(params.writtenEntries || []).filter(
-      (w) => !newWrittenEntries.some((nw) => nw.id === w.id)
+      (w) => !newWrittenEntries.some((nw) => nw.id === w.id) && !undoneCardIds.includes(w.id)
     ),
   ];
 
