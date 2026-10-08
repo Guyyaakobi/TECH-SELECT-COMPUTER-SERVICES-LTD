@@ -1,0 +1,201 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <radialGradient id="iritBg" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#2a303c" />
+      <stop offset="60%" stop-color="#141923" />
+      <stop offset="100%" stop-color="#070a10" />
+    </radialGradient>
+
+    <!-- Studio Backlight -->
+    <radialGradient id="iritRim" cx="50%" cy="30%" r="50%">
+      <stop offset="0%" stop-color="#a855f7" stop-opacity="0.2" />
+      <stop offset="60%" stop-color="#06b6d4" stop-opacity="0.1" />
+      <stop offset="100%" stop-color="#3b82f6" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Skin Tone Gradients -->
+    <linearGradient id="iritSkin" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fae2d4" />
+      <stop offset="40%" stop-color="#f3d0be" />
+      <stop offset="85%" stop-color="#e2b7a0" />
+      <stop offset="100%" stop-color="#cf9f86" />
+    </linearGradient>
+
+    <linearGradient id="iritSkinShadow" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#000000" stop-opacity="0" />
+      <stop offset="100%" stop-color="#9a6548" stop-opacity="0.25" />
+    </linearGradient>
+
+    <!-- Blonde Hair Gradient -->
+    <linearGradient id="blondeHair" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#e5c596" />
+      <stop offset="35%" stop-color="#cca36e" />
+      <stop offset="70%" stop-color="#a57b46" />
+      <stop offset="100%" stop-color="#785324" />
+    </linearGradient>
+
+    <linearGradient id="ponytailGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#d6ae7b" />
+      <stop offset="50%" stop-color="#b88c52" />
+      <stop offset="100%" stop-color="#734e1e" />
+    </linearGradient>
+
+    <!-- Navy Executive Blazer Gradient -->
+    <linearGradient id="iritBlazer" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b" />
+      <stop offset="50%" stop-color="#111827" />
+      <stop offset="100%" stop-color="#090d16" />
+    </linearGradient>
+
+    <linearGradient id="blouseDark" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1c2434" />
+      <stop offset="100%" stop-color="#0b1019" />
+    </linearGradient>
+
+    <!-- Silver Necklace Gradient -->
+    <linearGradient id="silverChain" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#94a3b8" />
+      <stop offset="25%" stop-color="#f1f5f9" />
+      <stop offset="50%" stop-color="#cbd5e1" />
+      <stop offset="75%" stop-color="#ffffff" />
+      <stop offset="100%" stop-color="#94a3b8" />
+    </linearGradient>
+
+    <filter id="softGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2" />
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="400" height="400" fill="url(#iritBg)" />
+  <circle cx="200" cy="180" r="160" fill="url(#iritRim)" />
+
+  <!-- Ponytail Base behind shoulders -->
+  <path d="M 245 190 Q 285 240 270 340 Q 255 350 248 310 Q 252 230 238 200 Z" fill="url(#ponytailGrad)" />
+
+  <!-- Executive Blazer & Attire -->
+  <g id="clothing">
+    <!-- Inner Blouse -->
+    <path d="M 160 270 L 200 370 L 240 270 Z" fill="url(#blouseDark)" />
+    
+    <!-- Main Jacket Shoulders -->
+    <path d="M 40 400 C 50 320 100 290 145 280 L 200 320 L 255 280 C 300 290 350 320 360 400 Z" fill="url(#iritBlazer)" />
+    
+    <!-- Left Lapel -->
+    <path d="M 145 280 L 195 365 L 175 375 L 125 300 Z" fill="#243048" stroke="#0f172a" stroke-width="1.5" />
+    
+    <!-- Right Lapel -->
+    <path d="M 255 280 L 205 365 L 225 375 L 275 300 Z" fill="#243048" stroke="#0f172a" stroke-width="1.5" />
+
+    <!-- Jacket Collar line -->
+    <path d="M 125 300 Q 155 280 170 260" fill="none" stroke="#334155" stroke-width="2" />
+    <path d="M 275 300 Q 245 280 230 260" fill="none" stroke="#334155" stroke-width="2" />
+  </g>
+
+  <!-- Neck & Silver Necklace -->
+  <g id="neck">
+    <!-- Neck -->
+    <path d="M 168 215 L 168 275 Q 200 295 232 275 L 232 215 Z" fill="url(#iritSkin)" />
+    <path d="M 168 215 L 168 245 Q 200 265 232 245 L 232 215 Z" fill="url(#iritSkinShadow)" opacity="0.5" />
+    
+    <!-- Silver Twisted Rope Necklace -->
+    <path d="M 172 262 Q 200 292 228 262" fill="none" stroke="url(#silverChain)" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="4 2" />
+    <path d="M 173 263 Q 200 293 227 263" fill="none" stroke="#ffffff" stroke-width="1" opacity="0.6" />
+  </g>
+
+  <!-- Head & Facial Structure -->
+  <g id="head">
+    <!-- Left Ear with small silver hoop earring -->
+    <path d="M 132 178 C 124 178 124 208 136 212 C 137 208 137 186 136 178 Z" fill="#e2b7a0" />
+    <path d="M 130 202 Q 126 206 130 210" fill="none" stroke="url(#silverChain)" stroke-width="1.8" />
+
+    <!-- Right Ear -->
+    <path d="M 268 178 C 276 178 276 208 264 212 C 263 208 263 186 264 178 Z" fill="#e2b7a0" />
+    <path d="M 270 202 Q 274 206 270 210" fill="none" stroke="url(#silverChain)" stroke-width="1.8" />
+
+    <!-- Face Shape (Irit's refined feminine oval face) -->
+    <path d="M 136 160 C 134 105 165 92 200 92 C 235 92 266 105 264 160 C 264 200 252 244 200 248 C 148 244 136 200 136 160 Z" fill="url(#iritSkin)" />
+    <path d="M 136 160 C 134 105 165 92 200 92 C 235 92 266 105 264 160 C 264 200 252 244 200 248 C 148 244 136 200 136 160 Z" fill="url(#iritSkinShadow)" />
+
+    <!-- Soft Cheek Blush -->
+    <ellipse cx="158" cy="195" rx="14" ry="8" fill="#e89f88" opacity="0.22" filter="url(#softGlow)" />
+    <ellipse cx="242" cy="195" rx="14" ry="8" fill="#e89f88" opacity="0.22" filter="url(#softGlow)" />
+  </g>
+
+  <!-- Hair (Sleek Blonde Pulled Back into Ponytail with Side Fall) -->
+  <g id="hair">
+    <!-- Top Pulled Back Hair -->
+    <path d="M 134 155 C 132 100 155 65 200 65 C 245 65 268 100 266 155 C 260 130 250 102 235 90 C 218 78 182 78 165 90 C 150 102 140 130 134 155 Z" fill="url(#blondeHair)" />
+    
+    <!-- Hair Strands & Sheen -->
+    <path d="M 155 85 Q 200 70 245 85" fill="none" stroke="#f3deb8" stroke-width="2" opacity="0.7" />
+    <path d="M 162 95 Q 200 82 238 95" fill="none" stroke="#f3deb8" stroke-width="1.5" opacity="0.5" />
+
+    <!-- Ponytail Side Strand falling down over right shoulder -->
+    <path d="M 256 165 C 268 200 280 250 265 340 C 255 350 250 330 252 270 C 254 220 250 185 248 170 Z" fill="url(#ponytailGrad)" />
+    <path d="M 260 210 Q 272 260 260 320" fill="none" stroke="#f5e1be" stroke-width="1.5" opacity="0.6" />
+  </g>
+
+  <!-- Eyes, Eyebrows & Glasses -->
+  <g id="eyes_brows_glasses">
+    <!-- Eyebrows (Blonde/Light Brown curved defined arch) -->
+    <path d="M 152 150 C 164 144 180 144 188 149 C 180 148 164 148 152 153 Z" fill="#916c41" />
+    <path d="M 248 150 C 236 144 220 144 212 149 C 220 148 236 148 248 153 Z" fill="#916c41" />
+
+    <!-- Left Eye White & Iris (Blue/Grey) -->
+    <path d="M 158 166 Q 172 158 184 166 Q 172 173 158 166 Z" fill="#ffffff" stroke="#684735" stroke-width="1" />
+    <circle cx="172" cy="166" r="4.5" fill="#4b7285" />
+    <circle cx="172" cy="166" r="2.6" fill="#13232c" />
+    <circle cx="170.8" cy="164.5" r="1.1" fill="#ffffff" />
+    <path d="M 157 163 Q 172 156 185 163" fill="none" stroke="#5a3320" stroke-width="1.2" />
+
+    <!-- Right Eye White & Iris -->
+    <path d="M 216 166 Q 228 158 242 166 Q 228 173 216 166 Z" fill="#ffffff" stroke="#684735" stroke-width="1" />
+    <circle cx="228" cy="166" r="4.5" fill="#4b7285" />
+    <circle cx="228" cy="166" r="2.6" fill="#13232c" />
+    <circle cx="226.8" cy="164.5" r="1.1" fill="#ffffff" />
+    <path d="M 215 163 Q 228 156 243 163" fill="none" stroke="#5a3320" stroke-width="1.2" />
+
+    <!-- Rectangular Executive Dark Glasses (Signature Irit Frame) -->
+    <!-- Bridge -->
+    <path d="M 188 163 Q 200 161 212 163" fill="none" stroke="#18181b" stroke-width="2.6" stroke-linecap="round" />
+    
+    <!-- Left Frame -->
+    <rect x="148" y="152" width="40" height="26" rx="6" fill="none" stroke="#18181b" stroke-width="2.6" />
+    <rect x="149" y="153" width="38" height="24" rx="5" fill="#67e8f9" opacity="0.08" />
+    <!-- Left Glass Reflection -->
+    <line x1="152" y1="172" x2="164" y2="156" stroke="#ffffff" stroke-width="1" opacity="0.4" stroke-linecap="round" />
+
+    <!-- Right Frame -->
+    <rect x="212" y="152" width="40" height="26" rx="6" fill="none" stroke="#18181b" stroke-width="2.6" />
+    <rect x="213" y="153" width="38" height="24" rx="5" fill="#67e8f9" opacity="0.08" />
+    <!-- Right Glass Reflection -->
+    <line x1="216" y1="172" x2="228" y2="156" stroke="#ffffff" stroke-width="1" opacity="0.4" stroke-linecap="round" />
+
+    <!-- Temples -->
+    <line x1="148" y1="160" x2="134" y2="164" stroke="#18181b" stroke-width="2.4" />
+    <line x1="252" y1="160" x2="266" y2="164" stroke="#18181b" stroke-width="2.4" />
+  </g>
+
+  <!-- Nose -->
+  <g id="nose">
+    <path d="M 197 162 L 195 194 Q 190 197 189 200 Q 200 203 211 200 Q 210 197 205 194 L 203 162" fill="none" stroke="#c08668" stroke-width="1.5" stroke-linecap="round" />
+    <!-- Delicate Nostrils -->
+    <ellipse cx="193" cy="199" rx="2.5" ry="1.4" fill="#7a462f" />
+    <ellipse cx="207" cy="199" rx="2.5" ry="1.4" fill="#7a462f" />
+  </g>
+
+  <!-- Lips & Smile (Warm Professional Demeanor) -->
+  <g id="mouth">
+    <!-- Upper Lip -->
+    <path d="M 184 218 Q 193 214 200 216 Q 207 214 216 218 Q 200 220 184 218 Z" fill="#b96a66" />
+    <!-- Line -->
+    <path d="M 183 218 Q 200 222 217 218" fill="none" stroke="#682929" stroke-width="1.6" stroke-linecap="round" />
+    <!-- Lower Lip -->
+    <path d="M 186 219 Q 200 228 214 219 Q 200 224 186 219 Z" fill="#cb7e79" />
+  </g>
+
+  <!-- Ambient Rim Glow Ring -->
+  <circle cx="200" cy="200" r="196" fill="none" stroke="url(#iritRim)" stroke-width="4" opacity="0.6" />
+</svg>

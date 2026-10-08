@@ -1,0 +1,13 @@
+node_modules/
+dist/
+build/
+coverage/
+.DS_Store
+*.log
+.wrangler/
+.env*
+!.env.example
+data/*.xlsx
+data/*.json
+!data/.gitkeep
+
