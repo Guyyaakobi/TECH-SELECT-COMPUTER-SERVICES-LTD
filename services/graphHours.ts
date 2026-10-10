@@ -171,6 +171,9 @@ export interface WriteRowsResult {
   timestamp: number;
   writtenAt: number;
   writtenValues: any[][];
+  listItemId?: string;
+  listItemWebUrl?: string;
+  listsSyncResult?: { success: boolean; error?: string };
 }
 
 export interface UndoRowParams {
@@ -181,6 +184,7 @@ export interface UndoRowParams {
   writtenValues?: any[][];
   writtenAt?: number;
   sheetName?: string;
+  listItemId?: string;
 }
 
 export interface UndoRowResult {
@@ -502,6 +506,10 @@ import {
   deleteOrCancelCentralLogEntry,
   loadCentralLog,
 } from "./hoursCentralLog";
+import {
+  writeEntryToSharePointList,
+  deleteSharePointListItem,
+} from "./sharepointLists";
 
 /**
  * Helper to call Microsoft Graph API with automatic retries for 409, 423, 429
@@ -3815,7 +3823,7 @@ export async function writeRows(
       webUrl = itemData.webUrl || resolvedWebUrl || "";
     }
 
-    const writeResultObj = {
+    const writeResultObj: WriteRowsResult = {
       success: true,
       driveId,
       itemId: fileId,
@@ -3829,6 +3837,43 @@ export async function writeRows(
       writtenValues: rowValuesMatrix,
     };
 
+    // Dual-write into Microsoft SharePoint Lists (https://techselectltd.sharepoint.com/sites/Customers/Lists/List)
+    let createdListItemId: string | undefined;
+    let createdListItemWebUrl: string | undefined;
+    try {
+      const firstRow = rows[0] || {};
+      const listWriteRes = await writeEntryToSharePointList(
+        {
+          customerName: String(firstRow.customer || firstRow["לקוח"] || firstRow.customerName || sheetName || "").trim(),
+          date: String(firstRow.date || firstRow["תאריך"] || firstRow["תאריך עבודה"] || "").trim(),
+          durationHours: Number(firstRow.hours ?? firstRow["שעות"] ?? firstRow.durationHours ?? 0),
+          description: String(firstRow.description || firstRow["תיאור"] || firstRow["תיאור פעילות"] || "").trim(),
+          employeeName: userContext?.name,
+          employeeEmail: userContext?.email,
+          workType: String(firstRow.workType || firstRow["סוג עבודה"] || sheetName || targetWorkType || "").trim(),
+          startTime: String(firstRow.startTime || firstRow["שעת התחלה"] || "").trim(),
+          endTime: String(firstRow.endTime || firstRow["שעת סיום"] || "").trim(),
+          ticketNumber: String(firstRow.ticketNumber || firstRow["מספר קריאה"] || firstRow["טיקט"] || "").trim(),
+          contactPerson: String(firstRow.contactPerson || firstRow["איש קשר"] || "").trim(),
+          fileWebUrl: webUrl,
+        },
+        env
+      );
+
+      if (listWriteRes.success && listWriteRes.listItemId) {
+        createdListItemId = listWriteRes.listItemId;
+        createdListItemWebUrl = listWriteRes.webUrl;
+        writeResultObj.listItemId = listWriteRes.listItemId;
+        writeResultObj.listItemWebUrl = listWriteRes.webUrl;
+        writeResultObj.listsSyncResult = { success: true };
+      } else if (listWriteRes.error) {
+        writeResultObj.listsSyncResult = { success: false, error: listWriteRes.error };
+      }
+    } catch (listErr: any) {
+      console.warn("[writeRows] Notice: Microsoft Lists sync:", listErr);
+      writeResultObj.listsSyncResult = { success: false, error: listErr?.message || String(listErr) };
+    }
+
     // Record into server-side logged hours audit store for manager / daily reports
     try {
       recordWrittenHoursEntries(rows, {
@@ -3839,6 +3884,8 @@ export async function writeRows(
         webUrl,
         userContext,
         now,
+        listItemId: createdListItemId,
+        listItemWebUrl: createdListItemWebUrl,
       });
     } catch (auditErr) {
       console.warn("[writeRows] Failed to record in audit store:", auditErr);
@@ -4240,6 +4287,15 @@ export async function undoRow(
       console.warn("[undoRow] Audit removal notice:", removeErr);
     }
 
+    // Delete corresponding Microsoft Lists item if known
+    if (params.listItemId) {
+      try {
+        await deleteSharePointListItem(params.listItemId, activeEnv);
+      } catch (listDelErr) {
+        console.warn("[undoRow] Notice: Microsoft Lists item deletion:", listDelErr);
+      }
+    }
+
     return undoResult;
   } finally {
     // 4. Close session to immediately flush and persist changes to the SharePoint file!
@@ -4362,6 +4418,8 @@ export function recordWrittenHoursEntries(
     webUrl?: string;
     userContext?: { name?: string; email?: string };
     now?: number;
+    listItemId?: string;
+    listItemWebUrl?: string;
   }
 ) {
   const loggedAt = meta.now || Date.now();
@@ -4454,6 +4512,8 @@ export function recordWrittenHoursEntries(
         sharepointTargetFile: meta.fileId,
         sharepointTargetRow: meta.rowAddress,
         sharepointTargetSheet: meta.sheetName,
+        sharepointListItemId: meta.listItemId,
+        sharepointListWebUrl: meta.listItemWebUrl,
       });
     } catch (centralLogErr) {
       console.warn("[recordWrittenHoursEntries] Central log recording note:", centralLogErr);

@@ -620,4 +620,40 @@ export async function apiSyncCentralLogToSharePoint(): Promise<{
   );
 }
 
+/**
+ * 15. Inspect Microsoft Lists Status & Schema
+ */
+export async function apiInspectMicrosoftLists(): Promise<{
+  configured: boolean;
+  targetUrl: string;
+  siteId?: string;
+  listId?: string;
+  displayName?: string;
+  itemCount?: number;
+  columns?: any[];
+  columnMappings?: Record<string, string>;
+  recentItems?: any[];
+  error?: string;
+}> {
+  return fetchHoursApi<any>(`/api/hours/lists/inspect`, {
+    method: "GET",
+  });
+}
+
+/**
+ * 16. Test write an item to Microsoft Lists
+ */
+export async function apiTestWriteMicrosoftList(payload?: {
+  customerName?: string;
+  durationHours?: number;
+  description?: string;
+  workType?: string;
+}): Promise<any> {
+  return fetchHoursApi<any>(`/api/hours/lists/test`, {
+    method: "POST",
+    body: JSON.stringify(payload || {}),
+  });
+}
+
+
 

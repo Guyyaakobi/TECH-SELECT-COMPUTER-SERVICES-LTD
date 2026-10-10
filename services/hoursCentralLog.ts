@@ -24,6 +24,8 @@ export interface CentralLogRecord {
   sharepointTargetFile?: string;
   sharepointTargetRow?: string;
   sharepointTargetSheet?: string;
+  sharepointListItemId?: string;
+  sharepointListWebUrl?: string;
 }
 
 const DATA_DIR = path.join(process.cwd(), "data");

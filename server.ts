@@ -28,6 +28,10 @@ import {
   loadCentralLog,
 } from "./services/hoursCentralLog";
 import {
+  inspectSharePointListStatus,
+  writeEntryToSharePointList,
+} from "./services/sharepointLists";
+import {
   evaluateHoursRequestComplexity,
   createHoursJob,
   executeJobSlice,
@@ -4827,6 +4831,41 @@ ${!isAteraCustomer ? `
       } catch (err: any) {
         console.error("[POST /api/hours/log/sync-sharepoint] Error:", err);
         return res.status(500).json({ error: err?.message || "שגיאה בסנכרון ל-SharePoint Tools" });
+      }
+    });
+
+    // 11. GET /api/hours/lists/inspect: Inspect Microsoft Lists status, schema, columns, and recent items
+    hoursRouter.get("/lists/inspect", async (_req, res) => {
+      try {
+        const result = await inspectSharePointListStatus(process.env);
+        return res.json(result);
+      } catch (err: any) {
+        console.error("[GET /api/hours/lists/inspect] Error:", err);
+        return res.status(500).json({ error: err?.message || "שגיאה בבדיקת Microsoft Lists" });
+      }
+    });
+
+    // 11.1 POST /api/hours/lists/test: Create a test item in Microsoft Lists
+    hoursRouter.post("/lists/test", async (req, res) => {
+      try {
+        const user = (req as any).user;
+        const { customerName, durationHours, description, workType } = req.body || {};
+        const testResult = await writeEntryToSharePointList(
+          {
+            customerName: customerName || "בדיקת מערכת טק-סלקט",
+            date: new Date().toISOString().split("T")[0],
+            durationHours: Number(durationHours || 1),
+            description: description || "בדיקת אינטגרציה וסנכרון מול Microsoft Lists",
+            employeeName: user?.name || "גיא יעקובי",
+            employeeEmail: user?.email || "g@tech-select.co.il",
+            workType: workType || "קריאות שירות",
+          },
+          process.env
+        );
+        return res.json(testResult);
+      } catch (err: any) {
+        console.error("[POST /api/hours/lists/test] Error:", err);
+        return res.status(500).json({ error: err?.message || "שגיאה בכתיבת בדיקה ל-Microsoft Lists" });
       }
     });
 

@@ -921,6 +921,10 @@ CURRENT SYSTEM CONTEXT:
 - Employee name: "${user.name}". Employee email: "${user.email}".
 - The employee name comes STRICTLY from the signed-in user. NEVER ask for employee name under any circumstances.
 
+MICROSOFT LISTS DUAL-WRITE SYNCHRONIZATION:
+- All hours entries confirmed in the system are automatically dual-written to both the customer's Excel file in SharePoint AND to the centralized Microsoft Lists app (https://techselectltd.sharepoint.com/sites/Customers/Lists/List).
+- If the user asks whether hours are recorded in Lists or asks about Lists synchronization, confirm that dual-write synchronization to Microsoft Lists is active and automatic for every logged entry.
+
 MANAGER & AUDIT CAPABILITY - HOURS REPORT, DOCUMENTATION INSPECTION & QUERIES (דוחות, ריכוז יומי/שבועי, בדיקת תיעודים, שעות לפי לקוח ועובד):
 - ROUTING DECISION TREE (עץ החלטות חובה):
   1. If the user asks ANY question or query about hours, documentations, work performed, or summaries:

@@ -32,6 +32,8 @@ import {
   apiFindDuplicates,
   apiGetHoursDiagnostics,
   apiTestClassification,
+  apiInspectMicrosoftLists,
+  apiTestWriteMicrosoftList,
   type HoursDiagnosticsData,
   type HoursJobProgress,
   type ClassificationCustomerResult,
@@ -100,6 +102,48 @@ export const HoursTestPanel: React.FC<HoursTestPanelProps> = ({ currentUser }) =
   const [diagnosticsLoading, setDiagnosticsLoading] = useState<boolean>(false);
   const [diagnosticsData, setDiagnosticsData] = useState<HoursDiagnosticsData | null>(null);
   const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
+
+  // Microsoft Lists inspection & testing
+  const [listsLoading, setListsLoading] = useState<boolean>(false);
+  const [listsData, setListsData] = useState<any | null>(null);
+  const [listsError, setListsError] = useState<string | null>(null);
+  const [testWriteLoading, setTestWriteLoading] = useState<boolean>(false);
+  const [testWriteResult, setTestWriteResult] = useState<any | null>(null);
+
+  const handleInspectLists = async () => {
+    setListsLoading(true);
+    setListsError(null);
+    try {
+      const res = await apiInspectMicrosoftLists();
+      setListsData(res);
+      if (!res.configured && res.error) {
+        setListsError(res.error);
+      }
+    } catch (err: any) {
+      setListsError(err?.message || "שגיאה בבדיקת חיבור לרשימות SharePoint");
+    } finally {
+      setListsLoading(false);
+    }
+  };
+
+  const handleTestWriteList = async () => {
+    setTestWriteLoading(true);
+    setTestWriteResult(null);
+    try {
+      const res = await apiTestWriteMicrosoftList({
+        customerName: selectedCustomer?.name || "בדיקת מערכת טק-סלקט",
+        durationHours: 1.5,
+        description: "בדיקת כתיבה וסנכרון ישיר ל-Microsoft Lists",
+        workType: "קריאות שירות",
+      });
+      setTestWriteResult(res);
+      handleInspectLists();
+    } catch (err: any) {
+      setTestWriteResult({ success: false, error: err?.message || String(err) });
+    } finally {
+      setTestWriteLoading(false);
+    }
+  };
 
   // Global error box
   const [panelError, setPanelError] = useState<string | null>(null);
@@ -653,6 +697,175 @@ export const HoursTestPanel: React.FC<HoursTestPanelProps> = ({ currentUser }) =
                 </div>
               </div>
             ) : null}
+          </section>
+
+          {/* MICROSOFT LISTS INTEGRATION & DUAL-WRITE CARD */}
+          <section className="p-4 sm:p-5 rounded-xl bg-gradient-to-r from-purple-950/30 via-slate-900/90 to-indigo-950/30 border border-purple-500/40 space-y-4 shadow-xl">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300">
+                  <Database className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <span>אינטגרציה וסנכרון Microsoft Lists (רשימת לקוחות ושעות)</span>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                      Dual-Write Active
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    סנכרון כפול אוטומטי של כל תיעוד שעות ישירות לרשימת ה-SharePoint Lists של הלקוחות
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleInspectLists}
+                  disabled={listsLoading}
+                  className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-md shadow-purple-950/40 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {listsLoading ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Search className="w-3.5 h-3.5" />
+                  )}
+                  <span>בדוק חיבור וסכמה ב-Lists</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleTestWriteList}
+                  disabled={testWriteLoading}
+                  className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-purple-200 font-bold text-xs border border-purple-400/30 transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                >
+                  {testWriteLoading ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Edit3 className="w-3.5 h-3.5" />
+                  )}
+                  <span>שלח רשומת בדיקה</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Target URL Reference Link */}
+            <div className="flex items-center justify-between text-[11px] p-2.5 rounded-lg bg-black/40 border border-white/5 font-mono">
+              <span className="text-slate-400">כתובת הרשימה ב-SharePoint:</span>
+              <a
+                href="https://techselectltd.sharepoint.com/sites/Customers/Lists/List/AllItems.aspx?env=WebViewList"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-purple-400 hover:text-purple-300 underline inline-flex items-center gap-1 truncate max-w-md"
+                dir="ltr"
+              >
+                <span>https://techselectltd.sharepoint.com/sites/Customers/Lists/List</span>
+                <ExternalLink className="w-3 h-3 flex-shrink-0" />
+              </a>
+            </div>
+
+            {/* Test Write Feedback */}
+            {testWriteResult && (
+              <div className={`p-3 rounded-xl border text-xs space-y-1 ${
+                testWriteResult.success
+                  ? "bg-emerald-950/30 border-emerald-500/40 text-emerald-200"
+                  : "bg-rose-950/30 border-rose-500/40 text-rose-200"
+              }`}>
+                <div className="flex items-center gap-2 font-bold">
+                  {testWriteResult.success ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  ) : (
+                    <AlertTriangle className="w-4 h-4 text-rose-400" />
+                  )}
+                  <span>
+                    {testWriteResult.success
+                      ? "רשומת הבדיקה נכתבה בהצלחה ל-Microsoft Lists!"
+                      : "שגיאה בכתיבת בדיקה ל-Microsoft Lists"}
+                  </span>
+                </div>
+                {testWriteResult.listItemId && (
+                  <p className="text-[11px] font-mono text-emerald-300">
+                    מזהה פריט ברשימה (List Item ID): {testWriteResult.listItemId}
+                  </p>
+                )}
+                {testWriteResult.error && (
+                  <p className="text-[11px] text-rose-300">{testWriteResult.error}</p>
+                )}
+              </div>
+            )}
+
+            {/* Lists Inspection Details */}
+            {listsData && (
+              <div className="space-y-3 pt-1">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                  <div className="p-2.5 rounded-lg bg-black/40 border border-white/5">
+                    <span className="text-[10px] text-slate-400 block">שם הרשימה:</span>
+                    <span className="font-bold text-white">{listsData.displayName || listsData.name || "List"}</span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-black/40 border border-white/5">
+                    <span className="text-[10px] text-slate-400 block">מזהה רשימה (List ID):</span>
+                    <span className="font-mono text-purple-300 text-[10px] truncate block" dir="ltr">{listsData.listId || "N/A"}</span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-black/40 border border-white/5">
+                    <span className="text-[10px] text-slate-400 block">סה״כ עמודות שזוהו:</span>
+                    <span className="font-bold text-emerald-400">{listsData.columns?.length || 0}</span>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-black/40 border border-white/5">
+                    <span className="text-[10px] text-slate-400 block">פריטים אחרונים:</span>
+                    <span className="font-bold text-cyan-400">{listsData.itemCount || 0}</span>
+                  </div>
+                </div>
+
+                {/* Columns Preview */}
+                {listsData.columns && listsData.columns.length > 0 && (
+                  <details className="text-[11px] text-slate-400 bg-black/30 p-2.5 rounded-lg border border-white/5">
+                    <summary className="cursor-pointer font-bold text-slate-300 hover:text-white flex items-center justify-between">
+                      <span>עמודות ומיפוי סמנטי ב-Microsoft Lists ({listsData.columns.length})</span>
+                      <span className="text-[10px] text-purple-400">הצג פירוט</span>
+                    </summary>
+                    <div className="mt-2.5 grid grid-cols-2 sm:grid-cols-3 gap-1.5 text-[10px]">
+                      {listsData.columns.map((c: any, i: number) => (
+                        <div key={i} className="p-1.5 rounded bg-white/5 border border-white/5">
+                          <span className="font-bold text-slate-200 block truncate">{c.displayName}</span>
+                          <span className="font-mono text-slate-500 text-[9px] block truncate" dir="ltr">{c.name} ({c.type})</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+
+                {/* Recent Items Preview */}
+                {listsData.recentItems && listsData.recentItems.length > 0 && (
+                  <details className="text-[11px] text-slate-400 bg-black/30 p-2.5 rounded-lg border border-white/5" open>
+                    <summary className="cursor-pointer font-bold text-slate-300 hover:text-white flex items-center justify-between">
+                      <span>פריטים אחרונים ברשימה ({listsData.recentItems.length})</span>
+                      <span className="text-[10px] text-purple-400">פתח/סגור</span>
+                    </summary>
+                    <div className="mt-2 space-y-1.5">
+                      {listsData.recentItems.slice(0, 5).map((it: any, i: number) => (
+                        <div key={i} className="p-2 rounded bg-black/40 border border-white/5 text-[11px] flex items-center justify-between">
+                          <div className="truncate">
+                            <span className="font-bold text-white block truncate">{it.fields?.Title || `פריט #${it.id}`}</span>
+                            <span className="text-[10px] text-slate-400">
+                              {it.fields?.Customer || it.fields?.לקוח || ""} {it.fields?.Hours ? `| ${it.fields.Hours} שעות` : ""} {it.fields?.Employee ? `| ${it.fields.Employee}` : ""}
+                            </span>
+                          </div>
+                          <span className="font-mono text-[10px] text-slate-500 shrink-0">#{it.id}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </div>
+            )}
+
+            {listsError && (
+              <div className="p-3 rounded-xl bg-rose-950/30 border border-rose-500/40 text-rose-300 text-xs">
+                {listsError}
+              </div>
+            )}
           </section>
 
           {/* REAL CLASSIFICATION TEST IN THE ADMIN PANEL (Requirement 2) */}
