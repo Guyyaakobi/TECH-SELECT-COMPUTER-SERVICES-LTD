@@ -324,10 +324,20 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
               <Check className="w-3 h-3 text-emerald-600" />
               <span>נרשם ב-Excel (טאב: {written.sheetName || written.workType}, שורה {written.targetRow})</span>
             </span>
-            <span className="text-purple-700 font-semibold text-[11px] inline-flex items-center gap-1">
-              <Check className="w-3 h-3 text-purple-600" />
-              <span>סונכרן ל-Microsoft Lists ✓</span>
-            </span>
+            {written.listItemId ? (
+              <span className="text-purple-700 font-semibold text-[11px] inline-flex items-center gap-1">
+                <Check className="w-3 h-3 text-purple-600" />
+                <span>סונכרן ל-Microsoft Lists ✓</span>
+              </span>
+            ) : (
+              <span
+                className="text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 font-medium text-[11px] inline-flex items-center gap-1"
+                title={written.listsSyncResult?.error || "שרתי SharePoint חסמו את הכתיבה ל-Lists (שגיאת הרשאות ב-Azure Entra ID - 403 Access Denied)"}
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>ממתין להרשאת Lists ב-Azure (קוד 403)</span>
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-3">

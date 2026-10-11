@@ -308,6 +308,9 @@ export interface WrittenEntryResult {
   writtenAt: number;
   expiresAt: number; // 10 minutes
   canUndo: boolean;
+  listItemId?: string;
+  listItemWebUrl?: string;
+  listsSyncResult?: { success: boolean; error?: string };
 }
 
 export interface AssistantChatParams {
@@ -670,6 +673,9 @@ export async function processAssistantChat(
       writtenAt: writeRes.writtenAt || Date.now(),
       expiresAt: (writeRes.writtenAt || Date.now()) + 10 * 60 * 1000,
       canUndo: true,
+      listItemId: writeRes.listItemId,
+      listItemWebUrl: writeRes.listItemWebUrl,
+      listsSyncResult: writeRes.listsSyncResult,
     };
 
     const remainingDrafts = activeDrafts.filter((d) => d.id !== cardId);
@@ -1637,6 +1643,9 @@ MANDATORY WORKFLOW:
               writtenAt: writeRes.writtenAt || Date.now(),
               expiresAt: (writeRes.writtenAt || Date.now()) + 10 * 60 * 1000,
               canUndo: true,
+              listItemId: writeRes.listItemId,
+              listItemWebUrl: writeRes.listItemWebUrl,
+              listsSyncResult: writeRes.listsSyncResult,
             };
             newWrittenEntries.push(writtenItem);
           }

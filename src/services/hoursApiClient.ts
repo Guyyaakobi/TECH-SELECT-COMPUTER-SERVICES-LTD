@@ -356,6 +356,7 @@ export interface WrittenEntryResult {
   canUndo: boolean;
   listItemId?: string;
   listItemWebUrl?: string;
+  listsSyncResult?: { success: boolean; error?: string };
   ticketNumber?: string;
   startTime?: string;
   endTime?: string;

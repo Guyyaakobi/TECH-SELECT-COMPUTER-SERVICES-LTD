@@ -4747,6 +4747,7 @@ ${!isAteraCustomer ? `
           };
         const { message, audio, history, action, cardId, draftData, activeDrafts, undoData, writtenEntries } =
           req.body || {};
+        const requestEnv = { ...process.env, userToken: (req as any).rawToken };
         const result = await processAssistantChat(
           {
             user,
@@ -4759,9 +4760,9 @@ ${!isAteraCustomer ? `
             activeDrafts,
             undoData,
             writtenEntries,
-            env: process.env,
+            env: requestEnv,
           },
-          process.env
+          requestEnv
         );
         return res.json(result);
       } catch (err: any) {
