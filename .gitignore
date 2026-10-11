@@ -10,4 +10,5 @@ coverage/
 data/*.xlsx
 data/*.json
 !data/.gitkeep
+.restore_checkpoint/
 

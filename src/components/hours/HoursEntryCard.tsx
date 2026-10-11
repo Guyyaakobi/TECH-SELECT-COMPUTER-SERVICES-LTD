@@ -33,6 +33,10 @@ import {
 interface HoursEntryCardProps {
   draft?: HoursAssistantEntryDraft;
   written?: WrittenEntryResult;
+  currentUser?: {
+    name?: string;
+    email?: string;
+  };
   onConfirm?: (cardId: string) => void;
   onUndo?: (cardId: string, entry?: WrittenEntryResult) => void;
   onUpdateDraft?: (updated: HoursAssistantEntryDraft) => void;
@@ -43,6 +47,7 @@ interface HoursEntryCardProps {
 export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   draft,
   written,
+  currentUser,
   onConfirm,
   onUndo,
   onUpdateDraft,
@@ -198,22 +203,53 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
     return <Ticket className="w-3.5 h-3.5 text-blue-500" />;
   };
 
+  const getListsWorkTypeBadge = (wt?: string) => {
+    const norm = String(wt || "").toLowerCase();
+    if (norm.includes("פרויקט") || norm.includes("project")) {
+      return { label: "פרויקטים", bg: "bg-amber-100 text-amber-800 border-amber-300" };
+    }
+    if (
+      norm.includes("ביקור") ||
+      norm.includes("ביקורים") ||
+      norm.includes("הגעה") ||
+      norm.includes("onsite") ||
+      norm.includes("visit")
+    ) {
+      return { label: "ביקור", bg: "bg-emerald-100 text-emerald-800 border-emerald-300" };
+    }
+    return { label: "טיקטים", bg: "bg-blue-100 text-blue-800 border-blue-300" };
+  };
+
   // ==========================================
   // 1. Written Entry State ("נרשם ✓")
   // ==========================================
   if (written) {
     const canStillUndo = timeLeftMs > 0 && written.canUndo;
+    const workTypeBadge = getListsWorkTypeBadge(written.workType);
+    const handlerDisplay = written.employeeName || currentUser?.name || "גיא יעקובי";
+    const titleDisplay = written.ticketNumber
+      ? `טיקט ${written.ticketNumber.replace(/^(טיקט|ticket)\s*/i, "")}`
+      : written.description && written.description.length <= 40
+      ? written.description
+      : `${written.customerName} - ${written.durationFormatted}`;
 
     return (
       <div className="relative overflow-hidden rounded-2xl bg-emerald-50/90 border border-emerald-200/80 p-4 sm:p-5 shadow-sm text-right my-2 text-slate-800">
-        <div className="flex items-center justify-between gap-2 mb-3 pb-2.5 border-b border-emerald-200/60">
-          <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2.5 border-b border-emerald-200/60">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-600 text-white font-bold text-xs shadow-xs">
               <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>נרשם ✓</span>
+              <span>נרשם בהצלחה ✓</span>
             </span>
-            <span className="text-xs font-bold text-slate-900 truncate max-w-[180px] sm:max-w-xs">
-              {written.customerName}
+
+            {/* 1. כותרת */}
+            <span className="text-xs font-bold text-slate-900 font-mono">
+              {titleDisplay}
+            </span>
+
+            {/* 2. סוג (טיקטים, פרויקטים, ביקור) */}
+            <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border shadow-2xs ${workTypeBadge.bg}`}>
+              {workTypeBadge.label}
             </span>
           </div>
 
@@ -233,54 +269,90 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
           )}
         </div>
 
-        {/* Written Details Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs mb-3">
+        {/* 9-Columns Order Grid: לקוח, מטפל, שעת התחלה, שעת סיום, תאריך, כמה זמן הושקע */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 text-xs mb-3">
+          {/* 3. לקוח */}
+          <div className="p-2 rounded-xl bg-white border border-emerald-100 shadow-xs">
+            <span className="text-slate-500 block text-[10px]">לקוח</span>
+            <span className="font-bold text-slate-900 truncate block">{written.customerName}</span>
+          </div>
+
+          {/* 4. מטפל (SSO User) */}
+          <div className="p-2 rounded-xl bg-white border border-emerald-100 shadow-xs">
+            <span className="text-slate-500 block text-[10px]">מטפל (SSO)</span>
+            <span className="font-bold text-blue-700 flex items-center gap-1 truncate">
+              <User className="w-3 h-3 text-blue-500 flex-shrink-0" />
+              <span className="truncate">{handlerDisplay}</span>
+            </span>
+          </div>
+
+          {/* 5. שעת התחלה */}
+          <div className="p-2 rounded-xl bg-white border border-emerald-100 shadow-xs">
+            <span className="text-slate-500 block text-[10px]">שעת התחלה</span>
+            <span className="font-mono font-semibold text-slate-800" dir="ltr">{written.startTime || "09:00"}</span>
+          </div>
+
+          {/* 6. שעת סיום */}
+          <div className="p-2 rounded-xl bg-white border border-emerald-100 shadow-xs">
+            <span className="text-slate-500 block text-[10px]">שעת סיום</span>
+            <span className="font-mono font-semibold text-slate-800" dir="ltr">{written.endTime || "10:00"}</span>
+          </div>
+
+          {/* 7. תאריך */}
           <div className="p-2 rounded-xl bg-white border border-emerald-100 shadow-xs">
             <span className="text-slate-500 block text-[10px]">תאריך</span>
             <span className="font-semibold text-slate-800">{written.date}</span>
           </div>
+
+          {/* 8. כמה זמן הושקע */}
           <div className="p-2 rounded-xl bg-white border border-emerald-100 shadow-xs">
-            <span className="text-slate-500 block text-[10px]">משך</span>
-            <span className="font-bold text-emerald-700">{written.durationFormatted}</span>
-          </div>
-          <div className="p-2 rounded-xl bg-white border border-emerald-100 shadow-xs">
-            <span className="text-slate-500 block text-[10px]">טאב באקסל</span>
-            <span className="font-semibold text-slate-800 inline-flex items-center gap-1">
-              {getWorkTypeIcon(written.workType)}
-              {written.sheetName || written.workType}
-            </span>
-          </div>
-          <div className="p-2 rounded-xl bg-white border border-emerald-100 shadow-xs">
-            <span className="text-slate-500 block text-[10px]">שורה</span>
-            <span className="font-bold text-emerald-800 font-mono" dir="ltr">
-              שורה {written.targetRow}
-            </span>
+            <span className="text-slate-500 block text-[10px]">כמה זמן הושקע</span>
+            <span className="font-bold text-emerald-700 font-mono">{written.durationFormatted}</span>
           </div>
         </div>
 
-        {/* Description */}
+        {/* 9. מה נעשה (Description) */}
         <div className="p-2.5 rounded-xl bg-white border border-emerald-100 text-xs text-slate-800 leading-relaxed mb-3 shadow-xs">
-          <span className="text-[10px] text-slate-600 font-bold block mb-1">תיעוד הפעילות שנרשם בקובץ:</span>
+          <span className="text-[10px] text-slate-600 font-bold block mb-1">מה נעשה:</span>
           <p className="whitespace-pre-wrap">{written.description}</p>
         </div>
 
-        {/* Link to Excel File */}
-        {written.webUrl && (
-          <div className="flex items-center justify-between text-xs pt-2 border-t border-emerald-200/60">
-            <span className="text-slate-600 text-[11px] truncate max-w-[200px]" dir="ltr">
-              {written.fileName}
+        {/* Dual-write Confirmation Footer */}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-2 border-t border-emerald-200/60">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-emerald-700 font-semibold text-[11px] inline-flex items-center gap-1">
+              <Check className="w-3 h-3 text-emerald-600" />
+              <span>נרשם ב-Excel (טאב: {written.sheetName || written.workType}, שורה {written.targetRow})</span>
             </span>
+            <span className="text-purple-700 font-semibold text-[11px] inline-flex items-center gap-1">
+              <Check className="w-3 h-3 text-purple-600" />
+              <span>סונכרן ל-Microsoft Lists ✓</span>
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {written.webUrl && (
+              <a
+                href={written.webUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-semibold underline transition-colors"
+              >
+                <span>פתח ב-Excel</span>
+                <ExternalLink className="w-3.5 h-3.5" />
+              </a>
+            )}
             <a
-              href={written.webUrl}
+              href="https://techselectltd.sharepoint.com/sites/Customers/Lists/List/AllItems.aspx?env=WebViewList"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-semibold underline transition-colors"
+              className="inline-flex items-center gap-1 text-xs text-purple-600 hover:text-purple-700 font-semibold underline transition-colors"
             >
-              <span>פתח קובץ ב-Excel Web</span>
+              <span>צפה ב-Lists</span>
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
           </div>
-        )}
+        </div>
       </div>
     );
   }
@@ -290,19 +362,36 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   // ==========================================
   if (!draft) return null;
 
+  const draftWorkTypeBadge = getListsWorkTypeBadge(draft?.targetTabName || draft?.workType);
+  const draftHandlerDisplay = currentUser?.name || "גיא יעקובי";
+  const draftTitleDisplay = draft?.ticketNumber
+    ? `טיקט ${draft.ticketNumber.replace(/^(טיקט|ticket)\s*/i, "")}`
+    : draft?.description && draft.description.length <= 40
+    ? draft.description
+    : `${draft?.customerName || "לקוח"} - ${draft?.durationFormatted || "שעות"}`;
+
   return (
     <div className="relative overflow-hidden rounded-2xl bg-white border border-slate-200/90 p-4 sm:p-5 shadow-sm text-right my-2 text-slate-800">
-      {/* Top Banner: Customer Name & Status */}
-      <div className="flex items-center justify-between gap-2 mb-3 pb-2.5 border-b border-slate-100">
-        <div className="flex items-center gap-2">
+      {/* Top Banner: כותרת, סוג ולקוח */}
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2.5 border-b border-slate-100">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200/80 flex items-center justify-center text-blue-600 shadow-xs">
             <Building2 className="w-4 h-4" />
           </div>
           <div>
-            <h4 className="text-sm font-bold text-slate-900 leading-tight">
-              {draft.customerName || "לקוח לא זוהה"}
-            </h4>
-            <span className="text-[10px] text-slate-500">סיכום רשומה לתיעוד</span>
+            <div className="flex items-center gap-2">
+              <h4 className="text-sm font-bold text-slate-900 leading-tight">
+                {draftTitleDisplay}
+              </h4>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border shadow-2xs ${draftWorkTypeBadge.bg}`}>
+                {draftWorkTypeBadge.label}
+              </span>
+            </div>
+            <span className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+              <span>לקוח: <strong>{draft.customerName}</strong></span>
+              <span>•</span>
+              <span className="text-blue-600">מטפל: {draftHandlerDisplay}</span>
+            </span>
           </div>
         </div>
 

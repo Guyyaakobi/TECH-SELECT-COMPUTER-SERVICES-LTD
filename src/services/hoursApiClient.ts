@@ -354,6 +354,12 @@ export interface WrittenEntryResult {
   writtenAt: number;
   expiresAt: number;
   canUndo: boolean;
+  listItemId?: string;
+  listItemWebUrl?: string;
+  ticketNumber?: string;
+  startTime?: string;
+  endTime?: string;
+  employeeName?: string;
 }
 
 export interface AssistantChatRequest {

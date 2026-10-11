@@ -1171,6 +1171,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                                 <HoursEntryCard
                                   key={d.id}
                                   draft={activeDrafts.find((ad) => ad.id === d.id) || d}
+                                  currentUser={currentUser}
                                   onConfirm={handleConfirmEntry}
                                   onUpdateDraft={handleUpdateDraft}
                                   isConfirming={loading}
@@ -1186,6 +1187,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                                 <HoursEntryCard
                                   key={w.id}
                                   written={w}
+                                  currentUser={currentUser}
                                   onUndo={(id, entry) => handleUndoEntry(id, entry || w)}
                                   isUndoing={loading}
                                 />
@@ -1214,6 +1216,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                       <HoursEntryCard
                         key={d.id}
                         draft={d}
+                        currentUser={currentUser}
                         onConfirm={handleConfirmEntry}
                         onUpdateDraft={handleUpdateDraft}
                         isConfirming={loading}

@@ -4,6 +4,17 @@
  *
  * Target List:
  * https://techselectltd.sharepoint.com/sites/Customers/Lists/List/AllItems.aspx?env=WebViewList
+ *
+ * Ordered Columns Architecture (RTL Display in SharePoint Lists):
+ * 1. כותרת (Title): "טיקט [מספר]" or concise title / summary
+ * 2. סוג (Work Type Choice): "טיקטים" | "פרויקטים" | "ביקור"
+ * 3. לקוח (Customer): e.g. "אסיו Asio", "הייספ לאב HSL"
+ * 4. מטפל (Handler / Technician): Identified by SSO (e.g. "Guy Yaakobi", "Irit Yaakobi", "Tavor Cohen")
+ * 5. שעת התחלה (Start Time): HH:MM (e.g. "08:45", "09:00")
+ * 6. שעת סיום (End Time): HH:MM (e.g. "09:15", "10:00")
+ * 7. תאריך (Date): DD/MM/YYYY (or ISO YYYY-MM-DD)
+ * 8. כמה זמן הושקע (Hours / Duration): Number with 2 decimal places (e.g. 0.50, 1.00)
+ * 9. מה נעשה (Description): Full professional IT activity documentation
  */
 
 import { fetchGraph, resolveSharePointDrive } from "./graphHours";
@@ -49,6 +60,57 @@ function normalizeColString(str: string): string {
 }
 
 /**
+ * Normalizes work type strictly to one of the 3 choices in SharePoint Lists:
+ * "טיקטים" (Tickets/Support), "פרויקטים" (Projects), "ביקור" (Onsite Visit)
+ */
+export function normalizeListWorkType(rawType?: string): "טיקטים" | "פרויקטים" | "ביקור" {
+  const norm = String(rawType || "").trim().toLowerCase();
+  if (norm.includes("פרויקט") || norm.includes("project")) {
+    return "פרויקטים";
+  }
+  if (
+    norm.includes("ביקור") ||
+    norm.includes("ביקורים") ||
+    norm.includes("הגעה") ||
+    norm.includes("onsite") ||
+    norm.includes("visit")
+  ) {
+    return "ביקור";
+  }
+  // Default for tickets, service calls, remote sessions, phone calls
+  return "טיקטים";
+}
+
+/**
+ * Adds hours (decimal) to a "HH:MM" string, returning "HH:MM"
+ */
+function addHoursToTime(timeStr: string, hours: number): string {
+  const match = timeStr.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return "10:00";
+  const h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  const totalMins = h * 60 + m + Math.round(hours * 60);
+  const newH = Math.floor(totalMins / 60) % 24;
+  const newM = totalMins % 60;
+  return `${String(newH).padStart(2, "0")}:${String(newM).padStart(2, "0")}`;
+}
+
+/**
+ * Subtracts hours (decimal) from a "HH:MM" string, returning "HH:MM"
+ */
+function subtractHoursFromTime(timeStr: string, hours: number): string {
+  const match = timeStr.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return "09:00";
+  const h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  let totalMins = h * 60 + m - Math.round(hours * 60);
+  if (totalMins < 0) totalMins += 24 * 60;
+  const newH = Math.floor(totalMins / 60) % 24;
+  const newM = totalMins % 60;
+  return `${String(newH).padStart(2, "0")}:${String(newM).padStart(2, "0")}`;
+}
+
+/**
  * Resolves the SharePoint Site and target Microsoft List
  */
 export async function resolveSharePointList(env?: any): Promise<SharePointListInfo> {
@@ -65,8 +127,7 @@ export async function resolveSharePointList(env?: any): Promise<SharePointListIn
   try {
     const driveInfo = await resolveSharePointDrive(env);
     siteId = driveInfo.siteId;
-  } catch (driveErr) {
-    // If resolveSharePointDrive fails, fallback to direct site URL query
+  } catch (_driveErr) {
     const rawSite =
       envObj.SHAREPOINT_LIST_SITE ||
       p?.SHAREPOINT_LIST_SITE ||
@@ -110,7 +171,6 @@ export async function resolveSharePointList(env?: any): Promise<SharePointListIn
 
   // Match the user's list:
   // Target URL: https://techselectltd.sharepoint.com/sites/Customers/Lists/List/AllItems.aspx
-  // Match by webUrl ending with /Lists/List or name === "List" or displayName === "List"
   let matchedList = allLists.find((l) => {
     const webUrl = String(l.webUrl || "").toLowerCase();
     const name = String(l.name || "").toLowerCase();
@@ -140,7 +200,6 @@ export async function resolveSharePointList(env?: any): Promise<SharePointListIn
   }
 
   if (!matchedList) {
-    // If still not matched, use the first list or create a synthetic fallback
     if (allLists.length > 0) {
       matchedList = allLists[0];
     } else {
@@ -172,44 +231,93 @@ export async function resolveSharePointList(env?: any): Promise<SharePointListIn
         id: c.id,
         name: colName,
         displayName: colDisplay,
-        type: c.text ? "text" : c.number ? "number" : c.dateTime ? "dateTime" : c.choice ? "choice" : "other",
+        type: c.text ? "text" : c.number ? "number" : c.dateTime ? "dateTime" : c.choice ? "choice" : c.personOrGroup ? "person" : "other",
         required: Boolean(c.required),
         readOnly: Boolean(c.readOnly),
       });
 
-      // Semantic mapping
+      // Semantic mapping according to the exact 9 columns:
+      // 1. כותרת (Title)
       if (colName === "Title" || colNorm === "title" || colNorm.includes("כותרת")) {
         columnMap["title"] = colName;
       }
-      if (colNorm.includes("customer") || colNorm.includes("לקוח") || colNorm.includes("שםלקוח") || colNorm.includes("חברה")) {
-        columnMap["customer"] = colName;
-      }
-      if (colNorm.includes("date") || colNorm.includes("תאריך") || colNorm.includes("יום")) {
-        columnMap["date"] = colName;
-      }
-      if (colNorm.includes("employee") || colNorm.includes("עובד") || colNorm.includes("טכנאי") || colNorm.includes("technician")) {
-        columnMap["employee"] = colName;
-      }
-      if (colNorm.includes("hour") || colNorm.includes("משך") || colNorm.includes("שעות") || colNorm.includes("duration") || colNorm.includes("סהכשעות")) {
-        columnMap["hours"] = colName;
-      }
-      if (colNorm.includes("desc") || colNorm.includes("תיאור") || colNorm.includes("פעילות") || colNorm.includes("details") || colNorm.includes("הערות") || colNorm.includes("פירוט")) {
-        columnMap["description"] = colName;
-      }
-      if (colNorm.includes("worktype") || colNorm.includes("סוגעבודה") || colNorm.includes("סוג") || colNorm.includes("קטגוריה")) {
+      // 2. סוג (סוג: טיקטים, פרויקטים, ביקור)
+      if (
+        colNorm === "סוג" ||
+        colNorm === "type" ||
+        colNorm === "worktype" ||
+        colNorm.includes("סוגעבודה") ||
+        colNorm.includes("קטגוריה")
+      ) {
         columnMap["workType"] = colName;
       }
-      if (colNorm.includes("start") || colNorm.includes("שעתהתחלה") || colNorm.includes("התחלה")) {
+      // 3. לקוח (Customer)
+      if (
+        colNorm === "לקוח" ||
+        colNorm.includes("שםלקוח") ||
+        colNorm.includes("חברה") ||
+        colNorm.includes("customer")
+      ) {
+        columnMap["customer"] = colName;
+      }
+      // 4. מטפל (Handler / Technician - SSO User)
+      if (
+        colNorm.includes("מטפל") ||
+        colNorm.includes("עובד") ||
+        colNorm.includes("טכנאי") ||
+        colNorm.includes("אישצוות") ||
+        colNorm.includes("handler") ||
+        colNorm.includes("technician") ||
+        colNorm.includes("assignee") ||
+        colNorm.includes("employee")
+      ) {
+        columnMap["handler"] = colName;
+      }
+      // 5. שעת התחלה (Start Time)
+      if (
+        colNorm.includes("שעתהתחלה") ||
+        colNorm === "התחלה" ||
+        colNorm.includes("starttime") ||
+        colNorm === "start"
+      ) {
         columnMap["startTime"] = colName;
       }
-      if (colNorm.includes("end") || colNorm.includes("שעתסיום") || colNorm.includes("סיום")) {
+      // 6. שעת סיום (End Time)
+      if (
+        colNorm.includes("שעתסיום") ||
+        colNorm === "סיום" ||
+        colNorm.includes("endtime") ||
+        colNorm === "end"
+      ) {
         columnMap["endTime"] = colName;
       }
-      if (colNorm.includes("ticket") || colNorm.includes("קריאה") || colNorm.includes("טיקט") || colNorm.includes("מספרקריאה")) {
-        columnMap["ticket"] = colName;
+      // 7. תאריך (Date)
+      if (colNorm.includes("תאריך") || colNorm === "יום" || colNorm.includes("date")) {
+        columnMap["date"] = colName;
       }
-      if (colNorm.includes("contact") || colNorm.includes("אישקשר") || colNorm.includes("טלפון")) {
-        columnMap["contact"] = colName;
+      // 8. כמה זמן הושקע (Hours / Duration)
+      if (
+        colNorm.includes("כמהזמנהושקע") ||
+        colNorm.includes("זמנהושקע") ||
+        colNorm.includes("הושקע") ||
+        colNorm.includes("כמהזמן") ||
+        colNorm.includes("משך") ||
+        colNorm.includes("שעות") ||
+        colNorm.includes("duration") ||
+        colNorm.includes("hours")
+      ) {
+        columnMap["duration"] = colName;
+      }
+      // 9. מה נעשה (Description)
+      if (
+        colNorm.includes("מהנעשה") ||
+        colNorm.includes("תיאור") ||
+        colNorm.includes("פעילות") ||
+        colNorm.includes("פירוט") ||
+        colNorm.includes("description") ||
+        colNorm.includes("details")
+      ) {
+        columnMap["description"] = colName;
       }
     }
   }
@@ -234,7 +342,7 @@ export async function resolveSharePointList(env?: any): Promise<SharePointListIn
 }
 
 /**
- * Format and write an entry into Microsoft Lists
+ * Format and write an entry into Microsoft Lists according to the exact 9 columns
  */
 export async function writeEntryToSharePointList(
   entryData: {
@@ -255,66 +363,125 @@ export async function writeEntryToSharePointList(
 ): Promise<ListItemWriteResult> {
   try {
     const listInfo = await resolveSharePointList(env);
-    const { siteId, listId, columnMap, webUrl: listWebUrl } = listInfo;
+    const { siteId, listId, columnMap, columns, webUrl: listWebUrl } = listInfo;
 
-    const customer = entryData.customerName || "לקוח כללי";
-    const hours = Number(entryData.durationHours || 0);
-    const employee = entryData.employeeName || entryData.employeeEmail || "טכנאי Tech-Select";
-    const date = entryData.date || new Date().toISOString().split("T")[0];
-    const desc = entryData.description || "";
-    const workType = entryData.workType || "קריאות שירות";
+    const customer = (entryData.customerName || "לקוח כללי").trim();
+    const durationHours = Number(entryData.durationHours || 0);
+    const durationFormattedNum = Number(durationHours.toFixed(2));
+    const desc = (entryData.description || "פעילות שירות שוטפת").trim();
 
-    // Build Title: e.g. "טק סלקט - 1.5 שעות (גיא יעקובי)"
-    const titleVal = `${customer} - ${hours} שעות (${employee})`;
+    // 1. כותרת (Title): "טיקט [מספר]" if ticket exists, else concise summary
+    let titleVal = "";
+    if (entryData.ticketNumber) {
+      const cleanTicket = String(entryData.ticketNumber).replace(/^(טיקט|ticket)\s*/i, "").trim();
+      titleVal = `טיקט ${cleanTicket}`;
+    } else if (desc.length <= 40) {
+      titleVal = desc;
+    } else {
+      titleVal = `${customer} - ${desc.substring(0, 30)}`;
+    }
 
-    // Prepare fields payload
+    // 2. סוג (סוג: טיקטים, פרויקטים, ביקור)
+    const workTypeVal = normalizeListWorkType(entryData.workType);
+
+    // 3. לקוח (Customer: e.g. "אסיו Asio", "הייספ לאב HSL")
+    const customerVal = customer;
+
+    // 4. מטפל (SSO Identified User)
+    const handlerName = (entryData.employeeName || "Guy Yaakobi").trim();
+    const handlerEmail = (entryData.employeeEmail || "g@tech-select.co.il").trim();
+
+    // 5 & 6. שעת התחלה ושעת סיום (HH:MM)
+    let startTimeStr = String(entryData.startTime || "").trim();
+    let endTimeStr = String(entryData.endTime || "").trim();
+
+    if (!startTimeStr && endTimeStr) {
+      startTimeStr = subtractHoursFromTime(endTimeStr, durationHours);
+    } else if (startTimeStr && !endTimeStr) {
+      endTimeStr = addHoursToTime(startTimeStr, durationHours);
+    } else if (!startTimeStr && !endTimeStr) {
+      // Default: realistic daytime hours
+      const now = new Date();
+      const endH = Math.max(9, Math.min(now.getHours(), 19));
+      const endM = Math.floor(now.getMinutes() / 15) * 15;
+      endTimeStr = `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
+      startTimeStr = subtractHoursFromTime(endTimeStr, durationHours);
+    }
+
+    // 7. תאריך (Date)
+    const rawDate = entryData.date || new Date().toISOString().split("T")[0];
+    let isoDate = rawDate;
+    const matchIso = rawDate.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (matchIso) {
+      isoDate = `${matchIso[1]}-${matchIso[2].padStart(2, "0")}-${matchIso[3].padStart(2, "0")}`;
+    }
+
+    // 8. כמה זמן הושקע (Duration Number: 0.50, 1.00)
+    const durationVal = durationFormattedNum;
+
+    // 9. מה נעשה (Description)
+    const whatWasDone = desc;
+
+    // Build the fields object based on mapped column names
     const fields: Record<string, any> = {
       Title: titleVal,
     };
 
-    // If customer column is mapped and distinct from Title
-    if (columnMap["customer"] && columnMap["customer"] !== "Title") {
-      fields[columnMap["customer"]] = customer;
-    }
-    // Date
-    if (columnMap["date"] && columnMap["date"] !== "Title") {
-      fields[columnMap["date"]] = date;
-    }
-    // Employee
-    if (columnMap["employee"] && columnMap["employee"] !== "Title") {
-      fields[columnMap["employee"]] = employee;
-    }
-    // Hours
-    if (columnMap["hours"] && columnMap["hours"] !== "Title") {
-      fields[columnMap["hours"]] = hours;
-    }
-    // Description
-    if (columnMap["description"] && columnMap["description"] !== "Title") {
-      fields[columnMap["description"]] = desc;
-    }
-    // WorkType
-    if (columnMap["workType"] && columnMap["workType"] !== "Title") {
-      fields[columnMap["workType"]] = workType;
-    }
-    // Start / End
-    if (entryData.startTime && columnMap["startTime"]) {
-      fields[columnMap["startTime"]] = entryData.startTime;
-    }
-    if (entryData.endTime && columnMap["endTime"]) {
-      fields[columnMap["endTime"]] = entryData.endTime;
-    }
-    // Ticket
-    if (entryData.ticketNumber && columnMap["ticket"]) {
-      fields[columnMap["ticket"]] = entryData.ticketNumber;
-    }
-    // Contact
-    if (entryData.contactPerson && columnMap["contact"]) {
-      fields[columnMap["contact"]] = entryData.contactPerson;
+    // Populate each of the 9 columns into mapped internal name:
+    const assignCol = (semanticKey: string, value: any, fallbackNames: string[]) => {
+      const internalName = columnMap[semanticKey];
+      if (internalName) {
+        fields[internalName] = value;
+        return;
+      }
+      // If not mapped, check if any discovered column matches one of the fallback names
+      const matchedCol = columns.find((c) =>
+        fallbackNames.some(
+          (fn) =>
+            normalizeColString(c.displayName) === normalizeColString(fn) ||
+            normalizeColString(c.name) === normalizeColString(fn)
+        )
+      );
+      if (matchedCol) {
+        fields[matchedCol.name] = value;
+      } else if (fallbackNames.length > 0) {
+        // Fallback to the first candidate name
+        fields[fallbackNames[0]] = value;
+      }
+    };
+
+    // 1. כותרת
+    if (columnMap["title"] && columnMap["title"] !== "Title") {
+      fields[columnMap["title"]] = titleVal;
     }
 
+    // 2. סוג
+    assignCol("workType", workTypeVal, ["סוג", "סוג עבודה"]);
+
+    // 3. לקוח
+    assignCol("customer", customerVal, ["לקוח", "שם לקוח"]);
+
+    // 4. מטפל (SSO user name & email)
+    assignCol("handler", handlerName, ["מטפל"]);
+
+    // 5. שעת התחלה
+    assignCol("startTime", startTimeStr, ["שעת התחלה", "התחלה"]);
+
+    // 6. שעת סיום
+    assignCol("endTime", endTimeStr, ["שעת סיום", "סיום"]);
+
+    // 7. תאריך
+    assignCol("date", isoDate, ["תאריך"]);
+
+    // 8. כמה זמן הושקע
+    assignCol("duration", durationVal, ["כמה זמן הושקע", "שעות"]);
+
+    // 9. מה נעשה
+    assignCol("description", whatWasDone, ["מה נעשה", "תיאור"]);
+
     const itemCreateUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items`;
-    
-    // Attempt 1: Full payload with mapped columns
+
+    // Attempt 1: Full structured payload
     let res = await fetchGraph(
       itemCreateUrl,
       {
@@ -324,21 +491,48 @@ export async function writeEntryToSharePointList(
       env
     );
 
-    // If failed due to a specific column type constraint (e.g. choice or lookup validation),
-    // fallback gracefully to core Title + text payload
+    // If failed with 400 (e.g. Person lookup constraint on 'מטפל' or a specific unmapped field)
     if (!res.ok && res.status === 400) {
-      console.warn("[SharePoint Lists] Initial write returned 400. Trying safe core fields fallback...");
-      const safeFields: Record<string, any> = {
-        Title: `${customer} | ${date} | ${hours} שעות | ${employee}${desc ? " | " + desc : ""}`,
-      };
+      const errTxt = await res.text().catch(() => "");
+      console.warn("[SharePoint Lists] Initial write returned 400. Analyzing and adapting payload...", errTxt);
+
+      // Attempt 2: If 'מטפל' caused an issue because it's a Person Lookup field, try omitting it
+      // or using email / claims, while keeping all other 8 columns intact!
+      const fieldsWithoutHandler = { ...fields };
+      const handlerCol = columnMap["handler"] || "מטפל";
+      delete fieldsWithoutHandler[handlerCol];
+      delete fieldsWithoutHandler["מטפל"];
+
       res = await fetchGraph(
         itemCreateUrl,
         {
           method: "POST",
-          body: JSON.stringify({ fields: safeFields }),
+          body: JSON.stringify({ fields: fieldsWithoutHandler }),
         },
         env
       );
+
+      // Attempt 3: If still failing, fallback to guaranteed core fields
+      if (!res.ok && res.status === 400) {
+        console.warn("[SharePoint Lists] Attempt 2 returned 400. Trying minimal core fields fallback...");
+        const safeFields: Record<string, any> = {
+          Title: titleVal,
+          "כותרת": titleVal,
+          "סוג": workTypeVal,
+          "לקוח": customerVal,
+          "תאריך": isoDate,
+          "כמה זמן הושקע": durationVal,
+          "מה נעשה": whatWasDone,
+        };
+        res = await fetchGraph(
+          itemCreateUrl,
+          {
+            method: "POST",
+            body: JSON.stringify({ fields: safeFields }),
+          },
+          env
+        );
+      }
     }
 
     if (!res.ok) {
@@ -358,7 +552,17 @@ export async function writeEntryToSharePointList(
       success: true,
       listItemId: createdId,
       webUrl: itemUrl,
-      fieldsWritten: fields,
+      fieldsWritten: {
+        כותרת: titleVal,
+        סוג: workTypeVal,
+        לקוח: customerVal,
+        מטפל: handlerName,
+        "שעת התחלה": startTimeStr,
+        "שעת סיום": endTimeStr,
+        תאריך: isoDate,
+        "כמה זמן הושקע": durationVal,
+        "מה נעשה": whatWasDone,
+      },
     };
   } catch (err: any) {
     const errMsg = err?.message || String(err);

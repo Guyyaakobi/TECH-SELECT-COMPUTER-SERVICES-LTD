@@ -4431,7 +4431,8 @@ ${!isAteraCustomer ? `
 
         // FAST PATH: Single task write (Immediate & Synchronous)
         if (!complexity.isHeavy) {
-          const result = await writeRows(fileId, rows, user, process.env, driveId, workType);
+          const requestEnv = { ...process.env, userToken: (req as any).rawToken };
+          const result = await writeRows(fileId, rows, user, requestEnv, driveId, workType);
           return res.json(result);
         }
 
@@ -4835,9 +4836,10 @@ ${!isAteraCustomer ? `
     });
 
     // 11. GET /api/hours/lists/inspect: Inspect Microsoft Lists status, schema, columns, and recent items
-    hoursRouter.get("/lists/inspect", async (_req, res) => {
+    hoursRouter.get("/lists/inspect", async (req, res) => {
       try {
-        const result = await inspectSharePointListStatus(process.env);
+        const requestEnv = { ...process.env, userToken: (req as any).rawToken };
+        const result = await inspectSharePointListStatus(requestEnv);
         return res.json(result);
       } catch (err: any) {
         console.error("[GET /api/hours/lists/inspect] Error:", err);
@@ -4849,7 +4851,8 @@ ${!isAteraCustomer ? `
     hoursRouter.post("/lists/test", async (req, res) => {
       try {
         const user = (req as any).user;
-        const { customerName, durationHours, description, workType } = req.body || {};
+        const requestEnv = { ...process.env, userToken: (req as any).rawToken };
+        const { customerName, durationHours, description, workType, ticketNumber, startTime, endTime } = req.body || {};
         const testResult = await writeEntryToSharePointList(
           {
             customerName: customerName || "בדיקת מערכת טק-סלקט",
@@ -4858,9 +4861,12 @@ ${!isAteraCustomer ? `
             description: description || "בדיקת אינטגרציה וסנכרון מול Microsoft Lists",
             employeeName: user?.name || "גיא יעקובי",
             employeeEmail: user?.email || "g@tech-select.co.il",
-            workType: workType || "קריאות שירות",
+            workType: workType || "טיקטים",
+            ticketNumber: ticketNumber || undefined,
+            startTime: startTime || undefined,
+            endTime: endTime || undefined,
           },
-          process.env
+          requestEnv
         );
         return res.json(testResult);
       } catch (err: any) {

@@ -342,10 +342,11 @@ export async function hoursAuthMiddleware(req: Request, res: Response, next: Nex
     // Verify token with hardened rules
     const user = await validateAzureToken(token);
 
-    // Expose validated user on req.user
+    // Expose validated user on req.user and raw token for Graph API delegation
     user.isAdmin = isHoursAdmin(user.email, process.env);
     user.role = user.isAdmin ? "admin" : "user";
     req.user = user;
+    (req as any).rawToken = token;
     next();
   } catch (err: any) {
     // Log the exact reason server-side (bad audience / issuer / expired / signature / bad tid)

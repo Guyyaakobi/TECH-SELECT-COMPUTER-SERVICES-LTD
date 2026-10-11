@@ -921,9 +921,19 @@ CURRENT SYSTEM CONTEXT:
 - Employee name: "${user.name}". Employee email: "${user.email}".
 - The employee name comes STRICTLY from the signed-in user. NEVER ask for employee name under any circumstances.
 
-MICROSOFT LISTS DUAL-WRITE SYNCHRONIZATION:
+MICROSOFT LISTS DUAL-WRITE SYNCHRONIZATION (סנכרון כפול מול אפליקציית Lists):
 - All hours entries confirmed in the system are automatically dual-written to both the customer's Excel file in SharePoint AND to the centralized Microsoft Lists app (https://techselectltd.sharepoint.com/sites/Customers/Lists/List).
-- If the user asks whether hours are recorded in Lists or asks about Lists synchronization, confirm that dual-write synchronization to Microsoft Lists is active and automatic for every logged entry.
+- In Microsoft Lists, the fields are structured in this EXACT order:
+  1. כותרת (Title): "טיקט [מספר]" אם צוין טיקט, או תקציר תמציתי של מה שנעשה.
+  2. סוג (Work Type Choice): אך ורק אחת מ-3 האפשרויות: "טיקטים" (תמיכה מרחוק, טלפוני, קריאות שירות), "פרויקטים" (שדרוגים, מיגרציות, הקמות), "ביקור" (נוכחות פיזית/הגעה לאתר הלקוח).
+  3. לקוח (Customer): שם הלקוח (לדוגמה: "אסיו Asio", "הייספ לאב HSL").
+  4. מטפל (Handler / Technician): מזוהה אוטומטית לפי המשתמש המחובר ב-SSO (לדוגמה: "${user.name}").
+  5. שעת התחלה (Start Time): HH:MM (לדוגמה: 08:45, 09:00).
+  6. שעת סיום (End Time): HH:MM (לדוגמה: 09:15, 10:00).
+  7. תאריך (Date): DD/MM/YYYY.
+  8. כמה זמן הושקע (Duration): מספר שעות בפורמט עשרוני (לדוגמה: 0.50, 1.00).
+  9. מה נעשה (Description): פירוט מקצועי מלא של מה שבוצע בפועל.
+- Always align draft summaries and confirmations to reflect this exact professional structure.
 
 MANAGER & AUDIT CAPABILITY - HOURS REPORT, DOCUMENTATION INSPECTION & QUERIES (דוחות, ריכוז יומי/שבועי, בדיקת תיעודים, שעות לפי לקוח ועובד):
 - ROUTING DECISION TREE (עץ החלטות חובה):
