@@ -40,6 +40,7 @@ import * as hoursDiagnosticsHandler from "./functions/api/hours/diagnostics";
 import * as hoursAssistantHandler from "./functions/api/hours/assistant";
 import * as hoursTodaySummaryHandler from "./functions/api/hours/today-summary";
 import * as hoursLogHandler from "./functions/api/hours/log";
+import * as hoursListsHandler from "./functions/api/hours/lists";
 
 interface Env {
   ASSETS?: {
@@ -276,6 +277,17 @@ export default {
         return hoursLogHandler.onRequestOptions(context);
       }
       return hoursLogHandler.onRequest(context);
+    }
+
+    // 9.12 Microsoft Lists Integration (/api/hours/lists, /api/hours/lists/inspect, /api/hours/lists/test)
+    if (pathname === "/api/hours/lists" || pathname.startsWith("/api/hours/lists/")) {
+      if (request.method === "OPTIONS") {
+        return hoursListsHandler.onRequestOptions(context);
+      }
+      if (request.method === "POST") {
+        return hoursListsHandler.onRequestPost(context);
+      }
+      return hoursListsHandler.onRequestGet(context);
     }
 
     // 8. Simulator Activity Logger

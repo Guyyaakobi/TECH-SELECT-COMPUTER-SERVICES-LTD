@@ -56,6 +56,10 @@ export async function onRequestPost(context: any): Promise<Response> {
     forceQueue: body.forceQueue,
   });
 
+  const authHeader = request.headers.get("Authorization") || request.headers.get("authorization") || "";
+  const userToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+  const requestEnv = { ...env, userToken };
+
   // FAST PATH: Regular single task write (Immediate & Synchronous)
   if (!complexity.isHeavy) {
     try {
@@ -63,7 +67,7 @@ export async function onRequestPost(context: any): Promise<Response> {
         fileId,
         rows,
         auth.user,
-        env,
+        requestEnv,
         body.driveId,
         body.workType
       );

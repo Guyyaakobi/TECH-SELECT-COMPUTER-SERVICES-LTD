@@ -572,6 +572,17 @@ export async function fetchGraph(
       );
     }
 
+    if (res.status === 403 && env?.userToken && headers.get("Authorization") !== `Bearer ${env.userToken}`) {
+      console.warn(`[fetchGraph] App token returned 403 for ${url}. Trying with authenticated user token...`);
+      const userHeaders = new Headers(headers);
+      userHeaders.set("Authorization", `Bearer ${env.userToken}`);
+      const userRes = await fetch(url, { ...options, headers: userHeaders });
+      if (userRes.ok) {
+        return userRes;
+      }
+      return userRes;
+    }
+
     return res;
   }
 

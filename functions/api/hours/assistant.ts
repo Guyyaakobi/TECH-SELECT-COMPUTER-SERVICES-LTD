@@ -25,6 +25,10 @@ export async function onRequestPost(context: { request: Request; env: any }): Pr
   const authUser = auth.user;
 
   try {
+    const authHeader = request.headers.get("Authorization") || request.headers.get("authorization") || "";
+    const userToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+    const requestEnv = { ...env, userToken };
+
     const body: any = await request.json().catch(() => ({}));
     const result = await processAssistantChat(
       {
@@ -42,9 +46,9 @@ export async function onRequestPost(context: { request: Request; env: any }): Pr
         activeDrafts: body.activeDrafts,
         undoData: body.undoData,
         writtenEntries: body.writtenEntries,
-        env,
+        env: requestEnv,
       },
-      env
+      requestEnv
     );
 
     return new Response(JSON.stringify(result), {

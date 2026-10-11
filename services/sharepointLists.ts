@@ -444,9 +444,6 @@ export async function writeEntryToSharePointList(
       );
       if (matchedCol) {
         fields[matchedCol.name] = value;
-      } else if (fallbackNames.length > 0) {
-        // Fallback to the first candidate name
-        fields[fallbackNames[0]] = value;
       }
     };
 
@@ -512,17 +509,11 @@ export async function writeEntryToSharePointList(
         env
       );
 
-      // Attempt 3: If still failing, fallback to guaranteed core fields
+      // Attempt 3: If still failing, fallback to guaranteed core Title field
       if (!res.ok && res.status === 400) {
-        console.warn("[SharePoint Lists] Attempt 2 returned 400. Trying minimal core fields fallback...");
+        console.warn("[SharePoint Lists] Attempt 2 returned 400. Trying guaranteed Title field fallback...");
         const safeFields: Record<string, any> = {
           Title: titleVal,
-          "כותרת": titleVal,
-          "סוג": workTypeVal,
-          "לקוח": customerVal,
-          "תאריך": isoDate,
-          "כמה זמן הושקע": durationVal,
-          "מה נעשה": whatWasDone,
         };
         res = await fetchGraph(
           itemCreateUrl,

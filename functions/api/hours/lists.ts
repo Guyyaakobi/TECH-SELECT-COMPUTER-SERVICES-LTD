@@ -27,7 +27,11 @@ export async function onRequestGet(context: { request: Request; env: any }): Pro
   }
 
   try {
-    const result = await inspectSharePointListStatus(env);
+    const authHeader = request.headers.get("Authorization") || request.headers.get("authorization") || "";
+    const userToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+    const requestEnv = { ...env, userToken };
+
+    const result = await inspectSharePointListStatus(requestEnv);
     return new Response(JSON.stringify(result), {
       status: 200,
       headers: {
@@ -56,18 +60,25 @@ export async function onRequestPost(context: { request: Request; env: any }): Pr
   }
 
   try {
+    const authHeader = request.headers.get("Authorization") || request.headers.get("authorization") || "";
+    const userToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+    const requestEnv = { ...env, userToken };
+
     const body = (await request.json().catch(() => ({}))) as any;
     const testResult = await writeEntryToSharePointList(
       {
         customerName: body.customerName || "בדיקת מערכת טק-סלקט",
-        date: new Date().toISOString().split("T")[0],
+        date: body.date || new Date().toISOString().split("T")[0],
         durationHours: Number(body.durationHours || 1),
         description: body.description || "בדיקת אינטגרציה וסנכרון מול Microsoft Lists",
         employeeName: auth.user?.name || "גיא יעקובי",
         employeeEmail: auth.user?.email || "g@tech-select.co.il",
-        workType: body.workType || "קריאות שירות",
+        workType: body.workType || "טיקטים",
+        ticketNumber: body.ticketNumber,
+        startTime: body.startTime,
+        endTime: body.endTime,
       },
-      env
+      requestEnv
     );
 
     return new Response(JSON.stringify(testResult), {
