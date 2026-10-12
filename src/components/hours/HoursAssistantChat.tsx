@@ -249,9 +249,9 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    el.style.height = "auto";
-    const nextHeight = Math.min(Math.max(el.scrollHeight, 26), 160);
-    el.style.height = `${nextHeight}px`;
+    el.style.height = "0px";
+    const scrollH = el.scrollHeight;
+    el.style.height = `${Math.min(Math.max(scrollH, 24), 160)}px`;
   }, [inputText]);
 
   const scrollToBottom = () => {
@@ -679,16 +679,29 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
   };
 
   // Direct Card Confirmation Handler
-  const handleConfirmEntry = async (cardId: string) => {
+  const handleConfirmEntry = async (cardId: string, directDraft?: HoursAssistantEntryDraft) => {
     try {
       setLoading(true);
-      setLoadingStep("רושם שורה בגיליון ה-Excel...");
+      setLoadingStep("רושם שורה בגיליון ה-Excel וב-Lists...");
+
+      const targetDraft =
+        directDraft ||
+        activeDrafts.find((d) => d.id === cardId) ||
+        messages.flatMap((m) => m.drafts || []).find((d) => d.id === cardId);
+
+      const mergedActiveDrafts = activeDrafts.map((d) =>
+        d.id === cardId && targetDraft ? targetDraft : d
+      );
+      if (targetDraft && !mergedActiveDrafts.some((d) => d.id === cardId)) {
+        mergedActiveDrafts.push(targetDraft);
+      }
 
       const res = await apiAssistantChat({
         user: currentUser,
         action: "confirm_entry",
         cardId,
-        activeDrafts,
+        draftData: targetDraft,
+        activeDrafts: mergedActiveDrafts,
         writtenEntries,
       });
 
@@ -774,6 +787,12 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
   // Update in-line draft
   const handleUpdateDraft = (updated: HoursAssistantEntryDraft) => {
     setActiveDrafts((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
+    setMessages((prev) =>
+      prev.map((msg) => ({
+        ...msg,
+        drafts: msg.drafts?.map((d) => (d.id === updated.id ? updated : d)),
+      }))
+    );
   };
 
   // Helper for human time-of-day greeting (e.g. בוקר טוב, צהריים טובים, ערב טוב)
@@ -1376,7 +1395,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                   ? "שאל על שעות, בדוק תיעודי עובדים, בקש ריכוז שבועי או הזן דיווח..."
                   : "הזן דיווח טכני מפורט או הקלט הודעה קולית..."
               }
-              className="flex-1 bg-transparent text-slate-800 placeholder-slate-400 text-sm sm:text-[15px] leading-6 focus:outline-none py-1.5 px-2 resize-none overflow-y-auto max-h-40 min-h-[26px]"
+              className="flex-1 bg-transparent text-slate-800 placeholder-slate-400 text-sm sm:text-[15px] leading-relaxed focus:outline-none py-1.5 px-2 resize-none overflow-y-auto max-h-40 min-h-[28px] box-border"
             />
 
             {/* Actions Group (Microphone & Send) - Pinned cleanly at bottom */}

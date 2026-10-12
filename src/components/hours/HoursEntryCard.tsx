@@ -42,11 +42,81 @@ interface HoursEntryCardProps {
     upn?: string;
     isAdmin?: boolean;
   };
-  onConfirm?: (cardId: string) => void;
+  onConfirm?: (cardId: string, directDraft?: HoursAssistantEntryDraft) => void;
   onUndo?: (cardId: string, entry?: WrittenEntryResult) => void;
   onUpdateDraft?: (updated: HoursAssistantEntryDraft) => void;
   isConfirming?: boolean;
   isUndoing?: boolean;
+}
+
+// Helper to compute exact 24h times and duration
+export function computeTimesAndDuration(
+  startTimeStr?: string,
+  endTimeStr?: string,
+  fallbackDurationMinutes: number = 30
+): {
+  startTime: string;
+  endTime: string;
+  durationMinutes: number;
+  durationHours: number;
+  durationFormatted: string;
+} {
+  const cleanStart = String(startTimeStr || "").trim();
+  const cleanEnd = String(endTimeStr || "").trim();
+
+  let sMins = -1;
+  let eMins = -1;
+
+  const mStart = cleanStart.match(/^(\d{1,2}):(\d{2})/);
+  if (mStart) {
+    sMins = parseInt(mStart[1], 10) * 60 + parseInt(mStart[2], 10);
+  }
+
+  const mEnd = cleanEnd.match(/^(\d{1,2}):(\d{2})/);
+  if (mEnd) {
+    eMins = parseInt(mEnd[1], 10) * 60 + parseInt(mEnd[2], 10);
+  }
+
+  let finalStart = cleanStart;
+  let finalEnd = cleanEnd;
+  let finalDiff = fallbackDurationMinutes || 30;
+
+  if (sMins >= 0 && eMins >= 0) {
+    let diff = eMins - sMins;
+    if (diff <= 0) diff += 24 * 60; // crossed midnight or overnight
+    finalDiff = Math.max(15, diff);
+  } else if (sMins >= 0 && eMins < 0) {
+    const endTotal = (sMins + finalDiff) % (24 * 60);
+    const eh = Math.floor(endTotal / 60);
+    const em = endTotal % 60;
+    finalEnd = `${String(eh).padStart(2, "0")}:${String(em).padStart(2, "0")}`;
+  } else if (eMins >= 0 && sMins < 0) {
+    let startTotal = eMins - finalDiff;
+    if (startTotal < 0) startTotal += 24 * 60;
+    const sh = Math.floor(startTotal / 60);
+    const sm = startTotal % 60;
+    finalStart = `${String(sh).padStart(2, "0")}:${String(sm).padStart(2, "0")}`;
+  }
+
+  const durationHours = +(finalDiff / 60).toFixed(2);
+  const dh = Math.floor(finalDiff / 60);
+  const dm = finalDiff % 60;
+  let durationFormatted = "";
+  if (dh > 0 && dm > 0) {
+    durationFormatted = `${dh}:${String(dm).padStart(2, "0")} שעות`;
+  } else if (dh > 0) {
+    durationFormatted = `${dh} ${dh === 1 ? "שעה" : "שעות"}`;
+  } else {
+    durationFormatted = `${dm} דקות`;
+  }
+
+  return {
+    startTime: finalStart,
+    endTime: finalEnd,
+    durationMinutes: finalDiff,
+    durationHours,
+    durationFormatted,
+  };
 }
 
 export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
@@ -179,20 +249,41 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   // Handle saving manual edits
   const handleSaveEdit = () => {
     if (!draft || !onUpdateDraft) return;
+
+    const timeCalcs = computeTimesAndDuration(
+      editStartTime.trim() || draft.startTime || "",
+      editEndTime.trim() || draft.endTime || "",
+      draft.durationMinutes || 30
+    );
+
     const updated: HoursAssistantEntryDraft = {
       ...draft,
       customerName: editCustomer.trim(),
       date: editDate.trim(),
-      durationFormatted: editDuration.trim(),
-      startTime: editStartTime.trim() || draft.startTime,
-      endTime: editEndTime.trim() || draft.endTime,
+      startTime: timeCalcs.startTime,
+      endTime: timeCalcs.endTime,
+      durationMinutes: timeCalcs.durationMinutes,
+      durationHours: timeCalcs.durationHours,
+      durationFormatted: editDuration.trim() || timeCalcs.durationFormatted,
       isTimeSuggested: false,
       workType: editActivityType,
       activityType: editActivityType,
       targetTabName: editWorkType,
       description: editDescription.trim(),
+      mappedRow: {
+        ...(draft.mappedRow || {}),
+        "שעת התחלה": timeCalcs.startTime,
+        "שעת סיום": timeCalcs.endTime,
+        משך: timeCalcs.durationHours,
+        שעות: timeCalcs.durationHours,
+        "סה״כ שעות": timeCalcs.durationHours,
+        "סה\"כ שעות": timeCalcs.durationHours,
+        תאריך: editDate.trim(),
+        לקוח: editCustomer.trim(),
+        תיאור: editDescription.trim(),
+      },
       isReadyForConfirmation: Boolean(
-        editCustomer.trim() && editDate.trim() && editDuration.trim() && editDescription.trim()
+        editCustomer.trim() && editDate.trim() && editDescription.trim()
       ),
     };
     onUpdateDraft(updated);
@@ -496,15 +587,23 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-[11px] text-slate-600 font-medium mb-1">שעת התחלה:</label>
+              <label className="block text-[11px] text-slate-600 font-medium mb-1">שעת התחלה (24 שעות):</label>
               <input
                 type="time"
+                lang="en-GB"
+                step="60"
                 value={editStartTime}
                 onChange={(e) => {
                   const val = e.target.value;
                   setEditStartTime(val);
-                  if (val && draft?.durationMinutes) {
-                    setEditEndTime(calcEndTimeFromDuration(val, draft.durationMinutes));
+                  if (val) {
+                    const timeCalcs = computeTimesAndDuration(
+                      val,
+                      editEndTime,
+                      draft?.durationMinutes || 30
+                    );
+                    setEditEndTime(timeCalcs.endTime);
+                    setEditDuration(timeCalcs.durationFormatted);
                   }
                 }}
                 className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-mono text-slate-800 focus:outline-none focus:border-blue-500 shadow-xs"
@@ -512,11 +611,24 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
               />
             </div>
             <div>
-              <label className="block text-[11px] text-slate-600 font-medium mb-1">שעת סיום:</label>
+              <label className="block text-[11px] text-slate-600 font-medium mb-1">שעת סיום (24 שעות):</label>
               <input
                 type="time"
+                lang="en-GB"
+                step="60"
                 value={editEndTime}
-                onChange={(e) => setEditEndTime(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setEditEndTime(val);
+                  if (val && editStartTime) {
+                    const timeCalcs = computeTimesAndDuration(
+                      editStartTime,
+                      val,
+                      draft?.durationMinutes || 30
+                    );
+                    setEditDuration(timeCalcs.durationFormatted);
+                  }
+                }}
                 className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-mono text-slate-800 focus:outline-none focus:border-blue-500 shadow-xs"
                 dir="ltr"
               />
@@ -797,18 +909,29 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                         const newEnd = draft.startTime
                           ? calcEndTimeFromDuration(draft.startTime, d.mins)
                           : draft.endTime;
+                        const durationLbl = d.h === 1 ? "1 שעה" : `${d.h} שעות`;
                         onUpdateDraft({
                           ...draft,
                           durationMinutes: d.mins,
                           durationHours: d.h,
-                          durationFormatted: `${d.mins} דקות (${d.h} ${d.h === 1 ? "שעה" : "שעות"})`,
+                          durationFormatted: durationLbl,
                           endTime: newEnd,
+                          isTimeSuggested: false,
+                          mappedRow: {
+                            ...(draft.mappedRow || {}),
+                            "שעת התחלה": draft.startTime,
+                            "שעת סיום": newEnd,
+                            משך: d.h,
+                            שעות: d.h,
+                            "סה״כ שעות": d.h,
+                            "סה\"כ שעות": d.h,
+                          },
                         });
                       }
                     }}
                     className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border transition-all cursor-pointer ${
                       draft.durationMinutes === d.mins
-                        ? "bg-blue-600 text-white border-blue-600"
+                        ? "bg-blue-600 text-white border-blue-600 font-bold"
                         : "bg-white text-slate-600 border-slate-200 hover:bg-blue-50 hover:text-blue-600"
                     }`}
                   >
@@ -818,12 +941,12 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
               </div>
             </div>
 
-            {/* Item 1: SUGGESTED START/END TIMES (editable, marked 'משוער') */}
+            {/* Item 1: 24-HOUR START/END TIMES (Modern, clean, editable, with Firefox 24h support) */}
             <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 shadow-xs col-span-2">
               <div className="flex items-center justify-between gap-1 mb-1.5">
                 <span className="text-slate-600 text-[11px] font-semibold flex items-center gap-1.5">
                   <Clock className="w-3.5 h-3.5 text-blue-500" />
-                  שעות פעילות:
+                  שעות פעילות (24 שעות):
                 </span>
                 {draft.isTimeSuggested && (
                   <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 shadow-2xs flex items-center gap-0.5">
@@ -833,29 +956,46 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                 )}
               </div>
 
-              {/* Editable Start/End Time Inputs (tap to edit) */}
+              {/* Editable Start/End Time Inputs (24h native format across Chrome & Firefox) */}
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-white p-1.5 rounded-lg border border-slate-200 flex items-center justify-between gap-1 shadow-2xs">
                   <span className="text-[10px] text-slate-500 font-medium">התחלה:</span>
                   <input
                     type="time"
+                    lang="en-GB"
+                    step="60"
                     value={draft.startTime || ""}
                     onChange={(e) => {
                       const newStart = e.target.value;
-                      const durationM = draft.durationMinutes || 30;
-                      const newEnd = newStart ? calcEndTimeFromDuration(newStart, durationM) : draft.endTime;
+                      const timeCalcs = computeTimesAndDuration(
+                        newStart,
+                        draft.endTime || "",
+                        draft.durationMinutes || 30
+                      );
                       if (onUpdateDraft) {
                         onUpdateDraft({
                           ...draft,
                           startTime: newStart,
-                          endTime: newEnd,
+                          endTime: timeCalcs.endTime,
+                          durationMinutes: timeCalcs.durationMinutes,
+                          durationHours: timeCalcs.durationHours,
+                          durationFormatted: timeCalcs.durationFormatted,
                           isTimeSuggested: false,
+                          mappedRow: {
+                            ...(draft.mappedRow || {}),
+                            "שעת התחלה": newStart,
+                            "שעת סיום": timeCalcs.endTime,
+                            משך: timeCalcs.durationHours,
+                            שעות: timeCalcs.durationHours,
+                            "סה״כ שעות": timeCalcs.durationHours,
+                            "סה\"כ שעות": timeCalcs.durationHours,
+                          },
                         });
                       }
                     }}
                     className="text-xs font-mono font-bold text-slate-800 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 rounded px-1 cursor-pointer"
                     dir="ltr"
-                    title="הקש לשינוי שעת התחלה"
+                    title="הקש לשינוי שעת התחלה (שעון 24 שעות)"
                   />
                 </div>
 
@@ -863,20 +1003,40 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                   <span className="text-[10px] text-slate-500 font-medium">סיום:</span>
                   <input
                     type="time"
+                    lang="en-GB"
+                    step="60"
                     value={draft.endTime || ""}
                     onChange={(e) => {
                       const newEnd = e.target.value;
+                      const timeCalcs = computeTimesAndDuration(
+                        draft.startTime || "",
+                        newEnd,
+                        draft.durationMinutes || 30
+                      );
                       if (onUpdateDraft) {
                         onUpdateDraft({
                           ...draft,
+                          startTime: timeCalcs.startTime,
                           endTime: newEnd,
+                          durationMinutes: timeCalcs.durationMinutes,
+                          durationHours: timeCalcs.durationHours,
+                          durationFormatted: timeCalcs.durationFormatted,
                           isTimeSuggested: false,
+                          mappedRow: {
+                            ...(draft.mappedRow || {}),
+                            "שעת התחלה": timeCalcs.startTime,
+                            "שעת סיום": newEnd,
+                            משך: timeCalcs.durationHours,
+                            שעות: timeCalcs.durationHours,
+                            "סה״כ שעות": timeCalcs.durationHours,
+                            "סה\"כ שעות": timeCalcs.durationHours,
+                          },
                         });
                       }
                     }}
                     className="text-xs font-mono font-bold text-slate-800 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 rounded px-1 cursor-pointer"
                     dir="ltr"
-                    title="הקש לשינוי שעת סיום"
+                    title="הקש לשינוי שעת סיום (שעון 24 שעות)"
                   />
                 </div>
               </div>
@@ -1034,7 +1194,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
               }
               return;
             }
-            if (onConfirm) onConfirm(draft.id);
+            if (onConfirm) onConfirm(draft.id, draft);
           }}
           disabled={isConfirming || !draft.isReadyForConfirmation}
           className="btn-primary-subtle w-full sm:flex-1 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm shadow-blue-500/20 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"

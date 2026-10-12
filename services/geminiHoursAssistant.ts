@@ -133,6 +133,23 @@ export function buildEnrichedRowPayload(params: {
     calculatedEndTime = calculateEndTime(calculatedStartTime, minutes || 30);
   }
 
+  let effectiveHours = hours;
+  let effectiveMinutes = minutes;
+
+  // If both start and end time are known, ensure hours & minutes reflect the exact difference
+  if (calculatedStartTime && calculatedEndTime) {
+    const mS = calculatedStartTime.match(/^(\d{1,2}):(\d{2})/);
+    const mE = calculatedEndTime.match(/^(\d{1,2}):(\d{2})/);
+    if (mS && mE) {
+      let diff = (parseInt(mE[1], 10) * 60 + parseInt(mE[2], 10)) - (parseInt(mS[1], 10) * 60 + parseInt(mS[2], 10));
+      if (diff <= 0) diff += 24 * 60;
+      if (diff > 0 && (!effectiveHours || effectiveHours <= 0 || effectiveHours === 1)) {
+        effectiveHours = +(diff / 60).toFixed(2);
+        effectiveMinutes = diff;
+      }
+    }
+  }
+
   const hebrewDayShort = getHebrewDay(date, "short") || "א'";
   const hebrewDayFull = getHebrewDay(date, "full") || "ראשון";
 
@@ -203,22 +220,22 @@ export function buildEnrichedRowPayload(params: {
     endTime: calculatedEndTime,
     end: calculatedEndTime,
 
-    משך: hours,
-    שעות: hours,
-    "סה״כ שעות": hours,
-    "סה\"כ שעות": hours,
-    "סהכ שעות": hours,
-    "סה״כ": hours,
-    "סה\"כ": hours,
-    "משך זמן": hours,
-    "משך שעות": hours,
-    "כמות שעות": hours,
-    כמות: hours,
-    זמן: hours,
-    hours: hours,
-    duration: hours,
-    durationHours: hours,
-    durationMinutes: minutes,
+    משך: effectiveHours,
+    שעות: effectiveHours,
+    "סה״כ שעות": effectiveHours,
+    "סה\"כ שעות": effectiveHours,
+    "סהכ שעות": effectiveHours,
+    "סה״כ": effectiveHours,
+    "סה\"כ": effectiveHours,
+    "משך זמן": effectiveHours,
+    "משך שעות": effectiveHours,
+    "כמות שעות": effectiveHours,
+    כמות: effectiveHours,
+    זמן: effectiveHours,
+    hours: effectiveHours,
+    duration: effectiveHours,
+    durationHours: effectiveHours,
+    durationMinutes: effectiveMinutes,
 
     תיאור: prefixedDesc,
     "תיאור פעילות": prefixedDesc,
@@ -294,6 +311,70 @@ export function buildEnrichedRowPayload(params: {
 
   // Merge user overrides if any
   Object.assign(result, userOverride);
+
+  // CRITICAL: Explicit parameters passed to buildEnrichedRowPayload represent current edited / intended values
+  // and MUST ALWAYS take absolute precedence over stale keys inside userOverride/mappedRow!
+  if (calculatedStartTime) {
+    result["שעת התחלה"] = calculatedStartTime;
+    result["שעה התחלה"] = calculatedStartTime;
+    result["התחלה"] = calculatedStartTime;
+    result["משעה"] = calculatedStartTime;
+    result["שעת הגעה"] = calculatedStartTime;
+    result["הגעה"] = calculatedStartTime;
+    result["startTime"] = calculatedStartTime;
+    result["start"] = calculatedStartTime;
+  }
+  if (calculatedEndTime) {
+    result["שעת סיום"] = calculatedEndTime;
+    result["שעה סיום"] = calculatedEndTime;
+    result["סיום"] = calculatedEndTime;
+    result["עד שעה"] = calculatedEndTime;
+    result["שעת עזיבה"] = calculatedEndTime;
+    result["עזיבה"] = calculatedEndTime;
+    result["endTime"] = calculatedEndTime;
+    result["end"] = calculatedEndTime;
+  }
+  if (typeof effectiveHours === "number" && effectiveHours > 0) {
+    result["משך"] = effectiveHours;
+    result["שעות"] = effectiveHours;
+    result["סה״כ שעות"] = effectiveHours;
+    result["סה\"כ שעות"] = effectiveHours;
+    result["סהכ שעות"] = effectiveHours;
+    result["סה״כ"] = effectiveHours;
+    result["סה\"כ"] = effectiveHours;
+    result["משך זמן"] = effectiveHours;
+    result["משך שעות"] = effectiveHours;
+    result["כמות שעות"] = effectiveHours;
+    result["hours"] = effectiveHours;
+    result["duration"] = effectiveHours;
+    result["durationHours"] = effectiveHours;
+  }
+  if (typeof effectiveMinutes === "number" && effectiveMinutes > 0) {
+    result["durationMinutes"] = effectiveMinutes;
+  }
+  if (date) {
+    result["תאריך"] = date;
+    result["date"] = date;
+    result["תאריך עבודה"] = date;
+    result["תאריך ביצוע"] = date;
+  }
+  if (customerName) {
+    result["לקוח"] = customerName;
+    result["שם לקוח"] = customerName;
+    result["שם הלקוח"] = customerName;
+    result["customer"] = customerName;
+    result["customerName"] = customerName;
+  }
+  if (workType) {
+    result["סוג"] = workType;
+    result["סוג עבודה"] = workType;
+    result["סוג העבודה"] = workType;
+    result["סוג פעילות"] = workType;
+    result["סוג קריאה"] = workType;
+    result["סוג שירות"] = workType;
+    result["workType"] = workType;
+    result["activityType"] = workType;
+  }
 
   // Guarantee that description fields always retain author prefix (e.g. "גיא כתב: " / "ודים כתב: ")
   const finalDesc = prefixDescriptionWithAuthor(
@@ -673,8 +754,12 @@ export async function processAssistantChat(
 
   // 2. Direct Action: Confirm specific entry via UI button "אשר והזן"
   if (action === "confirm_entry" && cardId) {
-    const targetDraft = activeDrafts.find((d) => d.id === cardId);
-    if (!targetDraft) {
+    const rawTarget =
+      (params.draftData && (params.draftData.id === cardId || !activeDrafts.length))
+        ? params.draftData
+        : (activeDrafts.find((d) => d.id === cardId) || params.draftData);
+
+    if (!rawTarget) {
       return {
         reply: "לא נמצאה טיוטה להזנה.",
         drafts: activeDrafts,
@@ -682,6 +767,32 @@ export async function processAssistantChat(
         undoneCardIds: [],
         isConfirmed: false,
       };
+    }
+
+    const targetDraft: HoursAssistantEntryDraft = {
+      ...(activeDrafts.find((d) => d.id === cardId) || {}),
+      ...rawTarget,
+    };
+
+    // Calculate / synchronize exact duration from start and end times if both exist
+    if (targetDraft.startTime && targetDraft.endTime) {
+      const matchStart = targetDraft.startTime.match(/^(\d{1,2}):(\d{2})/);
+      const matchEnd = targetDraft.endTime.match(/^(\d{1,2}):(\d{2})/);
+      if (matchStart && matchEnd) {
+        const sMins = parseInt(matchStart[1], 10) * 60 + parseInt(matchStart[2], 10);
+        let eMins = parseInt(matchEnd[1], 10) * 60 + parseInt(matchEnd[2], 10);
+        if (eMins < sMins) eMins += 24 * 60;
+        const diffM = Math.max(15, eMins - sMins);
+        targetDraft.durationMinutes = diffM;
+        targetDraft.durationHours = +(diffM / 60).toFixed(2);
+        const dh = Math.floor(diffM / 60);
+        const dm = diffM % 60;
+        targetDraft.durationFormatted = `${dh}:${String(dm).padStart(2, "0")}`;
+      }
+    } else if (targetDraft.startTime && (!targetDraft.endTime || targetDraft.isTimeSuggested)) {
+      if (targetDraft.durationMinutes) {
+        targetDraft.endTime = calculateEndTime(targetDraft.startTime, targetDraft.durationMinutes);
+      }
     }
 
     if (!targetDraft.fileId) {
@@ -712,6 +823,95 @@ export async function processAssistantChat(
 
     const effectiveExcelTab = targetDraft.targetTabName || (targetDraft.availableTabs?.[0]?.name) || "שעות";
 
+    const userOverrideValues: Record<string, any> = {
+      ...(targetDraft.mappedRow || {}),
+      "סוג פעילות": semanticActivityType,
+      "סוג הפעילות": semanticActivityType,
+      activityType: semanticActivityType,
+      משתמש: user.name,
+      "שם משתמש": user.name,
+      "שם המשתמש": user.name,
+      עובד: user.name,
+      "שם עובד": user.name,
+      מטפל: user.name,
+      user: user.name,
+      username: user.username || user.email || "g@tech-select.co.il",
+      userEmail: user.email || "g@tech-select.co.il",
+      employeeEmail: user.email || "g@tech-select.co.il",
+      userId: user.id || user.oid || "",
+      userOid: user.oid || user.id || "",
+      userUpn: user.upn || user.username || user.email || "g@tech-select.co.il",
+    };
+
+    // CRITICAL: Overwrite stale mappedRow keys with user's explicit / edited values!
+    if (targetDraft.startTime) {
+      userOverrideValues["שעת התחלה"] = targetDraft.startTime;
+      userOverrideValues["שעה התחלה"] = targetDraft.startTime;
+      userOverrideValues["התחלה"] = targetDraft.startTime;
+      userOverrideValues["משעה"] = targetDraft.startTime;
+      userOverrideValues["שעת הגעה"] = targetDraft.startTime;
+      userOverrideValues["הגעה"] = targetDraft.startTime;
+      userOverrideValues["startTime"] = targetDraft.startTime;
+      userOverrideValues["start"] = targetDraft.startTime;
+    }
+    if (targetDraft.endTime) {
+      userOverrideValues["שעת סיום"] = targetDraft.endTime;
+      userOverrideValues["שעה סיום"] = targetDraft.endTime;
+      userOverrideValues["סיום"] = targetDraft.endTime;
+      userOverrideValues["עד שעה"] = targetDraft.endTime;
+      userOverrideValues["שעת עזיבה"] = targetDraft.endTime;
+      userOverrideValues["עזיבה"] = targetDraft.endTime;
+      userOverrideValues["endTime"] = targetDraft.endTime;
+      userOverrideValues["end"] = targetDraft.endTime;
+    }
+    if (typeof targetDraft.durationHours === "number") {
+      userOverrideValues["משך"] = targetDraft.durationHours;
+      userOverrideValues["שעות"] = targetDraft.durationHours;
+      userOverrideValues["סה״כ שעות"] = targetDraft.durationHours;
+      userOverrideValues["סה\"כ שעות"] = targetDraft.durationHours;
+      userOverrideValues["סהכ שעות"] = targetDraft.durationHours;
+      userOverrideValues["סה״כ"] = targetDraft.durationHours;
+      userOverrideValues["סה\"כ"] = targetDraft.durationHours;
+      userOverrideValues["משך זמן"] = targetDraft.durationHours;
+      userOverrideValues["משך שעות"] = targetDraft.durationHours;
+      userOverrideValues["כמות שעות"] = targetDraft.durationHours;
+      userOverrideValues["hours"] = targetDraft.durationHours;
+      userOverrideValues["duration"] = targetDraft.durationHours;
+      userOverrideValues["durationHours"] = targetDraft.durationHours;
+    }
+    if (typeof targetDraft.durationMinutes === "number") {
+      userOverrideValues["durationMinutes"] = targetDraft.durationMinutes;
+    }
+    if (targetDraft.date) {
+      userOverrideValues["תאריך"] = targetDraft.date;
+      userOverrideValues["date"] = targetDraft.date;
+      userOverrideValues["תאריך עבודה"] = targetDraft.date;
+      userOverrideValues["תאריך ביצוע"] = targetDraft.date;
+    }
+    if (targetDraft.customerName) {
+      userOverrideValues["לקוח"] = targetDraft.customerName;
+      userOverrideValues["שם לקוח"] = targetDraft.customerName;
+      userOverrideValues["שם הלקוח"] = targetDraft.customerName;
+      userOverrideValues["customer"] = targetDraft.customerName;
+      userOverrideValues["customerName"] = targetDraft.customerName;
+    }
+    if (targetDraft.description) {
+      userOverrideValues["תיאור"] = targetDraft.description;
+      userOverrideValues["תיאור פעילות"] = targetDraft.description;
+      userOverrideValues["תיאור הפעילות"] = targetDraft.description;
+      userOverrideValues["description"] = targetDraft.description;
+      userOverrideValues["details"] = targetDraft.description;
+    }
+    if (targetDraft.contactPerson) {
+      userOverrideValues["איש קשר"] = targetDraft.contactPerson;
+      userOverrideValues["שם איש קשר"] = targetDraft.contactPerson;
+    }
+    if (targetDraft.ticketNumber) {
+      userOverrideValues["מספר טיקט"] = targetDraft.ticketNumber;
+      userOverrideValues["מספר קריאה"] = targetDraft.ticketNumber;
+      userOverrideValues["טיקט"] = targetDraft.ticketNumber;
+    }
+
     const rowPayload = buildEnrichedRowPayload({
       date: targetDraft.date,
       userName: user.name,
@@ -729,25 +929,7 @@ export async function processAssistantChat(
       contactPerson: targetDraft.contactPerson,
       ticketNumber: targetDraft.ticketNumber,
       customerName: targetDraft.customerName,
-      userOverride: {
-        ...(targetDraft.mappedRow || {}),
-        "סוג פעילות": semanticActivityType,
-        "סוג הפעילות": semanticActivityType,
-        activityType: semanticActivityType,
-        משתמש: user.name,
-        "שם משתמש": user.name,
-        "שם המשתמש": user.name,
-        עובד: user.name,
-        "שם עובד": user.name,
-        מטפל: user.name,
-        user: user.name,
-        username: user.username || user.email || "g@tech-select.co.il",
-        userEmail: user.email || "g@tech-select.co.il",
-        employeeEmail: user.email || "g@tech-select.co.il",
-        userId: user.id || user.oid || "",
-        userOid: user.oid || user.id || "",
-        userUpn: user.upn || user.username || user.email || "g@tech-select.co.il",
-      },
+      userOverride: userOverrideValues,
     });
 
     const writeRes = await writeRows(targetDraft.fileId, [rowPayload], user, activeEnv, targetDraft.driveId, effectiveExcelTab);
