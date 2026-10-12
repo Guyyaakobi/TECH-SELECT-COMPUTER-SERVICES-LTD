@@ -24,6 +24,7 @@ import {
   FolderOpen,
   User,
   Users,
+  Plus,
 } from "lucide-react";
 import {
   HoursAssistantEntryDraft,
@@ -49,6 +50,23 @@ interface HoursEntryCardProps {
   isConfirming?: boolean;
   isUndoing?: boolean;
 }
+
+const PRESET_TEAM_MEMBERS = [
+  "גיא יעקובי",
+  "ודים",
+  "ניב בורו",
+  "תבור כהן",
+  "רועי",
+  "אירית יעקובי",
+  "יוסי",
+  "עומר",
+  "אולג",
+  "אריאל",
+  "ולד",
+  "אמיר",
+  "שי",
+  "אירנה",
+];
 
 // Helper to compute exact 24h times and duration
 export function computeTimesAndDuration(
@@ -142,10 +160,13 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   const [editActivityType, setEditActivityType] = useState<string>(
     draft?.activityType || (draft?.workType && !["שעות", "Sheet1"].includes(draft.workType) ? draft.workType : "טיקטים")
   );
-  const [editDescription, setEditDescription] = useState(draft?.description || "");
-  const [editAdditionalEmployees, setEditAdditionalEmployees] = useState(
-    (draft?.additionalEmployees || []).join(", ")
+  const defaultEmployee = currentUser?.name || "עובד";
+  const [editEmployees, setEditEmployees] = useState<string[]>(
+    draft?.assignedEmployees && draft.assignedEmployees.length > 0
+      ? draft.assignedEmployees
+      : [defaultEmployee]
   );
+  const [customEmployeeInput, setCustomEmployeeInput] = useState("");
 
   // Sync state when draft updates from assistant (e.g. voice corrections)
   useEffect(() => {
@@ -161,7 +182,11 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       (draft.workType && !["שעות", "Sheet1"].includes(draft.workType) ? draft.workType : "טיקטים");
     setEditActivityType(initialActivityType);
     setEditDescription(draft.description || "");
-    setEditAdditionalEmployees((draft.additionalEmployees || []).join(", "));
+    if (draft.assignedEmployees && draft.assignedEmployees.length > 0) {
+      setEditEmployees(draft.assignedEmployees);
+    } else {
+      setEditEmployees([currentUser?.name || "עובד"]);
+    }
   }, [
     draft?.customerName,
     draft?.date,
@@ -172,7 +197,8 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
     draft?.activityType,
     draft?.targetTabName,
     draft?.description,
-    draft?.additionalEmployees,
+    draft?.assignedEmployees,
+    currentUser?.name,
   ]);
 
   // Quick helper to calculate end time from start time and minutes
@@ -262,13 +288,8 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       draft.durationMinutes || 30
     );
 
-    const parsedAdditional = editAdditionalEmployees
-      .split(/[,+]/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    const primaryName = currentUser?.name || "גיא יעקובי";
-    const teamMembersList = [primaryName, ...parsedAdditional];
+    const finalEmployees =
+      editEmployees.length > 0 ? editEmployees : [currentUser?.name || "עובד"];
 
     const updated: HoursAssistantEntryDraft = {
       ...draft,
@@ -284,8 +305,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       activityType: editActivityType,
       targetTabName: editWorkType,
       description: editDescription.trim(),
-      additionalEmployees: parsedAdditional,
-      teamMembers: teamMembersList,
+      assignedEmployees: finalEmployees,
       mappedRow: {
         ...(draft.mappedRow || {}),
         "שעת התחלה": timeCalcs.startTime,
@@ -297,9 +317,9 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
         תאריך: editDate.trim(),
         לקוח: editCustomer.trim(),
         תיאור: editDescription.trim(),
-        additionalEmployees: parsedAdditional,
-        teamMembers: teamMembersList,
-        "עובדים נוספים": parsedAdditional.join(", "),
+        עובד: finalEmployees[0],
+        "שם עובד": finalEmployees[0],
+        employeeName: finalEmployees[0],
       },
       isReadyForConfirmation: Boolean(
         editCustomer.trim() && editDate.trim() && editDescription.trim()
@@ -514,6 +534,11 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
     ? draft.description
     : `${draft?.customerName || "לקוח"} - ${draft?.durationFormatted || "שעות"}`;
 
+  const assignedList =
+    Array.isArray(draft?.assignedEmployees) && draft.assignedEmployees.length > 0
+      ? draft.assignedEmployees
+      : [currentUser?.name || "עובד"];
+
   return (
     <div className="relative overflow-hidden rounded-2xl bg-white border border-slate-200/90 p-4 sm:p-5 shadow-sm text-right my-2 text-slate-800">
       {/* Top Banner: כותרת, סוג ולקוח */}
@@ -530,12 +555,29 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border shadow-2xs ${draftWorkTypeBadge.bg}`}>
                 {draftWorkTypeBadge.label}
               </span>
+              {assignedList.length > 1 && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 shadow-2xs flex items-center gap-1">
+                  <Users className="w-3 h-3 text-purple-600" />
+                  <span>צוות: {assignedList.length} עובדים (ייפתחו {assignedList.length} שורות)</span>
+                </span>
+              )}
             </div>
-            <span className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+            <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-1 mt-0.5">
               <span>לקוח: <strong>{draft.customerName}</strong></span>
               <span>•</span>
-              <span className="text-blue-600">משתמש: {draftHandlerDisplay}</span>
-            </span>
+              <span className="text-blue-700 font-semibold flex items-center gap-1">
+                <Users className="w-3 h-3 text-blue-600 inline" />
+                <span>עובדים בדיווח:</span>
+                {assignedList.map((emp, i) => (
+                  <span
+                    key={emp}
+                    className="inline-block bg-blue-50 text-blue-800 px-1.5 py-0.2 rounded border border-blue-200 font-bold"
+                  >
+                    {emp}
+                  </span>
+                ))}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -738,18 +780,113 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             )}
           </div>
 
-          <div>
-            <label className="block text-[11px] text-slate-700 font-bold mb-1 flex items-center gap-1">
-              <Users className="w-3.5 h-3.5 text-indigo-600" />
-              עובדים נוספים בצוות (אם ביצעתם יחד):
-            </label>
-            <input
-              type="text"
-              value={editAdditionalEmployees}
-              onChange={(e) => setEditAdditionalEmployees(e.target.value)}
-              className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-500 shadow-xs mb-2"
-              placeholder="שמות עובדים נוספים (מופרדים בפסיקים, למשל: אולג, ודים)"
-            />
+          {/* Field: מי עבד על המשימה (ריבוי עובדים פותח שורה לכל עובד ב-Excel וב-Lists) */}
+          <div className="p-3 rounded-xl bg-blue-50/60 border border-blue-200/80">
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-[11px] text-blue-950 font-bold flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-blue-600" />
+                מי עבד על הדיווח? ({editEmployees.length} עובדים)
+              </label>
+              {editEmployees.length > 1 && (
+                <span className="text-[10px] bg-blue-600 text-white font-bold px-2 py-0.5 rounded-full shadow-2xs">
+                  ייפתחו {editEmployees.length} שורות נפרדות
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-slate-500 mb-2 leading-relaxed">
+              אם כמה עבדו יחד ואחד תיעד - סמן את כל מי שהשתתף. המערכת תפתח שורה נפרדת לכל עובד עם אותו התיאור בדיוק גם ב-Excel וגם ב-Lists.
+            </p>
+
+            {/* Currently selected employees tags */}
+            <div className="flex flex-wrap gap-1.5 mb-2.5">
+              {editEmployees.map((emp) => (
+                <span
+                  key={emp}
+                  className="inline-flex items-center gap-1 bg-white border border-blue-300 text-blue-900 text-xs font-bold px-2 py-1 rounded-lg shadow-2xs"
+                >
+                  <User className="w-3 h-3 text-blue-600" />
+                  <span>{emp}</span>
+                  {editEmployees.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setEditEmployees((prev) => prev.filter((e) => e !== emp))}
+                      className="text-slate-400 hover:text-red-600 cursor-pointer p-0.5 rounded"
+                      title="הסר עובד"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
+
+            {/* Quick toggle chips from known team */}
+            <div className="flex flex-wrap gap-1 mb-2">
+              {PRESET_TEAM_MEMBERS.map((memberName) => {
+                const isSelected = editEmployees.includes(memberName);
+                return (
+                  <button
+                    key={memberName}
+                    type="button"
+                    onClick={() => {
+                      setEditEmployees((prev) => {
+                        if (prev.includes(memberName)) {
+                          if (prev.length === 1) return prev; // Keep at least one
+                          return prev.filter((e) => e !== memberName);
+                        } else {
+                          return [...prev, memberName];
+                        }
+                      });
+                    }}
+                    className={`text-[11px] px-2 py-1 rounded-lg border transition-colors cursor-pointer flex items-center gap-1 ${
+                      isSelected
+                        ? "bg-blue-600 text-white border-blue-600 font-bold shadow-2xs"
+                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {isSelected ? <Check className="w-3 h-3 text-white" /> : <Plus className="w-3 h-3 text-slate-400" />}
+                    <span>{memberName}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Custom employee name input */}
+            <div className="flex items-center gap-1.5">
+              <input
+                type="text"
+                value={customEmployeeInput}
+                onChange={(e) => setCustomEmployeeInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && customEmployeeInput.trim()) {
+                    e.preventDefault();
+                    const trimmed = customEmployeeInput.trim();
+                    if (!editEmployees.includes(trimmed)) {
+                      setEditEmployees((prev) => [...prev, trimmed]);
+                    }
+                    setCustomEmployeeInput("");
+                  }
+                }}
+                placeholder="הוסף שם עובד נוסף (לדוגמה: יונתן)..."
+                className="flex-1 bg-white border border-slate-200 text-xs px-2.5 py-1.5 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-2xs"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (customEmployeeInput.trim()) {
+                    const trimmed = customEmployeeInput.trim();
+                    if (!editEmployees.includes(trimmed)) {
+                      setEditEmployees((prev) => [...prev, trimmed]);
+                    }
+                    setCustomEmployeeInput("");
+                  }
+                }}
+                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1 cursor-pointer shadow-2xs"
+              >
+                <Plus className="w-3 h-3" />
+                <span>הוסף</span>
+              </button>
+            </div>
           </div>
 
           <div>
@@ -1108,19 +1245,6 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             </div>
           </div>
 
-          {/* Additional Employees / Team Badge */}
-          {draft.additionalEmployees && draft.additionalEmployees.length > 0 && (
-            <div className="p-2.5 rounded-xl bg-indigo-50/90 border border-indigo-200/90 text-xs text-indigo-900 mb-3 shadow-2xs flex items-center gap-2">
-              <Users className="w-4 h-4 text-indigo-600 flex-shrink-0" />
-              <div>
-                <span className="text-[10px] text-indigo-700 font-bold block">עבודה משותפת בצוות:</span>
-                <span className="font-bold text-indigo-950">
-                  {currentUser?.name || "גיא"} (יחד עם {draft.additionalEmployees.join(", ")})
-                </span>
-              </div>
-            </div>
-          )}
-
           {/* Description */}
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-800 leading-relaxed mb-3 shadow-xs">
             <span className="text-[10px] text-slate-600 font-bold block mb-1">
@@ -1246,7 +1370,15 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
           className="btn-primary-subtle w-full sm:flex-1 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm shadow-blue-500/20 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
         >
           <CheckCircle2 className={`w-4 h-4 ${isConfirming ? "animate-spin" : ""}`} />
-          <span>{isConfirming ? "מזין שורה לקובץ..." : "אשר והזן"}</span>
+          <span>
+            {isConfirming
+              ? assignedList.length > 1
+                ? `מזין ${assignedList.length} שורות לקובץ ול-Lists...`
+                : "מזין שורה לקובץ..."
+              : assignedList.length > 1
+              ? `אשר והזן ${assignedList.length} שורות (עבור כל העובדים)`
+              : "אשר והזן"}
+          </span>
         </button>
 
         <button

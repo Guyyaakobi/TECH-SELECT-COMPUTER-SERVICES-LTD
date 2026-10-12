@@ -4989,7 +4989,7 @@ ${!isAteraCustomer ? `
           email: rawEmail,
         };
         const requestEnv = { ...process.env, userToken: (req as any).rawToken };
-        const { customerName, durationHours, description, workType, ticketNumber, startTime, endTime, additionalEmployees, teamMembers } = req.body || {};
+        const { customerName, durationHours, description, workType, ticketNumber, startTime, endTime } = req.body || {};
         const testResult = await writeEntryToSharePointList(
           {
             customerName: customerName || "בדיקת מערכת טק-סלקט",
@@ -4998,8 +4998,6 @@ ${!isAteraCustomer ? `
             description: description || "בדיקת אינטגרציה וסנכרון מול Microsoft Lists",
             employeeName: user.name,
             employeeEmail: user.email,
-            additionalEmployees: additionalEmployees,
-            teamMembers: teamMembers,
             workType: workType || "טיקטים",
             ticketNumber: ticketNumber || undefined,
             startTime: startTime || undefined,

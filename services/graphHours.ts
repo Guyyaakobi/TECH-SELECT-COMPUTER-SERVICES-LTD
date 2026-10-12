@@ -172,6 +172,7 @@ export interface WriteRowsResult {
   writtenAt: number;
   writtenValues: any[][];
   listItemId?: string;
+  listItemIds?: string[];
   listItemWebUrl?: string;
   listsSyncResult?: { success: boolean; error?: string };
 }
@@ -516,6 +517,7 @@ import {
   deleteSharePointListItem,
   fetchSharePointListEntries,
   resolveEffectiveName,
+  resolveEmployeeEmail,
 } from "./sharepointLists";
 import {
   expandBilingualCustomerQueries,
@@ -3501,50 +3503,25 @@ export function resolveCellValueForHeader(
 
   // C. EMPLOYEE / TECHNICIAN (עובד / טכנאי / משתמש)
   if (isEmployeeHeader(normHeader)) {
-    const primaryName =
-      userContext?.name ||
+    return (
+      rowObj.employeeName ||
+      rowObj["עובד"] ||
+      rowObj["שם עובד"] ||
       rowObj.userName ||
       rowObj.employee ||
-      rowObj.employeeName ||
-      rowObj["משתמש"] ||
-      rowObj["שם משתמש"] ||
-      rowObj["עובד"] ||
       rowObj["טכנאי"] ||
-      rowObj["שם עובד"] ||
       rowObj["שם טכנאי"] ||
       rowObj["שם הטכנאי"] ||
       rowObj["מבצע"] ||
       rowObj["מטפל"] ||
+      rowObj["משתמש"] ||
+      rowObj["שם משתמש"] ||
       rowObj["employee"] ||
       rowObj["technician"] ||
+      userContext?.name ||
       userContext?.email ||
-      "עובד מערכת";
-
-    const addList: string[] = Array.isArray(rowObj.additionalEmployees)
-      ? rowObj.additionalEmployees
-      : typeof rowObj.additionalEmployees === "string" && rowObj.additionalEmployees.trim()
-      ? [rowObj.additionalEmployees.trim()]
-      : Array.isArray(rowObj.teamMembers)
-      ? rowObj.teamMembers.filter((m: string) => m.toLowerCase() !== String(primaryName).toLowerCase())
-      : [];
-
-    if (addList.length > 0 && !normHeader.includes("נוסף")) {
-      return `${primaryName} (יחד עם ${addList.join(", ")})`;
-    }
-    return primaryName;
-  }
-
-  // C2. ADDITIONAL EMPLOYEES / TEAM MEMBERS (עובדים נוספים / צוות)
-  if (normHeader.includes("נוסף") || normHeader.includes("צוות") || normHeader.includes("משתתפ")) {
-    if (Array.isArray(rowObj.additionalEmployees) && rowObj.additionalEmployees.length > 0) {
-      return rowObj.additionalEmployees.join(", ");
-    }
-    if (typeof rowObj.additionalEmployees === "string" && rowObj.additionalEmployees.trim()) {
-      return rowObj.additionalEmployees.trim();
-    }
-    if (Array.isArray(rowObj.teamMembers) && rowObj.teamMembers.length > 0) {
-      return rowObj.teamMembers.join(", ");
-    }
+      "עובד מערכת"
+    );
   }
 
   // D. START TIME (שעת התחלה)
@@ -4041,119 +4018,117 @@ export async function writeRows(
     };
 
     // Dual-write into Microsoft SharePoint Lists (https://techselectltd.sharepoint.com/sites/Customers/Lists/List)
-    let createdListItemId: string | undefined;
-    let createdListItemWebUrl: string | undefined;
-    try {
-      const firstRow = rows[0] || {};
-      const resolvedCustomer = String(
-        firstRow.customer ||
-        firstRow["לקוח"] ||
-        firstRow["שם לקוח"] ||
-        firstRow["שם הלקוח"] ||
-        firstRow.customerName ||
-        firstRow.client ||
-        firstRow.clientName ||
-        firstRow["חברה"] ||
-        firstRow["ארגון"] ||
-        folderCustomer ||
-        (sheetName && !["שעות", "Sheet1", "טיקטים", "פרויקטים", "פרוייקטים", "ביקור", "ביקור באתר"].includes(sheetName) ? sheetName : "") ||
-        "לקוח כללי"
-      ).trim();
+    // Synchronize every row individually so that each technician who worked on the task gets a distinct item in Lists!
+    const createdListItemIds: string[] = [];
+    const createdListItemWebUrls: string[] = [];
+    let lastListsError: string | undefined;
 
-      const rawCandidateWorkType = String(
-        firstRow.activityType ||
-        (firstRow.workType && !["שעות", "Sheet1"].includes(firstRow.workType) ? firstRow.workType : "") ||
-        firstRow["סוג פעילות"] ||
-        firstRow["סוג הפעילות"] ||
-        (firstRow["סוג עבודה"] && !["שעות", "Sheet1"].includes(firstRow["סוג עבודה"]) ? firstRow["סוג עבודה"] : "") ||
-        (firstRow["סוג"] && !["שעות", "Sheet1"].includes(firstRow["סוג"]) ? firstRow["סוג"] : "") ||
-        (targetWorkType && !["שעות", "Sheet1"].includes(targetWorkType) ? targetWorkType : "") ||
-        (explicitWorkType && !["שעות", "Sheet1"].includes(explicitWorkType) ? explicitWorkType : "") ||
-        (sheetName && !["שעות", "Sheet1"].includes(sheetName) ? sheetName : "") ||
-        ""
-      ).trim();
+    for (const r of rows) {
+      try {
+        const resolvedCustomer = String(
+          r.customer ||
+          r["לקוח"] ||
+          r["שם לקוח"] ||
+          r["שם הלקוח"] ||
+          r.customerName ||
+          r.client ||
+          r.clientName ||
+          r["חברה"] ||
+          r["ארגון"] ||
+          folderCustomer ||
+          (sheetName && !["שעות", "Sheet1", "טיקטים", "פרויקטים", "פרוייקטים", "ביקור", "ביקור באתר"].includes(sheetName) ? sheetName : "") ||
+          "לקוח כללי"
+        ).trim();
 
-      const resolvedWorkType = rawCandidateWorkType
-        ? (rawCandidateWorkType.includes("ביקור") || rawCandidateWorkType.includes("onsite") || rawCandidateWorkType.includes("visit") || rawCandidateWorkType.includes("הגעה")
-            ? "ביקור באתר"
-            : rawCandidateWorkType.includes("פרויקט") || rawCandidateWorkType.includes("project")
-            ? "פרויקטים"
-            : "טיקטים")
-        : (firstRow.description && (firstRow.description.includes("ביקור") || firstRow.description.includes("באתר") || firstRow.description.includes("הגעתי") || firstRow.description.includes("אצל הלקוח"))
-            ? "ביקור באתר"
-            : firstRow.description && (firstRow.description.includes("פרויקט") || firstRow.description.includes("הקמה") || firstRow.description.includes("שדרוג"))
-            ? "פרויקטים"
-            : "טיקטים");
+        const rawCandidateWorkType = String(
+          r.activityType ||
+          (r.workType && !["שעות", "Sheet1"].includes(r.workType) ? r.workType : "") ||
+          r["סוג פעילות"] ||
+          r["סוג הפעילות"] ||
+          (r["סוג עבודה"] && !["שעות", "Sheet1"].includes(r["סוג עבודה"]) ? r["סוג עבודה"] : "") ||
+          (r["סוג"] && !["שעות", "Sheet1"].includes(r["סוג"]) ? r["סוג"] : "") ||
+          (targetWorkType && !["שעות", "Sheet1"].includes(targetWorkType) ? targetWorkType : "") ||
+          (explicitWorkType && !["שעות", "Sheet1"].includes(explicitWorkType) ? explicitWorkType : "") ||
+          (sheetName && !["שעות", "Sheet1"].includes(sheetName) ? sheetName : "") ||
+          ""
+        ).trim();
 
-      const listWriteRes = await writeEntryToSharePointList(
-        {
-          customerName: resolvedCustomer,
-          date: String(firstRow.date || firstRow["תאריך"] || firstRow["תאריך עבודה"] || "").trim(),
-          durationHours: Number(firstRow.hours ?? firstRow["שעות"] ?? firstRow.durationHours ?? 0),
-          description: String(firstRow.description || firstRow["תיאור"] || firstRow["תיאור פעילות"] || "").trim(),
-          employeeName:
-            userContext?.name ||
-            (firstRow as any).employeeName ||
-            (firstRow as any).userName ||
-            (firstRow as any)["משתמש"] ||
-            (firstRow as any)["שם משתמש"] ||
-            (firstRow as any)["עובד"] ||
-            (firstRow as any)["שם עובד"] ||
-            (firstRow as any)["איש צוות"] ||
-            (firstRow as any)["טכנאי"] ||
-            (firstRow as any)["מטפל"] ||
-            "",
-          employeeEmail:
-            userContext?.email ||
-            userContext?.upn ||
-            userContext?.username ||
-            (firstRow as any).employeeEmail ||
-            (firstRow as any).userEmail ||
-            (firstRow as any).email ||
-            "",
-          userId:
-            userContext?.id ||
-            userContext?.oid ||
-            (firstRow as any).userId ||
-            (firstRow as any).userOid,
-          userOid:
-            userContext?.oid ||
-            userContext?.id ||
-            (firstRow as any).userOid ||
-            (firstRow as any).userId,
-          userName:
-            userContext?.username ||
-            userContext?.name ||
-            (firstRow as any).userName,
-          userUpn:
-            userContext?.upn ||
-            userContext?.username ||
-            userContext?.email ||
-            (firstRow as any).userUpn,
-          additionalEmployees: (firstRow as any).additionalEmployees,
-          teamMembers: (firstRow as any).teamMembers,
-          workType: resolvedWorkType,
-          startTime: String(firstRow.startTime || firstRow["שעת התחלה"] || "").trim(),
-          endTime: String(firstRow.endTime || firstRow["שעת סיום"] || "").trim(),
-          ticketNumber: String(firstRow.ticketNumber || firstRow["מספר קריאה"] || firstRow["טיקט"] || "").trim(),
-          contactPerson: String(firstRow.contactPerson || firstRow["איש קשר"] || "").trim(),
-          fileWebUrl: webUrl,
-        },
-        env
-      );
+        const resolvedWorkType = rawCandidateWorkType
+          ? (rawCandidateWorkType.includes("ביקור") || rawCandidateWorkType.includes("onsite") || rawCandidateWorkType.includes("visit") || rawCandidateWorkType.includes("הגעה")
+              ? "ביקור באתר"
+              : rawCandidateWorkType.includes("פרויקט") || rawCandidateWorkType.includes("project")
+              ? "פרויקטים"
+              : "טיקטים")
+          : (r.description && (r.description.includes("ביקור") || r.description.includes("באתר") || r.description.includes("הגעתי") || r.description.includes("אצל הלקוח"))
+              ? "ביקור באתר"
+              : r.description && (r.description.includes("פרויקט") || r.description.includes("הקמה") || r.description.includes("שדרוג"))
+              ? "פרויקטים"
+              : "טיקטים");
 
-      if (listWriteRes.success && listWriteRes.listItemId) {
-        createdListItemId = listWriteRes.listItemId;
-        createdListItemWebUrl = listWriteRes.webUrl;
-        writeResultObj.listItemId = listWriteRes.listItemId;
-        writeResultObj.listItemWebUrl = listWriteRes.webUrl;
-        writeResultObj.listsSyncResult = { success: true };
-      } else if (listWriteRes.error) {
-        writeResultObj.listsSyncResult = { success: false, error: listWriteRes.error };
+        const empName = String(
+          (r as any).employeeName ||
+          (r as any)["עובד"] ||
+          (r as any)["שם עובד"] ||
+          (r as any).userName ||
+          (r as any)["איש צוות"] ||
+          (r as any)["טכנאי"] ||
+          (r as any)["מטפל"] ||
+          (r as any)["משתמש"] ||
+          (r as any)["שם משתמש"] ||
+          userContext?.name ||
+          ""
+        ).trim();
+
+        const empEmail = String(
+          (r as any).employeeEmail ||
+          (r as any).userEmail ||
+          (r as any).email ||
+          resolveEmployeeEmail(empName, userContext?.email)
+        ).trim();
+
+        const listWriteRes = await writeEntryToSharePointList(
+          {
+            customerName: resolvedCustomer,
+            date: String(r.date || r["תאריך"] || r["תאריך עבודה"] || "").trim(),
+            durationHours: Number(r.hours ?? r["שעות"] ?? r.durationHours ?? 0),
+            description: String(r.description || r["תיאור"] || r["תיאור פעילות"] || "").trim(),
+            employeeName: empName,
+            employeeEmail: empEmail,
+            userId: (r as any).userId || (r as any).userOid || userContext?.id,
+            userOid: (r as any).userOid || (r as any).userId || userContext?.oid,
+            userName: empName,
+            userUpn: (r as any).userUpn || empEmail,
+            workType: resolvedWorkType,
+            startTime: String(r.startTime || r["שעת התחלה"] || "").trim(),
+            endTime: String(r.endTime || r["שעת סיום"] || "").trim(),
+            ticketNumber: String(r.ticketNumber || r["מספר קריאה"] || r["טיקט"] || "").trim(),
+            contactPerson: String(r.contactPerson || r["איש קשר"] || "").trim(),
+            fileWebUrl: webUrl,
+          },
+          env
+        );
+
+        if (listWriteRes.success && listWriteRes.listItemId) {
+          createdListItemIds.push(String(listWriteRes.listItemId));
+          if (listWriteRes.webUrl) {
+            createdListItemWebUrls.push(listWriteRes.webUrl);
+          }
+        } else if (listWriteRes.error) {
+          lastListsError = listWriteRes.error;
+        }
+      } catch (listErr: any) {
+        console.warn("[writeRows] Notice: Microsoft Lists sync row:", listErr);
+        lastListsError = listErr?.message || String(listErr);
       }
-    } catch (listErr: any) {
-      console.warn("[writeRows] Notice: Microsoft Lists sync:", listErr);
-      writeResultObj.listsSyncResult = { success: false, error: listErr?.message || String(listErr) };
+    }
+
+    if (createdListItemIds.length > 0) {
+      writeResultObj.listItemId = createdListItemIds[0];
+      writeResultObj.listItemIds = createdListItemIds;
+      writeResultObj.listItemWebUrl = createdListItemWebUrls[0];
+      writeResultObj.listsSyncResult = { success: true };
+    } else if (lastListsError) {
+      writeResultObj.listsSyncResult = { success: false, error: lastListsError };
     }
 
     // Record into server-side logged hours audit store for manager / daily reports

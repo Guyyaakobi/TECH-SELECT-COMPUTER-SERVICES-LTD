@@ -25,7 +25,7 @@ import {
   BILINGUAL_CUSTOMER_DICTIONARY,
 } from "./graphHours";
 import { AuthenticatedUser } from "../server/hoursAuthMiddleware";
-import { resolveEffectiveName } from "./sharepointLists";
+import { resolveEffectiveName, resolveEmployeeEmail, KNOWN_TEAM_MEMBERS } from "./sharepointLists";
 
 export interface HoursAssistantEntryDraft {
   id: string; // card unique ID
@@ -71,17 +71,43 @@ export interface HoursAssistantEntryDraft {
   duplicateWarning?: string | null;
   isReadyForConfirmation: boolean;
   missingFields?: string[];
-  teamMembers?: string[];
-  additionalEmployees?: string[];
   mappedRow?: Record<string, any>;
   availableFiles?: Array<{ fileId: string; fileName: string; webUrl?: string }>;
+  assignedEmployees?: string[];
+}
+
+export function extractAssignedEmployees(text: string, currentUserName: string): string[] {
+  if (!text) return [currentUserName];
+  const clean = text.trim();
+  const found = new Set<string>();
+
+  // Check if current user is implicitly included ("אני", "עבדנו", "היינו")
+  const hasSelf = /(?:אני\b|עבדנו\b|היינו\b|עשינו\b|ביקרנו\b|ישבנו\b|איתי\b|יחד\s*איתי|עבדתי\b)/.test(clean);
+  if (hasSelf) {
+    found.add(currentUserName);
+  }
+
+  // Check against all known team members
+  for (const tm of KNOWN_TEAM_MEMBERS) {
+    const patterns = [
+      new RegExp(`(?:\\b|ו|עם\\s*|יחד\\s*עם\\s*|ביחד\\s*עם\\s*)${tm.name}\\b`, "i"),
+      new RegExp(`(?:\\b|ו|עם\\s*|יחד\\s*עם\\s*|ביחד\\s*עם\\s*)${tm.shortName}\\b`, "i"),
+    ];
+    if (patterns.some((p) => p.test(clean))) {
+      found.add(tm.name);
+    }
+  }
+
+  if (found.size === 0) {
+    found.add(currentUserName);
+  }
+
+  return Array.from(found);
 }
 
 export function buildEnrichedRowPayload(params: {
   date: string;
   userName: string;
-  teamMembers?: string[];
-  additionalEmployees?: string[];
   userEmail?: string;
   userId?: string;
   userOid?: string;
@@ -101,8 +127,6 @@ export function buildEnrichedRowPayload(params: {
   const {
     date,
     userName,
-    teamMembers = [],
-    additionalEmployees = [],
     userEmail = "",
     userId = "",
     userOid = "",
@@ -167,17 +191,7 @@ export function buildEnrichedRowPayload(params: {
     customerName ||
     "פרויקט שוטף";
 
-  // Build team display string and author prefix for multi-employee support
-  const secondaryList = (userOverride.teamMembers || teamMembers || additionalEmployees || userOverride.additionalEmployees || [])
-    .map(String)
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .filter((s) => s.toLowerCase() !== userName.trim().toLowerCase());
-
-  const teamDisplayString = secondaryList.length > 0 ? `${userName}, ${secondaryList.join(", ")}` : userName;
-  const authorPrefix = secondaryList.length > 0 ? `${userName} (יחד עם ${secondaryList.join(", ")})` : userName;
-
-  const prefixedDesc = prefixDescriptionWithAuthor(desc, authorPrefix);
+  const prefixedDesc = prefixDescriptionWithAuthor(desc, userName);
 
   const result: Record<string, any> = {
     תאריך: date,
@@ -191,25 +205,24 @@ export function buildEnrichedRowPayload(params: {
     "יום מלא": hebrewDayFull,
     day: hebrewDayShort,
 
-    עובד: teamDisplayString,
-    "שם עובד": teamDisplayString,
-    משתמש: teamDisplayString,
-    "שם משתמש": teamDisplayString,
-    "שם המשתמש": teamDisplayString,
-    "משתמש מערכת": teamDisplayString,
-    טכנאי: teamDisplayString,
-    "שם טכנאי": teamDisplayString,
-    "שם הטכנאי": teamDisplayString,
-    צוות: teamDisplayString,
-    מבצע: teamDisplayString,
-    מטפל: teamDisplayString,
-    "איש צוות": teamDisplayString,
-    "איש שירות": teamDisplayString,
-    "איש מחשוב": teamDisplayString,
-    employee: teamDisplayString,
-    technician: teamDisplayString,
-    employeeName: teamDisplayString,
-    userName: teamDisplayString,
+    עובד: userName,
+    "שם עובד": userName,
+    משתמש: userName,
+    "שם משתמש": userName,
+    "שם המשתמש": userName,
+    "משתמש מערכת": userName,
+    טכנאי: userName,
+    "שם טכנאי": userName,
+    "שם הטכנאי": userName,
+    מבצע: userName,
+    מטפל: userName,
+    "איש צוות": userName,
+    "איש שירות": userName,
+    "איש מחשוב": userName,
+    employee: userName,
+    technician: userName,
+    employeeName: userName,
+    userName: userName,
     user: userName,
     username: userUpn || userEmail || userName,
     userEmail: userEmail || "",
@@ -929,61 +942,107 @@ export async function processAssistantChat(
       userOverrideValues["טיקט"] = targetDraft.ticketNumber;
     }
 
-    const rowPayload = buildEnrichedRowPayload({
-      date: targetDraft.date,
-      userName: user.name,
-      userEmail: user.email,
-      userId: user.id || user.oid || "",
-      userOid: user.oid || user.id || "",
-      userUpn: user.upn || user.username || user.email || "g@tech-select.co.il",
-      hours: targetDraft.durationHours,
-      minutes: targetDraft.durationMinutes,
-      formatted: targetDraft.durationFormatted,
-      workType: semanticActivityType,
-      desc: targetDraft.description,
-      startTime: targetDraft.startTime,
-      endTime: targetDraft.endTime,
-      contactPerson: targetDraft.contactPerson,
-      ticketNumber: targetDraft.ticketNumber,
-      customerName: targetDraft.customerName,
-      userOverride: userOverrideValues,
+    const rawAssigned = (
+      Array.isArray(targetDraft.assignedEmployees) && targetDraft.assignedEmployees.length > 0
+        ? targetDraft.assignedEmployees
+        : [
+            targetDraft.mappedRow?.["עובד"] ||
+            targetDraft.mappedRow?.["שם עובד"] ||
+            targetDraft.mappedRow?.employeeName ||
+            user.name,
+          ]
+    ).map((e) => String(e).trim()).filter(Boolean);
+
+    const effectiveEmployees = rawAssigned.length > 0 ? rawAssigned : [user.name];
+
+    const rowsPayload = effectiveEmployees.map((empName) => {
+      const empEmail = resolveEmployeeEmail(empName, user.email);
+      const userOverride = {
+        ...userOverrideValues,
+        "עובד": empName,
+        "שם עובד": empName,
+        "טכנאי": empName,
+        "שם טכנאי": empName,
+        "מבצע": empName,
+        "מטפל": empName,
+        "משתמש": empName,
+        "שם משתמש": empName,
+        employeeName: empName,
+        employee: empName,
+        userName: empName,
+        userEmail: empEmail,
+        employeeEmail: empEmail,
+      };
+
+      return buildEnrichedRowPayload({
+        date: targetDraft.date,
+        userName: empName,
+        userEmail: empEmail,
+        userId: user.id || user.oid || "",
+        userOid: user.oid || user.id || "",
+        userUpn: empEmail,
+        hours: targetDraft.durationHours,
+        minutes: targetDraft.durationMinutes,
+        formatted: targetDraft.durationFormatted,
+        workType: semanticActivityType,
+        desc: targetDraft.description,
+        startTime: targetDraft.startTime,
+        endTime: targetDraft.endTime,
+        contactPerson: targetDraft.contactPerson,
+        ticketNumber: targetDraft.ticketNumber,
+        customerName: targetDraft.customerName,
+        userOverride,
+      });
     });
 
-    const writeRes = await writeRows(targetDraft.fileId, [rowPayload], user, activeEnv, targetDraft.driveId, effectiveExcelTab);
+    const writeRes = await writeRows(targetDraft.fileId, rowsPayload, user, activeEnv, targetDraft.driveId, effectiveExcelTab);
     const rowNumMatch = (writeRes.rowAddress || "").match(/\d+/);
-    const targetRow = rowNumMatch ? parseInt(rowNumMatch[0], 10) : 1;
+    const baseRowNum = rowNumMatch ? parseInt(rowNumMatch[0], 10) : 1;
 
-    const writtenItem: WrittenEntryResult = {
-      id: targetDraft.id,
-      fileId: targetDraft.fileId,
-      driveId: writeRes.driveId || targetDraft.driveId,
-      itemId: targetDraft.fileId,
-      fileName: targetDraft.fileName || "hours.xlsx",
-      filePath: targetDraft.filePath || "",
-      sheetName: writeRes.sheetName || effectiveExcelTab,
-      webUrl: writeRes.webUrl || targetDraft.webUrl || "",
-      targetRow,
-      rowAddress: writeRes.rowAddress || `Row ${targetRow}`,
-      writtenValues: writeRes.writtenValues,
-      entryId: writeRes.entryId || targetDraft.id,
-      customerName: targetDraft.customerName,
-      date: targetDraft.date,
-      durationFormatted: targetDraft.durationFormatted,
-      description: targetDraft.description,
-      workType: semanticActivityType,
-      writtenAt: writeRes.writtenAt || Date.now(),
-      expiresAt: (writeRes.writtenAt || Date.now()) + 10 * 60 * 1000,
-      canUndo: true,
-      listItemId: writeRes.listItemId,
-      listItemWebUrl: writeRes.listItemWebUrl,
-      listsSyncResult: writeRes.listsSyncResult,
-    };
+    const newWrittenItems: WrittenEntryResult[] = effectiveEmployees.map((empName, idx) => {
+      const targetRow = baseRowNum + idx;
+      const itemId = writeRes.listItemIds?.[idx] || (idx === 0 ? writeRes.listItemId : undefined);
+      return {
+        id: idx === 0 ? targetDraft.id : `${targetDraft.id}_emp_${idx}`,
+        fileId: targetDraft.fileId,
+        driveId: writeRes.driveId || targetDraft.driveId,
+        itemId: targetDraft.fileId,
+        fileName: targetDraft.fileName || "hours.xlsx",
+        filePath: targetDraft.filePath || "",
+        sheetName: writeRes.sheetName || effectiveExcelTab,
+        webUrl: writeRes.webUrl || targetDraft.webUrl || "",
+        targetRow,
+        rowAddress: writeRes.rowAddress || `Row ${targetRow}`,
+        writtenValues: writeRes.writtenValues,
+        entryId: `${writeRes.entryId || targetDraft.id}_${idx}`,
+        customerName: targetDraft.customerName,
+        date: targetDraft.date,
+        durationFormatted: targetDraft.durationFormatted,
+        description: targetDraft.description,
+        workType: semanticActivityType,
+        employeeName: empName,
+        writtenAt: writeRes.writtenAt || Date.now(),
+        expiresAt: (writeRes.writtenAt || Date.now()) + 10 * 60 * 1000,
+        canUndo: true,
+        listItemId: itemId,
+        listItemWebUrl: writeRes.listItemWebUrl,
+        listsSyncResult: writeRes.listsSyncResult,
+      };
+    });
 
     const remainingDrafts = activeDrafts.filter((d) => d.id !== cardId);
-    const updatedWrittenEntries = [writtenItem, ...(params.writtenEntries || []).filter((w) => w.id !== writtenItem.id)];
+    const updatedWrittenEntries = [
+      ...newWrittenItems,
+      ...(params.writtenEntries || []).filter((w) => !newWrittenItems.some((nw) => nw.id === w.id)),
+    ];
+
+    const replyMsg =
+      effectiveEmployees.length > 1
+        ? `נרשמו בהצלחה ${effectiveEmployees.length} שורות ✓ נפתחה שורה נפרדת עבור ${effectiveEmployees.join(" ועבור ")} בטאב "${writeRes.sheetName || effectiveExcelTab}" בקובץ ${targetDraft.fileName || ""} וב-Microsoft Lists.`
+        : `נרשם בהצלחה ✓ השורה נוספה לטאב "${writeRes.sheetName || effectiveExcelTab}" בקובץ ${targetDraft.fileName || ""} (שורה ${newWrittenItems[0].targetRow}) וב-Microsoft Lists.`;
 
     return {
-      reply: `נרשם בהצלחה ✓ השורה נוספה לטאב "${writtenItem.sheetName}" בקובץ ${targetDraft.fileName || ""} (שורה ${writtenItem.targetRow}).`,
+      reply: replyMsg,
       drafts: remainingDrafts,
       writtenEntries: updatedWrittenEntries,
       undoneCardIds: [],
@@ -1124,16 +1183,16 @@ export async function processAssistantChat(
                 isTimeSuggested: { type: Type.BOOLEAN, description: "True if times are suggested, false if explicitly set by employee" },
                 contactPerson: { type: Type.STRING, description: "Optional contact person" },
                 ticketNumber: { type: Type.STRING, description: "Optional ticket number" },
-                additionalEmployees: {
-                  type: Type.ARRAY,
-                  items: { type: Type.STRING },
-                  description: "List of other technicians/employees working together on this task e.g. ['אולג', 'ודים']",
-                },
                 isReady: { type: Type.BOOLEAN, description: "True if customer, date, duration, description are all present" },
                 missingFields: {
                   type: Type.ARRAY,
                   items: { type: Type.STRING },
                   description: "List of missing mandatory fields if any: ['לקוח', 'תאריך', 'משך', 'תיאור']",
+                },
+                assignedEmployees: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: "Optional list of employee/technician names who worked together on this task (e.g. ['גיא יעקובי', 'ודים']). Defaults to the reporting employee only.",
                 },
               },
               required: ["customerName", "date", "description", "workType"],
@@ -1172,6 +1231,11 @@ export async function processAssistantChat(
                 contactPerson: { type: Type.STRING, description: "Contact person at customer" },
                 ticketNumber: { type: Type.STRING, description: "Ticket or call number" },
                 customer: { type: Type.STRING, description: "Customer name" },
+                assignedEmployees: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: "Optional list of employee names who worked on this task.",
+                },
               },
               required: ["date", "workType", "hours", "description"],
             },
@@ -1287,29 +1351,25 @@ EXTRACTION RULES:
      * Verify that the customer exists in SharePoint in Hebrew OR English.
      * If customer is not found or ambiguous, ask the employee to clarify and DO NOT propose entry drafts for non-existent customers!
   2. Date: default today (${jCtx.todayIso}, Asia/Jerusalem). Understand "אתמול" (${jCtx.yesterdayIso}), "ביום ראשון", "שלשום", or explicit dates. If last month is mentioned (e.g. August, "חודש שעבר"), target last month's file (${jCtx.lastMonthYear}-${jCtx.lastMonth < 10 ? "0" + jCtx.lastMonth : jCtx.lastMonth}).
-  3. Duration / משך זמן (ברירת מחדל 15 דקות - מינימום לדיווח):
-     - כל דיווח במערכת הוא במינימום 15 דקות (15 דקות = 0.25 שעות). גם אם הטכנאי אמר "דיברתי 5 דקות" או "שיחה של 10 דק", עיגול המינימום הוא תמיד 15 דקות (0.25 שעה)!
+  3. Duration / משך זמן (רציף ומהיר - ללא עצירות מיותרות):
+     - עגל תמיד ל-15 דקות (15 דקות = 0.25 שעות, 30 דקות = 0.5 שעות, 45 דקות = 0.75 שעות, 60 דקות = 1 שעה).
      - חוק קריטי - עבודה רציפה ללא שאלות מעכבות (Seamless Non-Stop Workflow):
-       כאשר העובד מדווח על פעילות ומציין לקוח ומה נעשה (לדוגמה: "תיקנתי מדפסת באסיו", "דיברתי עם ירון בטלפון", "הייתי בביקור אצל גל אור"):
-       אם העובד לא ציין במפורש משך זמן או שעות - אל תעצור ואל תשאל "כמה שעות או זמן לתעד עבור הפעילות?"!
-       הזן כברירת מחדל חכמה 15 דקות (duration: "15 דקות", 15 דקות = 0.25 שעה, isTimeSuggested = true),
+       כאשר העובד מדווח על פעילות ומציין לקוח ומה נעשה (לדוגמה: "תיקנתי מדפסת באסיו", "הייתי בביקור אצל גל אור"):
+       גם אם העובד לא ציין במפורש משך זמן או שעות - אל תעצור ואל תשאל "כמה שעות או זמן לתעד עבור הפעילות?"!
+       הזן כברירת מחדל חכמה 1 שעה (duration: "1 שעה", 60 דקות, isTimeSuggested = true),
        קרא מיד ל-propose_entries ופתח את כרטיס הדיווח מיד!
-       בהודעה רשום: "הכנתי את כרטיס הדיווח עבור [שם הלקוח] (הגדרתי 15 דקות כברירת מחדל, ניתן לערוך בכרטיס או להמשיך). מאשר להזין?"
-       לעולם אל תגדיר 1 שעה כברירת מחדל אם לא צוין!
-     - אם העובד כן ציין זמן (לדוגמה "שעתיים", "חצי שעה", "שעה וחצי", "45 דקות", "0.5"): קלוט את הזמן המדויק ישירות (בעיגול מינימום 15 דקות)!
-  4. Multiple Employees / עבודה משותפת בצוות:
-     - אם העובד מציין שדיווח העבודה בוצע יחד עם עובדים נוספים (כגון: "אני ואולג עבדנו", "גיא ואולג ביצעו", "יחד עם ודים ובר", "עבדתי עם אולג"):
-       חלץ את שמות העובדים הנוספים אל הפרמטר 'additionalEmployees' (לדוגמה: '["אולג"]', '["אולג", "ודים"]').
-       בתיאור הפעילות רשום בפורמט: "[שם העובד המחובר] (יחד עם [שמות העובדים הנוספים]) כתב: ..." (לדוגמה: "גיא (יחד עם אולג) כתב: ...").
-  5. Work type / Tab selection (dynamic & semantic per file):
+       בהודעה רשום: "הכנתי את כרטיס הדיווח עבור [שם הלקוח] (הגדרתי שעה 1 כברירת מחדל, ניתן לערוך בכרטיס או להמשיך). מאשר להזין?"
+       כך העובד יכול להזין תיעוד אחרי תיעוד ברצף מושלם בלי להיתקע בשאלות מיותרות!
+     - אם העובד כן ציין זמן (לדוגמה "שעתיים", "חצי שעה", "שעה וחצי", "45 דקות", "0.5"): קלוט את הזמן המדויק ישירות!
+  4. Work type / Tab selection (dynamic & semantic per file):
      - Each customer's Excel file contains its own real worksheets discovered live.
      - Match activity semantics:
        * On-site visit / physical presence ("הייתי אצל", "ביקור", "הגעתי פיזית") -> "onsite" or matching visit tab.
        * Remote support / phone calls / tickets / daily maintenance ("דיברתי", "התחברתי", "טלפון", "מרחוק", "איפוס סיסמה", "תמיכה") -> "tickets" or matching support tab.
        * Project work / setup / migration / rollout ("פרויקט", "שדרוג שרת", "מיגרציה", "הקמה") -> "project" or matching project tab.
-  6. Description (ניסוח מקצועי ברמת איש IT בכיר / איש פיתוח בכיר - קריטי וסופר חשוב ללקוח):
-     - זיהוי מחבר הדיווח וצוות העובדים (קריטי): התחל תמיד את תיאור הפעילות בשם הטכנאי שכתב את הדיווח (וצוות העובדים אם יש), בפורמט:
-       "[שם פרטי] כתב: [התיאור המקצועי המלא]" (או "גיא (יחד עם אולג) כתב: ...")
+  5. Description (ניסוח מקצועי ברמת איש IT בכיר / איש פיתוח בכיר - קריטי וסופר חשוב ללקוח):
+     - זיהוי מחבר הדיווח (קריטי): התחל תמיד את תיאור הפעילות בשם הטכנאי שכתב את הדיווח, לפי שם העובד המחובר (Employee name), בפורמט:
+       "[שם פרטי] כתב: [התיאור המקצועי המלא]"
        לדוגמה: אם שם העובד המחובר הוא גיא (Guy) -> התחל ב: "גיא כתב: איתור תקלה פיזית..."
        אם שם העובד המחובר הוא ודים (Vadim) -> התחל ב: "ודים כתב: תמיכה מרחוק במשתמשת..."
        כך שבקובץ האקסל ודוח השעות יידעו תמיד בדיוק מי הטכנאי שהזין וביצע את המידע.
@@ -1331,6 +1391,12 @@ EXTRACTION RULES:
      - The summary card displays the chosen tab name and allows the employee to change it (by tapping or voice: e.g. "תעביר לטאב פרויקטים", "תעביר לטאב קריאות שירות").
      - If the employee asks to switch tabs: immediately update workType to the requested tab and re-issue propose_entries with the updated draft!
   10. Updating description: If the technician adds more technical details in later messages (e.g. "תוסיף גם שהחלפתי כבל רשת ובדקתי פינג"), append/merge the new details into the full description so nothing is lost!
+  11. Multiple Employees / Team Work (מי עבד על הדיווח - עבודה משותפת):
+      - ברירת המחדל תמיד: עובד 1 יחיד (העובד המחובר).
+      - אם העובד מציין בדיווח שיותר מעובד אחד עבד על המשימה (לדוגמה: "אני וודים עבדנו", "עבדנו ביחד גיא ותבור", "אני ורועי היינו בביקור", "הייתי עם ניב"):
+        * זהה את שמות כל העובדים שעבדו על המשימה.
+        * העבר ב-propose_entries את המערך assignedEmployees (לדוגמה: assignedEmployees: ["גיא יעקובי", "ודים"]).
+        * במענה רשום: "הכנתי כרטיס דיווח צוותי עבור [שמות העובדים] (עם האישור תירשם שורה נפרדת לכל עובד ב-Excel וב-Lists). מאשר להזין?"
 
 CRITICAL REQUIREMENT - DYNAMIC COLUMNS PER FILE:
 Fields are mapped to the headers of the chosen worksheet by meaning. If a field has no column in the file (e.g. no ticket number column), it will NOT be written and marked as not existing in file.
@@ -1379,6 +1445,7 @@ MANDATORY WORKFLOW:
         fileName: d.fileName,
         targetRow: d.targetRow,
         isReady: d.isReadyForConfirmation,
+        assignedEmployees: d.assignedEmployees,
       }))
     )}]`;
   }
@@ -1608,13 +1675,13 @@ MANDATORY WORKFLOW:
                 : rawCustomerName;
             console.log(`[propose_entries] Customer verification: raw="${rawCustomerName}", resolved="${customerName}", score=${customerCheck.score}`);
             const date = String(raw.date || jCtx.todayIso).trim();
-            const rawDuration = String(raw.duration || "").trim();
+            const rawDuration = raw.duration || "";
             const parsedDuration = roundToQuarterHour(rawDuration);
-            // Default to 15 minutes (0.25 שעה - מינימום לדיווח) if no duration was specified
-            const hasUserSpecifiedDuration = Boolean(rawDuration) && parsedDuration.minutes > 0;
-            const minutes = hasUserSpecifiedDuration ? Math.max(15, parsedDuration.minutes) : 15;
-            const hours = hasUserSpecifiedDuration ? Math.max(0.25, parsedDuration.hours) : 0.25;
-            const formatted = hasUserSpecifiedDuration ? parsedDuration.formatted : "15 דקות (0.25 שעה - מינימום)";
+            // Seamless Non-Stop Workflow: If employee didn't specify duration, default to 60 minutes (1 hour)
+            const hasUserSpecifiedDuration = parsedDuration.minutes > 0;
+            const minutes = hasUserSpecifiedDuration ? parsedDuration.minutes : 60;
+            const hours = hasUserSpecifiedDuration ? parsedDuration.hours : 1;
+            const formatted = hasUserSpecifiedDuration ? parsedDuration.formatted : "60 דקות (1 שעה - ברירת מחדל)";
 
             // Find matching active draft if this is an update to an existing draft
             const matchingActiveDraft = (activeDrafts || []).find(
@@ -1623,27 +1690,10 @@ MANDATORY WORKFLOW:
                 (d.customerName && customerName && d.customerName.toLowerCase() === customerName.toLowerCase())
             );
 
-            // Extract multi-employee team members
-            const rawAdditional = raw.additionalEmployees || raw.teamMembers;
-            const extractedSecondary: string[] = Array.isArray(rawAdditional)
-              ? rawAdditional.map(String).map((s) => s.trim()).filter(Boolean)
-              : typeof rawAdditional === "string" && rawAdditional.trim()
-              ? rawAdditional.split(/[,+ ו]/).map((s) => s.trim()).filter(Boolean)
-              : matchingActiveDraft?.additionalEmployees || matchingActiveDraft?.teamMembers || [];
-
-            const primaryEmpName = user?.name || "גיא יעקובי";
-            const secondaryEmployeesList = extractedSecondary.filter(
-              (n) => n.toLowerCase() !== primaryEmpName.trim().toLowerCase()
-            );
-
-            const authorPrefix = secondaryEmployeesList.length > 0
-              ? `${primaryEmpName} (יחד עם ${secondaryEmployeesList.join(", ")})`
-              : primaryEmpName;
-
             // Work type / semantic tab request
             const rawWorkType = String(raw.workType || matchingActiveDraft?.activityType || matchingActiveDraft?.workType || "").trim();
             const rawDesc = String(raw.description || matchingActiveDraft?.description || "").trim();
-            const desc = prefixDescriptionWithAuthor(rawDesc, authorPrefix, user?.email);
+            const desc = prefixDescriptionWithAuthor(rawDesc, user?.name, user?.email);
             const inferredCategory = inferWorkType((rawWorkType ? rawWorkType + " " : "") + desc);
             const semanticActivityType =
               matchingActiveDraft?.activityType ||
@@ -1835,8 +1885,6 @@ MANDATORY WORKFLOW:
                   mappedRow = buildEnrichedRowPayload({
                     date,
                     userName: user.name,
-                    teamMembers: [primaryEmpName, ...secondaryEmployeesList],
-                    additionalEmployees: secondaryEmployeesList,
                     hours,
                     minutes,
                     formatted,
@@ -1851,8 +1899,6 @@ MANDATORY WORKFLOW:
                       "סוג פעילות": semanticActivityType,
                       "סוג הפעילות": semanticActivityType,
                       activityType: semanticActivityType,
-                      teamMembers: [primaryEmpName, ...secondaryEmployeesList],
-                      additionalEmployees: secondaryEmployeesList,
                     },
                   });
                 }
@@ -1863,6 +1909,15 @@ MANDATORY WORKFLOW:
 
             const projectMatch = (rawDesc + " " + rawWorkType).match(/(?:פרויקט|פרוייקט|project)\s+(?:-|:)?\s*([^\s,.;]+)/i);
             const projectName = projectMatch ? projectMatch[1] : undefined;
+
+            const detectedAssigned =
+              Array.isArray(raw.assignedEmployees) && raw.assignedEmployees.length > 0
+                ? raw.assignedEmployees
+                : matchingActiveDraft?.assignedEmployees && matchingActiveDraft.assignedEmployees.length > 0
+                ? matchingActiveDraft.assignedEmployees
+                : extractAssignedEmployees(rawDesc + " " + effectiveUserText, user.name);
+
+            const assignedEmployees = detectedAssigned.length > 0 ? detectedAssigned : [user.name];
 
             enriched.push({
               id: draftId,
@@ -1884,8 +1939,6 @@ MANDATORY WORKFLOW:
               isTimeSuggested,
               contactPerson: raw.contactPerson || matchingActiveDraft?.contactPerson,
               ticketNumber: raw.ticketNumber || matchingActiveDraft?.ticketNumber,
-              teamMembers: [primaryEmpName, ...secondaryEmployeesList],
-              additionalEmployees: secondaryEmployeesList,
               workType: semanticActivityType,
               activityType: semanticActivityType,
               targetTabName,
@@ -1902,6 +1955,7 @@ MANDATORY WORKFLOW:
               missingFields,
               mappedRow,
               availableFiles,
+              assignedEmployees,
             });
           }
 
@@ -1965,51 +2019,72 @@ MANDATORY WORKFLOW:
 
           const targetExcelTab = matchingDraft?.targetTabName || rawRows[0]?.targetTabName || "שעות";
 
-          // Enrich every row to make sure all columns in the sheet receive their corresponding values
-          const rows = rawRows.map((r) => {
-            return buildEnrichedRowPayload({
-              date: r.date || r.תאריך || matchingDraft?.date || jCtx.todayIso,
-              userName: user.name,
-              userEmail: user.email,
-              userId: user.id || user.oid || "",
-              userOid: user.oid || user.id || "",
-              userUpn: user.upn || user.username || user.email || "g@tech-select.co.il",
-              hours:
-                typeof r.hours === "number"
-                  ? r.hours
-                  : typeof r.משך === "number"
-                  ? r.משך
-                  : typeof r.שעות === "number"
-                  ? r.שעות
-                  : matchingDraft?.durationHours || 1,
-              workType: rawActivity,
-              desc: r.description || r.תיאור || matchingDraft?.description || "",
-              startTime: r.startTime || r["שעת התחלה"] || matchingDraft?.startTime,
-              endTime: r.endTime || r["שעת סיום"] || matchingDraft?.endTime,
-              contactPerson: r.contactPerson || r["איש קשר"] || matchingDraft?.contactPerson,
-              ticketNumber: r.ticketNumber || r["מספר טיקט"] || r["מספר קריאה"] || matchingDraft?.ticketNumber,
-              customerName: r.customer || r.לקוח || matchingDraft?.customerName,
-              userOverride: {
-                ...r,
-                "סוג פעילות": rawActivity,
-                "סוג הפעילות": rawActivity,
-                activityType: rawActivity,
-                משתמש: user.name,
-                "שם משתמש": user.name,
-                "שם המשתמש": user.name,
-                עובד: user.name,
-                "שם עובד": user.name,
-                מטפל: user.name,
-                user: user.name,
-                username: user.username || user.email || "g@tech-select.co.il",
-                userEmail: user.email || "g@tech-select.co.il",
-                employeeEmail: user.email || "g@tech-select.co.il",
-                userId: user.id || user.oid || "",
-                userOid: user.oid || user.id || "",
-                userUpn: user.upn || user.username || user.email || "g@tech-select.co.il",
-              },
-            });
-          });
+          // Expand every row for each assigned employee (e.g. Guy, Vadim)
+          const rows: any[] = [];
+          for (const r of rawRows) {
+            const rowEmployees = (
+              Array.isArray(r.assignedEmployees) && r.assignedEmployees.length > 0
+                ? r.assignedEmployees
+                : Array.isArray(matchingDraft?.assignedEmployees) && matchingDraft.assignedEmployees.length > 0
+                ? matchingDraft.assignedEmployees
+                : [
+                    r.employeeName ||
+                    r["עובד"] ||
+                    r.userName ||
+                    user.name,
+                  ]
+            ).map((e: any) => String(e).trim()).filter(Boolean);
+
+            const effectiveEmployees = rowEmployees.length > 0 ? rowEmployees : [user.name];
+
+            for (const empName of effectiveEmployees) {
+              const empEmail = resolveEmployeeEmail(empName, user.email);
+              rows.push(
+                buildEnrichedRowPayload({
+                  date: r.date || r.תאריך || matchingDraft?.date || jCtx.todayIso,
+                  userName: empName,
+                  userEmail: empEmail,
+                  userId: user.id || user.oid || "",
+                  userOid: user.oid || user.id || "",
+                  userUpn: empEmail,
+                  hours:
+                    typeof r.hours === "number"
+                      ? r.hours
+                      : typeof r.משך === "number"
+                      ? r.משך
+                      : typeof r.שעות === "number"
+                      ? r.שעות
+                      : matchingDraft?.durationHours || 1,
+                  workType: rawActivity,
+                  desc: r.description || r.תיאור || matchingDraft?.description || "",
+                  startTime: r.startTime || r["שעת התחלה"] || matchingDraft?.startTime,
+                  endTime: r.endTime || r["שעת סיום"] || matchingDraft?.endTime,
+                  contactPerson: r.contactPerson || r["איש קשר"] || matchingDraft?.contactPerson,
+                  ticketNumber: r.ticketNumber || r["מספר טיקט"] || r["מספר קריאה"] || matchingDraft?.ticketNumber,
+                  customerName: r.customer || r.לקוח || matchingDraft?.customerName,
+                  userOverride: {
+                    ...r,
+                    "סוג פעילות": rawActivity,
+                    "סוג הפעילות": rawActivity,
+                    activityType: rawActivity,
+                    משתמש: empName,
+                    "שם משתמש": empName,
+                    "שם המשתמש": empName,
+                    עובד: empName,
+                    "שם עובד": empName,
+                    מטפל: empName,
+                    user: empName,
+                    username: empEmail,
+                    userEmail: empEmail,
+                    employeeEmail: empEmail,
+                    userId: user.id || user.oid || "",
+                    userOid: user.oid || user.id || "",
+                    userUpn: empEmail,
+                  },
+                })
+              );
+            }
+          }
 
           const writeRes = await withSafeTimeout(
             writeRows(fileId, rows, user, activeEnv, matchingDraft?.driveId, targetExcelTab),
@@ -2019,13 +2094,15 @@ MANDATORY WORKFLOW:
 
           isConfirmed = true;
           const rowNumMatch = (writeRes.rowAddress || "").match(/\d+/);
-          const targetRow = rowNumMatch ? parseInt(rowNumMatch[0], 10) : 1;
+          const baseTargetRow = rowNumMatch ? parseInt(rowNumMatch[0], 10) : 1;
 
           // Create written entry records (stateless, kept in client session state)
           for (let i = 0; i < rows.length; i++) {
             const r = rows[i];
+            const targetRow = baseTargetRow + i;
+            const itemId = writeRes.listItemIds?.[i] || (i === 0 ? writeRes.listItemId : undefined);
             const writtenItem: WrittenEntryResult = {
-              id: matchingDraft?.id || `written_${Date.now()}_${i}`,
+              id: i === 0 ? (matchingDraft?.id || `written_${Date.now()}_${i}`) : `${matchingDraft?.id || `written_${Date.now()}`}_emp_${i}`,
               fileId,
               driveId: writeRes.driveId || matchingDraft?.driveId,
               itemId: fileId,
@@ -2036,16 +2113,17 @@ MANDATORY WORKFLOW:
               targetRow,
               rowAddress: writeRes.rowAddress || `Row ${targetRow}`,
               writtenValues: writeRes.writtenValues,
-              entryId: writeRes.entryId || `entry_${Date.now()}`,
+              entryId: `${writeRes.entryId || `entry_${Date.now()}`}_${i}`,
               customerName: r.customer || r.לקוח || matchingDraft?.customerName || "לקוח",
               date: r.date || r.תאריך || jCtx.todayIso,
               durationFormatted: `${r.hours || r.משך || r.שעות || ""} שעות`,
               description: r.description || r.תיאור || "",
               workType: rawActivity,
+              employeeName: r.userName || r.employeeName || r.עובד || user.name,
               writtenAt: writeRes.writtenAt || Date.now(),
               expiresAt: (writeRes.writtenAt || Date.now()) + 10 * 60 * 1000,
               canUndo: true,
-              listItemId: writeRes.listItemId,
+              listItemId: itemId,
               listItemWebUrl: writeRes.listItemWebUrl,
               listsSyncResult: writeRes.listsSyncResult,
             };
@@ -2248,9 +2326,9 @@ MANDATORY WORKFLOW:
     }
 
     if (detectedCustomer) {
-      const finalMinutes = hasExplicitDuration ? Math.max(15, durationAnalysis.minutes) : 15;
-      const finalHours = hasExplicitDuration ? Math.max(0.25, durationAnalysis.hours) : 0.25;
-      const finalFormatted = hasExplicitDuration ? durationAnalysis.formatted : "15 דקות (0.25 שעה - מינימום)";
+      const finalMinutes = hasExplicitDuration ? durationAnalysis.minutes : 60;
+      const finalHours = hasExplicitDuration ? durationAnalysis.hours : 1;
+      const finalFormatted = hasExplicitDuration ? durationAnalysis.formatted : "60 דקות (1 שעה - ברירת מחדל)";
 
       const descPrefixed = prefixDescriptionWithAuthor(detectedDesc, user.name, user.email);
       const inferredCat = inferWorkType(descPrefixed);

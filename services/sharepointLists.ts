@@ -42,24 +42,6 @@ export interface SharePointListColumn {
     columnName?: string;
     allowMultipleValues?: boolean;
   };
-  personOrGroup?: {
-    allowMultipleSelection?: boolean;
-    displayAs?: string;
-  };
-  allowMultipleValues?: boolean;
-}
-
-/**
- * Helper to check if a SharePoint list column allows multiple selections
- */
-export function isMultiSelectColumn(colDef?: SharePointListColumn): boolean {
-  if (!colDef) return false;
-  if (colDef.allowMultipleValues) return true;
-  if (colDef.choice?.allowMultipleValues) return true;
-  if (colDef.choice?.displayAs === "checkBoxes") return true;
-  if (colDef.personOrGroup?.allowMultipleSelection) return true;
-  if (colDef.lookup?.allowMultipleValues) return true;
-  return false;
 }
 
 export interface SharePointListInfo {
@@ -254,6 +236,38 @@ export function resolveEffectiveName(name?: string, email?: string): string {
     if (prefix) return prefix;
   }
   return cleanName || "עובד";
+}
+
+export const KNOWN_TEAM_MEMBERS: Array<{ name: string; email: string; shortName: string }> = [
+  { name: "גיא יעקובי", email: "g@tech-select.co.il", shortName: "גיא" },
+  { name: "ודים", email: "vadim@tech-select.co.il", shortName: "ודים" },
+  { name: "ניב בורו", email: "niv@tech-select.co.il", shortName: "ניב" },
+  { name: "תבור כהן", email: "tavor@tech-select.co.il", shortName: "תבור" },
+  { name: "אירית יעקובי", email: "irit@tech-select.co.il", shortName: "אירית" },
+  { name: "רועי", email: "roy@tech-select.co.il", shortName: "רועי" },
+  { name: "יוסי", email: "yossi@tech-select.co.il", shortName: "יוסי" },
+  { name: "עומר", email: "omer@tech-select.co.il", shortName: "עומר" },
+  { name: "אולג", email: "oleg@tech-select.co.il", shortName: "אולג" },
+  { name: "אריאל", email: "ariel@tech-select.co.il", shortName: "אריאל" },
+  { name: "ולד", email: "vlad@tech-select.co.il", shortName: "ולד" },
+  { name: "אמיר", email: "amir@tech-select.co.il", shortName: "אמיר" },
+  { name: "שי", email: "ShaiA@tech-select.co.il", shortName: "שי" },
+  { name: "אירנה", email: "irina@tech-select.co.il", shortName: "אירנה" },
+];
+
+export function resolveEmployeeEmail(name?: string, fallbackEmail?: string): string {
+  if (!name) return fallbackEmail || "g@tech-select.co.il";
+  const cleanName = name.trim().toLowerCase();
+  for (const [canonicalName, aliases] of Object.entries(BILINGUAL_EMPLOYEE_DICTIONARY)) {
+    const isMatch =
+      cleanName === canonicalName.toLowerCase() ||
+      aliases.some((a) => cleanName === a.toLowerCase() || cleanName.includes(a.toLowerCase()));
+    if (isMatch) {
+      const foundMail = aliases.find((a) => a.includes("@"));
+      if (foundMail) return foundMail;
+    }
+  }
+  return fallbackEmail || "g@tech-select.co.il";
 }
 
 /**
@@ -642,15 +656,6 @@ export async function resolveSharePointList(env?: any): Promise<SharePointListIn
         readOnly: Boolean(c.readOnly),
         choice: c.choice,
         lookup: c.lookup,
-        personOrGroup: c.personOrGroup,
-        allowMultipleValues: Boolean(
-          c.choice?.allowMultipleValues ||
-          c.choice?.displayAs === "checkBoxes" ||
-          c.personOrGroup?.allowMultipleSelection ||
-          c.lookup?.allowMultipleValues ||
-          c.allowMultipleValues ||
-          c.allowMultipleSelection
-        ),
       });
 
       // Semantic mapping according to the exact 9 columns:
@@ -944,8 +949,6 @@ export async function writeEntryToSharePointList(
     description: string;
     employeeName?: string;
     employeeEmail?: string;
-    additionalEmployees?: string[] | string;
-    teamMembers?: string[];
     userId?: string;
     userOid?: string;
     userName?: string;
@@ -1067,6 +1070,7 @@ export async function writeEntryToSharePointList(
     };
 
     // 4. משתמש / מטפל / עובד - According to creator SSO email:
+    // "שאתה מקים ב Lists שורה, תחת עמודת משתמש, תשלח את כתובת המייל של מקים התיעוד. את המייל אתה יכול לדעת לפי ה SSO של המקים"
     const handlerEmail = (
       entryData.employeeEmail ||
       (entryData as any).userEmail ||
@@ -1090,87 +1094,8 @@ export async function writeEntryToSharePointList(
     const handlerName = resolveEffectiveName(rawHandlerName, handlerEmail);
     const handlerOid = (entryData.userOid || entryData.userId || "").trim();
     const handlerUpn = (entryData.userUpn || entryData.userName || handlerEmail).trim();
+    // Connected user display name
     const handlerUserDisplay = handlerName;
-
-    // Collect all employee display names (Primary + Team Members / Additional Employees)
-    const primaryEmp = handlerUserDisplay || "עובד מערכת";
-    let extraEmps: string[] = [];
-    if (Array.isArray(entryData.additionalEmployees)) {
-      extraEmps = entryData.additionalEmployees.filter((e) => typeof e === "string" && e.trim());
-    } else if (typeof entryData.additionalEmployees === "string" && entryData.additionalEmployees.trim()) {
-      extraEmps = entryData.additionalEmployees.split(/[,;\n]/).map((e) => e.trim()).filter(Boolean);
-    } else if (Array.isArray(entryData.teamMembers)) {
-      extraEmps = entryData.teamMembers.filter((e) => typeof e === "string" && e.trim());
-    }
-
-    const allEmployees: string[] = [primaryEmp];
-    for (const ex of extraEmps) {
-      if (ex && !allEmployees.some((e) => e.toLowerCase() === ex.toLowerCase())) {
-        allEmployees.push(ex);
-      }
-    }
-
-    // Helper to format values for Worker/Employee columns according to type & multi-select
-    const formatWorkerColumnValue = (
-      colDef: SharePointListColumn | undefined,
-      allEmps: string[],
-      primaryEmail: string,
-      siteUserId?: number
-    ): any => {
-      if (!colDef) return undefined;
-
-      const isMulti = isMultiSelectColumn(colDef);
-      const isChoice = Boolean(colDef.type === "choice" || colDef.choice);
-      const isPerson = Boolean(colDef.type === "person" || colDef.personOrGroup);
-      const choices = colDef.choice?.choices || [];
-
-      if (isChoice) {
-        if (isMulti) {
-          // Must return an ARRAY of strings for Microsoft Graph API multi-select Choice column!
-          const matchedArray: string[] = [];
-          for (const emp of allEmps) {
-            const m = matchEmployeeNameToChoice(emp, primaryEmail, choices);
-            if (m && !matchedArray.includes(m)) {
-              matchedArray.push(m);
-            } else if (colDef.choice?.allowFillIn && !matchedArray.includes(emp)) {
-              matchedArray.push(emp);
-            }
-          }
-          if (matchedArray.length === 0) {
-            const fallback = matchEmployeeNameToChoice(allEmps[0], primaryEmail, choices) || (choices.length > 0 ? choices[0] : allEmps[0]);
-            return [fallback];
-          }
-          return matchedArray;
-        } else {
-          // Single choice column
-          const matched = matchEmployeeNameToChoice(allEmps[0], primaryEmail, choices);
-          if (matched) return matched;
-          if (colDef.choice?.allowFillIn) return allEmps[0];
-          if (allEmps.length > 1) {
-            const combinedStr = `${allEmps[0]} (יחד עם ${allEmps.slice(1).join(", ")})`;
-            const matchCombined = choices.find((ch) => ch.trim().toLowerCase() === combinedStr.toLowerCase());
-            if (matchCombined) return matchCombined;
-          }
-          return choices.length > 0 ? choices[0] : allEmps[0];
-        }
-      }
-
-      if (isPerson) {
-        if (siteUserId && siteUserId > 0) {
-          return isMulti ? [siteUserId] : siteUserId;
-        }
-        return isMulti ? [primaryEmail] : primaryEmail;
-      }
-
-      // Text or other column
-      if (isMulti) {
-        return allEmps;
-      }
-      if (allEmps.length > 1) {
-        return `${allEmps[0]} (יחד עם ${allEmps.slice(1).join(", ")})`;
-      }
-      return allEmps[0];
-    };
 
     // 5 & 6. שעת התחלה ושעת סיום (HH:MM)
     let startTimeStr = String(entryData.startTime || "").trim();
@@ -1262,7 +1187,7 @@ export async function writeEntryToSharePointList(
       // Handle Choice column
       if (targetColDef?.type === "choice" || targetColDef?.choice || options?.isChoice) {
         formattedValue = resolveChoiceValue(String(value || ""), targetColDef);
-        if (isMultiSelectColumn(targetColDef) && !Array.isArray(formattedValue)) {
+        if (targetColDef?.choice?.allowMultipleValues && !Array.isArray(formattedValue)) {
           formattedValue = [formattedValue];
         }
       }
@@ -1312,11 +1237,11 @@ export async function writeEntryToSharePointList(
           }
 
           if (matchedChoice) {
-            formattedValue = isMultiSelectColumn(targetColDef) ? [matchedChoice] : matchedChoice;
+            formattedValue = matchedChoice;
           } else {
             // CRITICAL: NEVER overwrite user's customer with choices[0]!
             // Retain user's actual customer name ("קיסר דיגום")
-            formattedValue = isMultiSelectColumn(targetColDef) ? [rawVal] : rawVal;
+            formattedValue = rawVal;
           }
         }
       }
@@ -1407,6 +1332,7 @@ export async function writeEntryToSharePointList(
     }
 
     if (candidateHandlerCols.length === 0) {
+      // Find matching user column in list columns
       const defaultCol = columns.find(
         (c) =>
           c.name === "_x05de__x05e9__x05ea__x05de__x05e9_" ||
@@ -1420,21 +1346,43 @@ export async function writeEntryToSharePointList(
 
     for (const hCol of candidateHandlerCols) {
       const hColDef = columns.find((c) => c.name === hCol);
-      const isUserEmailCol =
-        hColDef?.name === "_x05de__x05e9__x05ea__x05de__x05e9_" ||
-        normalizeColString(hColDef?.displayName || "") === "משתמש";
+      const isChoice = Boolean(hColDef?.type === "choice" || hColDef?.choice);
 
-      if (isUserEmailCol && !isMultiSelectColumn(hColDef) && !hColDef?.choice) {
-        fields[hCol] = handlerEmail;
+      if (isChoice) {
+        const choices = hColDef?.choice?.choices || [];
+        const isWorkerCol =
+          normalizeColString(hColDef?.displayName || "").includes("עובד") ||
+          normalizeColString(decodeSharePointColName(hColDef?.name || "")).includes("עובד") ||
+          hColDef?.name === "_x05e2__x05d5__x05d1__x05d3_";
+
+        const matchedEmpChoice = matchEmployeeNameToChoice(handlerUserDisplay, handlerEmail, choices);
+
+        if (matchedEmpChoice) {
+          fields[hCol] = matchedEmpChoice;
+        } else if (isWorkerCol) {
+          // Worker column choice
+          if (hColDef?.choice?.allowFillIn) {
+            fields[hCol] = handlerUserDisplay;
+          } else {
+            console.warn(`[SharePoint Lists] Worker column choice not matched for "${handlerUserDisplay}" (${handlerEmail}) in choices:`, choices);
+          }
+        } else {
+          // For משתמש column, send SSO email
+          fields[hCol] = handlerEmail;
+        }
       } else {
-        const val = formatWorkerColumnValue(hColDef, allEmployees, handlerEmail, siteUserId);
-        if (val !== undefined) {
-          fields[hCol] = val;
+        const dNorm = normalizeColString(hColDef?.displayName || "");
+        const decNorm = normalizeColString(decodeSharePointColName(hColDef?.name || ""));
+        if (dNorm.includes("עובד") || decNorm.includes("עובד") || hColDef?.name === "_x05e2__x05d5__x05d1__x05d3_") {
+          fields[hCol] = handlerUserDisplay;
+        } else {
+          // Send the creator's SSO email address under user / משתמש column!
+          fields[hCol] = handlerEmail;
         }
       }
     }
 
-    // Explicit worker column guarantee: if list has "עובד" column, always assign formatted value
+    // Explicit worker column guarantee: if list has "עובד" column, always assign matched choice
     const explicitWorkerCol = columns.find((c) => {
       const dNorm = normalizeColString(c.displayName || "");
       const decNorm = normalizeColString(decodeSharePointColName(c.name || ""));
@@ -1448,20 +1396,18 @@ export async function writeEntryToSharePointList(
     });
 
     if (explicitWorkerCol) {
-      const val = formatWorkerColumnValue(explicitWorkerCol, allEmployees, handlerEmail, siteUserId);
-      if (val !== undefined) {
-        fields[explicitWorkerCol.name] = val;
+      const choices = explicitWorkerCol.choice?.choices || [];
+      const matched = matchEmployeeNameToChoice(handlerUserDisplay, handlerEmail, choices);
+      if (matched) {
+        fields[explicitWorkerCol.name] = matched;
+      } else if (explicitWorkerCol.choice?.allowFillIn || !explicitWorkerCol.choice) {
+        fields[explicitWorkerCol.name] = handlerUserDisplay;
       }
     }
 
-    // Set _x05de__x05e9__x05ea__x05de__x05e9_ if it exists in list schema
-    const userEmailColDef = columns.find((c) => c.name === "_x05de__x05e9__x05ea__x05de__x05e9_");
-    if (userEmailColDef) {
-      if (isMultiSelectColumn(userEmailColDef)) {
-        fields["_x05de__x05e9__x05ea__x05de__x05e9_"] = [handlerEmail];
-      } else {
-        fields["_x05de__x05e9__x05ea__x05de__x05e9_"] = handlerEmail;
-      }
+    // Only set _x05de__x05e9__x05ea__x05de__x05e9_ if it actually exists in list schema
+    if (columns.some((c) => c.name === "_x05de__x05e9__x05ea__x05de__x05e9_")) {
+      fields["_x05de__x05e9__x05ea__x05de__x05e9_"] = handlerEmail;
     }
 
     // 5. שעת התחלה
@@ -1518,13 +1464,11 @@ export async function writeEntryToSharePointList(
       if (isPrimitiveError) {
         // SharePoint says column cannot be a primitive string -> It is a Person column
         if (siteUserId && siteUserId > 0) {
-          const handlerColDef = columns.find((c) => c.name === currentHandlerCol);
-          const isMulti = isMultiSelectColumn(handlerColDef);
-          console.log(`[SharePoint Lists] Detected Person column from error. Switching to verified LookupId (${siteUserId}) for "${currentHandlerCol}" (isMulti: ${isMulti})`);
+          console.log(`[SharePoint Lists] Detected Person column from error. Switching to verified LookupId (${siteUserId}) for "${currentHandlerCol}"`);
           delete adaptedFields[currentHandlerCol];
           delete adaptedFields["_x05de__x05e9__x05ea__x05de__x05e9_"];
-          adaptedFields[currentHandlerCol + "LookupId"] = isMulti ? [siteUserId] : siteUserId;
-          adaptedFields["_x05de__x05e9__x05ea__x05de__x05e9_LookupId"] = isMulti ? [siteUserId] : siteUserId;
+          adaptedFields[currentHandlerCol + "LookupId"] = siteUserId;
+          adaptedFields["_x05de__x05e9__x05ea__x05de__x05e9_LookupId"] = siteUserId;
         } else {
           console.log(`[SharePoint Lists] Detected Person column without verified LookupId. Removing direct field to allow record creation`);
           delete adaptedFields[currentHandlerCol];
@@ -1535,32 +1479,26 @@ export async function writeEntryToSharePointList(
       } else if (isMissingPropError) {
         // SharePoint says LookupId property does not exist -> It is a Text/Choice column, so use creator SSO email!
         console.log(`[SharePoint Lists] Detected Text/Choice column from error. Switching to creator SSO email for "${currentHandlerCol}"`);
-        const handlerColDef = columns.find((c) => c.name === currentHandlerCol);
-        const isMulti = isMultiSelectColumn(handlerColDef);
         for (const k of Object.keys(adaptedFields)) {
           if (k.endsWith("LookupId")) {
             const baseCol = k.replace(/LookupId$/, "");
             delete adaptedFields[k];
-            const baseDef = columns.find((c) => c.name === baseCol);
-            adaptedFields[baseCol] = isMultiSelectColumn(baseDef) ? [handlerEmail] : handlerEmail;
+            adaptedFields[baseCol] = handlerEmail;
           }
         }
-        adaptedFields[currentHandlerCol] = isMulti ? [handlerEmail] : handlerEmail;
-        adaptedFields["_x05de__x05e9__x05ea__x05de__x05e9_"] = isMulti ? [handlerEmail] : handlerEmail;
+        adaptedFields[currentHandlerCol] = handlerEmail;
+        adaptedFields["_x05de__x05e9__x05ea__x05de__x05e9_"] = handlerEmail;
       } else {
         // General fallback: try string representation of creator SSO email
-        const handlerColDef = columns.find((c) => c.name === currentHandlerCol);
-        const isMulti = isMultiSelectColumn(handlerColDef);
         for (const k of Object.keys(adaptedFields)) {
           if (k.endsWith("LookupId")) {
             const baseCol = k.replace(/LookupId$/, "");
             delete adaptedFields[k];
-            const baseDef = columns.find((c) => c.name === baseCol);
-            adaptedFields[baseCol] = isMultiSelectColumn(baseDef) ? [handlerEmail] : handlerEmail;
+            adaptedFields[baseCol] = handlerEmail;
           }
         }
-        adaptedFields[currentHandlerCol] = isMulti ? [handlerEmail] : handlerEmail;
-        adaptedFields["_x05de__x05e9__x05ea__x05de__x05e9_"] = isMulti ? [handlerEmail] : handlerEmail;
+        adaptedFields[currentHandlerCol] = handlerEmail;
+        adaptedFields["_x05de__x05e9__x05ea__x05de__x05e9_"] = handlerEmail;
       }
 
       // Check if error mentions another specific property not existing
