@@ -4130,6 +4130,8 @@ export async function writeRows(
             userContext?.username ||
             userContext?.email ||
             (firstRow as any).userUpn,
+          additionalEmployees: (firstRow as any).additionalEmployees,
+          teamMembers: (firstRow as any).teamMembers,
           workType: resolvedWorkType,
           startTime: String(firstRow.startTime || firstRow["שעת התחלה"] || "").trim(),
           endTime: String(firstRow.endTime || firstRow["שעת סיום"] || "").trim(),
