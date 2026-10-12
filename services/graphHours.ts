@@ -3501,7 +3501,7 @@ export function resolveCellValueForHeader(
 
   // C. EMPLOYEE / TECHNICIAN (עובד / טכנאי / משתמש)
   if (isEmployeeHeader(normHeader)) {
-    return (
+    const primaryName =
       userContext?.name ||
       rowObj.userName ||
       rowObj.employee ||
@@ -3518,8 +3518,33 @@ export function resolveCellValueForHeader(
       rowObj["employee"] ||
       rowObj["technician"] ||
       userContext?.email ||
-      "עובד מערכת"
-    );
+      "עובד מערכת";
+
+    const addList: string[] = Array.isArray(rowObj.additionalEmployees)
+      ? rowObj.additionalEmployees
+      : typeof rowObj.additionalEmployees === "string" && rowObj.additionalEmployees.trim()
+      ? [rowObj.additionalEmployees.trim()]
+      : Array.isArray(rowObj.teamMembers)
+      ? rowObj.teamMembers.filter((m: string) => m.toLowerCase() !== String(primaryName).toLowerCase())
+      : [];
+
+    if (addList.length > 0 && !normHeader.includes("נוסף")) {
+      return `${primaryName} (יחד עם ${addList.join(", ")})`;
+    }
+    return primaryName;
+  }
+
+  // C2. ADDITIONAL EMPLOYEES / TEAM MEMBERS (עובדים נוספים / צוות)
+  if (normHeader.includes("נוסף") || normHeader.includes("צוות") || normHeader.includes("משתתפ")) {
+    if (Array.isArray(rowObj.additionalEmployees) && rowObj.additionalEmployees.length > 0) {
+      return rowObj.additionalEmployees.join(", ");
+    }
+    if (typeof rowObj.additionalEmployees === "string" && rowObj.additionalEmployees.trim()) {
+      return rowObj.additionalEmployees.trim();
+    }
+    if (Array.isArray(rowObj.teamMembers) && rowObj.teamMembers.length > 0) {
+      return rowObj.teamMembers.join(", ");
+    }
   }
 
   // D. START TIME (שעת התחלה)

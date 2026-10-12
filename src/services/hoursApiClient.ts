@@ -355,6 +355,8 @@ export interface HoursAssistantEntryDraft {
   duplicateWarning?: string | null;
   isReadyForConfirmation: boolean;
   missingFields?: string[];
+  teamMembers?: string[];
+  additionalEmployees?: string[];
   mappedRow?: Record<string, any>;
   availableFiles?: Array<{ fileId: string; fileName: string; webUrl?: string }>;
 }

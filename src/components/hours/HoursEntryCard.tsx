@@ -23,6 +23,7 @@ import {
   RefreshCw,
   FolderOpen,
   User,
+  Users,
 } from "lucide-react";
 import {
   HoursAssistantEntryDraft,
@@ -142,6 +143,9 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
     draft?.activityType || (draft?.workType && !["שעות", "Sheet1"].includes(draft.workType) ? draft.workType : "טיקטים")
   );
   const [editDescription, setEditDescription] = useState(draft?.description || "");
+  const [editAdditionalEmployees, setEditAdditionalEmployees] = useState(
+    (draft?.additionalEmployees || []).join(", ")
+  );
 
   // Sync state when draft updates from assistant (e.g. voice corrections)
   useEffect(() => {
@@ -157,6 +161,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       (draft.workType && !["שעות", "Sheet1"].includes(draft.workType) ? draft.workType : "טיקטים");
     setEditActivityType(initialActivityType);
     setEditDescription(draft.description || "");
+    setEditAdditionalEmployees((draft.additionalEmployees || []).join(", "));
   }, [
     draft?.customerName,
     draft?.date,
@@ -167,6 +172,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
     draft?.activityType,
     draft?.targetTabName,
     draft?.description,
+    draft?.additionalEmployees,
   ]);
 
   // Quick helper to calculate end time from start time and minutes
@@ -256,6 +262,14 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       draft.durationMinutes || 30
     );
 
+    const parsedAdditional = editAdditionalEmployees
+      .split(/[,+]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    const primaryName = currentUser?.name || "גיא יעקובי";
+    const teamMembersList = [primaryName, ...parsedAdditional];
+
     const updated: HoursAssistantEntryDraft = {
       ...draft,
       customerName: editCustomer.trim(),
@@ -270,6 +284,8 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       activityType: editActivityType,
       targetTabName: editWorkType,
       description: editDescription.trim(),
+      additionalEmployees: parsedAdditional,
+      teamMembers: teamMembersList,
       mappedRow: {
         ...(draft.mappedRow || {}),
         "שעת התחלה": timeCalcs.startTime,
@@ -281,6 +297,9 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
         תאריך: editDate.trim(),
         לקוח: editCustomer.trim(),
         תיאור: editDescription.trim(),
+        additionalEmployees: parsedAdditional,
+        teamMembers: teamMembersList,
+        "עובדים נוספים": parsedAdditional.join(", "),
       },
       isReadyForConfirmation: Boolean(
         editCustomer.trim() && editDate.trim() && editDescription.trim()
@@ -720,6 +739,20 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
           </div>
 
           <div>
+            <label className="block text-[11px] text-slate-700 font-bold mb-1 flex items-center gap-1">
+              <Users className="w-3.5 h-3.5 text-indigo-600" />
+              עובדים נוספים בצוות (אם ביצעתם יחד):
+            </label>
+            <input
+              type="text"
+              value={editAdditionalEmployees}
+              onChange={(e) => setEditAdditionalEmployees(e.target.value)}
+              className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-medium text-slate-800 focus:outline-none focus:border-indigo-500 shadow-xs mb-2"
+              placeholder="שמות עובדים נוספים (מופרדים בפסיקים, למשל: אולג, ודים)"
+            />
+          </div>
+
+          <div>
             <label className="block text-[11px] text-slate-700 font-bold mb-1">
               תיאור פעילות / תיעוד טכני מלא (קריטי ללקוח ולקובץ האקסל):
             </label>
@@ -1074,6 +1107,19 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
               </span>
             </div>
           </div>
+
+          {/* Additional Employees / Team Badge */}
+          {draft.additionalEmployees && draft.additionalEmployees.length > 0 && (
+            <div className="p-2.5 rounded-xl bg-indigo-50/90 border border-indigo-200/90 text-xs text-indigo-900 mb-3 shadow-2xs flex items-center gap-2">
+              <Users className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+              <div>
+                <span className="text-[10px] text-indigo-700 font-bold block">עבודה משותפת בצוות:</span>
+                <span className="font-bold text-indigo-950">
+                  {currentUser?.name || "גיא"} (יחד עם {draft.additionalEmployees.join(", ")})
+                </span>
+              </div>
+            </div>
+          )}
 
           {/* Description */}
           <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-800 leading-relaxed mb-3 shadow-xs">

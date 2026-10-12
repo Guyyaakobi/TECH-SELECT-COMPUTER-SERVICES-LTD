@@ -71,6 +71,8 @@ export interface HoursAssistantEntryDraft {
   duplicateWarning?: string | null;
   isReadyForConfirmation: boolean;
   missingFields?: string[];
+  teamMembers?: string[];
+  additionalEmployees?: string[];
   mappedRow?: Record<string, any>;
   availableFiles?: Array<{ fileId: string; fileName: string; webUrl?: string }>;
 }
@@ -78,6 +80,8 @@ export interface HoursAssistantEntryDraft {
 export function buildEnrichedRowPayload(params: {
   date: string;
   userName: string;
+  teamMembers?: string[];
+  additionalEmployees?: string[];
   userEmail?: string;
   userId?: string;
   userOid?: string;
@@ -97,6 +101,8 @@ export function buildEnrichedRowPayload(params: {
   const {
     date,
     userName,
+    teamMembers = [],
+    additionalEmployees = [],
     userEmail = "",
     userId = "",
     userOid = "",
@@ -161,7 +167,17 @@ export function buildEnrichedRowPayload(params: {
     customerName ||
     "פרויקט שוטף";
 
-  const prefixedDesc = prefixDescriptionWithAuthor(desc, userName);
+  // Build team display string and author prefix for multi-employee support
+  const secondaryList = (userOverride.teamMembers || teamMembers || additionalEmployees || userOverride.additionalEmployees || [])
+    .map(String)
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .filter((s) => s.toLowerCase() !== userName.trim().toLowerCase());
+
+  const teamDisplayString = secondaryList.length > 0 ? `${userName}, ${secondaryList.join(", ")}` : userName;
+  const authorPrefix = secondaryList.length > 0 ? `${userName} (יחד עם ${secondaryList.join(", ")})` : userName;
+
+  const prefixedDesc = prefixDescriptionWithAuthor(desc, authorPrefix);
 
   const result: Record<string, any> = {
     תאריך: date,
@@ -175,24 +191,25 @@ export function buildEnrichedRowPayload(params: {
     "יום מלא": hebrewDayFull,
     day: hebrewDayShort,
 
-    עובד: userName,
-    "שם עובד": userName,
-    משתמש: userName,
-    "שם משתמש": userName,
-    "שם המשתמש": userName,
-    "משתמש מערכת": userName,
-    טכנאי: userName,
-    "שם טכנאי": userName,
-    "שם הטכנאי": userName,
-    מבצע: userName,
-    מטפל: userName,
-    "איש צוות": userName,
-    "איש שירות": userName,
-    "איש מחשוב": userName,
-    employee: userName,
-    technician: userName,
-    employeeName: userName,
-    userName: userName,
+    עובד: teamDisplayString,
+    "שם עובד": teamDisplayString,
+    משתמש: teamDisplayString,
+    "שם משתמש": teamDisplayString,
+    "שם המשתמש": teamDisplayString,
+    "משתמש מערכת": teamDisplayString,
+    טכנאי: teamDisplayString,
+    "שם טכנאי": teamDisplayString,
+    "שם הטכנאי": teamDisplayString,
+    צוות: teamDisplayString,
+    מבצע: teamDisplayString,
+    מטפל: teamDisplayString,
+    "איש צוות": teamDisplayString,
+    "איש שירות": teamDisplayString,
+    "איש מחשוב": teamDisplayString,
+    employee: teamDisplayString,
+    technician: teamDisplayString,
+    employeeName: teamDisplayString,
+    userName: teamDisplayString,
     user: userName,
     username: userUpn || userEmail || userName,
     userEmail: userEmail || "",
@@ -1107,6 +1124,11 @@ export async function processAssistantChat(
                 isTimeSuggested: { type: Type.BOOLEAN, description: "True if times are suggested, false if explicitly set by employee" },
                 contactPerson: { type: Type.STRING, description: "Optional contact person" },
                 ticketNumber: { type: Type.STRING, description: "Optional ticket number" },
+                additionalEmployees: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: "List of other technicians/employees working together on this task e.g. ['אולג', 'ודים']",
+                },
                 isReady: { type: Type.BOOLEAN, description: "True if customer, date, duration, description are all present" },
                 missingFields: {
                   type: Type.ARRAY,
@@ -1265,25 +1287,29 @@ EXTRACTION RULES:
      * Verify that the customer exists in SharePoint in Hebrew OR English.
      * If customer is not found or ambiguous, ask the employee to clarify and DO NOT propose entry drafts for non-existent customers!
   2. Date: default today (${jCtx.todayIso}, Asia/Jerusalem). Understand "אתמול" (${jCtx.yesterdayIso}), "ביום ראשון", "שלשום", or explicit dates. If last month is mentioned (e.g. August, "חודש שעבר"), target last month's file (${jCtx.lastMonthYear}-${jCtx.lastMonth < 10 ? "0" + jCtx.lastMonth : jCtx.lastMonth}).
-  3. Duration / משך זמן (רציף ומהיר - ללא עצירות מיותרות):
-     - עגל תמיד ל-15 דקות (15 דקות = 0.25 שעות, 30 דקות = 0.5 שעות, 45 דקות = 0.75 שעות, 60 דקות = 1 שעה).
+  3. Duration / משך זמן (ברירת מחדל 15 דקות - מינימום לדיווח):
+     - כל דיווח במערכת הוא במינימום 15 דקות (15 דקות = 0.25 שעות). גם אם הטכנאי אמר "דיברתי 5 דקות" או "שיחה של 10 דק", עיגול המינימום הוא תמיד 15 דקות (0.25 שעה)!
      - חוק קריטי - עבודה רציפה ללא שאלות מעכבות (Seamless Non-Stop Workflow):
-       כאשר העובד מדווח על פעילות ומציין לקוח ומה נעשה (לדוגמה: "תיקנתי מדפסת באסיו", "הייתי בביקור אצל גל אור"):
-       גם אם העובד לא ציין במפורש משך זמן או שעות - אל תעצור ואל תשאל "כמה שעות או זמן לתעד עבור הפעילות?"!
-       הזן כברירת מחדל חכמה 1 שעה (duration: "1 שעה", 60 דקות, isTimeSuggested = true),
+       כאשר העובד מדווח על פעילות ומציין לקוח ומה נעשה (לדוגמה: "תיקנתי מדפסת באסיו", "דיברתי עם ירון בטלפון", "הייתי בביקור אצל גל אור"):
+       אם העובד לא ציין במפורש משך זמן או שעות - אל תעצור ואל תשאל "כמה שעות או זמן לתעד עבור הפעילות?"!
+       הזן כברירת מחדל חכמה 15 דקות (duration: "15 דקות", 15 דקות = 0.25 שעה, isTimeSuggested = true),
        קרא מיד ל-propose_entries ופתח את כרטיס הדיווח מיד!
-       בהודעה רשום: "הכנתי את כרטיס הדיווח עבור [שם הלקוח] (הגדרתי שעה 1 כברירת מחדל, ניתן לערוך בכרטיס או להמשיך). מאשר להזין?"
-       כך העובד יכול להזין תיעוד אחרי תיעוד ברצף מושלם בלי להיתקע בשאלות מיותרות!
-     - אם העובד כן ציין זמן (לדוגמה "שעתיים", "חצי שעה", "שעה וחצי", "45 דקות", "0.5"): קלוט את הזמן המדויק ישירות!
-  4. Work type / Tab selection (dynamic & semantic per file):
+       בהודעה רשום: "הכנתי את כרטיס הדיווח עבור [שם הלקוח] (הגדרתי 15 דקות כברירת מחדל, ניתן לערוך בכרטיס או להמשיך). מאשר להזין?"
+       לעולם אל תגדיר 1 שעה כברירת מחדל אם לא צוין!
+     - אם העובד כן ציין זמן (לדוגמה "שעתיים", "חצי שעה", "שעה וחצי", "45 דקות", "0.5"): קלוט את הזמן המדויק ישירות (בעיגול מינימום 15 דקות)!
+  4. Multiple Employees / עבודה משותפת בצוות:
+     - אם העובד מציין שדיווח העבודה בוצע יחד עם עובדים נוספים (כגון: "אני ואולג עבדנו", "גיא ואולג ביצעו", "יחד עם ודים ובר", "עבדתי עם אולג"):
+       חלץ את שמות העובדים הנוספים אל הפרמטר 'additionalEmployees' (לדוגמה: '["אולג"]', '["אולג", "ודים"]').
+       בתיאור הפעילות רשום בפורמט: "[שם העובד המחובר] (יחד עם [שמות העובדים הנוספים]) כתב: ..." (לדוגמה: "גיא (יחד עם אולג) כתב: ...").
+  5. Work type / Tab selection (dynamic & semantic per file):
      - Each customer's Excel file contains its own real worksheets discovered live.
      - Match activity semantics:
        * On-site visit / physical presence ("הייתי אצל", "ביקור", "הגעתי פיזית") -> "onsite" or matching visit tab.
        * Remote support / phone calls / tickets / daily maintenance ("דיברתי", "התחברתי", "טלפון", "מרחוק", "איפוס סיסמה", "תמיכה") -> "tickets" or matching support tab.
        * Project work / setup / migration / rollout ("פרויקט", "שדרוג שרת", "מיגרציה", "הקמה") -> "project" or matching project tab.
-  5. Description (ניסוח מקצועי ברמת איש IT בכיר / איש פיתוח בכיר - קריטי וסופר חשוב ללקוח):
-     - זיהוי מחבר הדיווח (קריטי): התחל תמיד את תיאור הפעילות בשם הטכנאי שכתב את הדיווח, לפי שם העובד המחובר (Employee name), בפורמט:
-       "[שם פרטי] כתב: [התיאור המקצועי המלא]"
+  6. Description (ניסוח מקצועי ברמת איש IT בכיר / איש פיתוח בכיר - קריטי וסופר חשוב ללקוח):
+     - זיהוי מחבר הדיווח וצוות העובדים (קריטי): התחל תמיד את תיאור הפעילות בשם הטכנאי שכתב את הדיווח (וצוות העובדים אם יש), בפורמט:
+       "[שם פרטי] כתב: [התיאור המקצועי המלא]" (או "גיא (יחד עם אולג) כתב: ...")
        לדוגמה: אם שם העובד המחובר הוא גיא (Guy) -> התחל ב: "גיא כתב: איתור תקלה פיזית..."
        אם שם העובד המחובר הוא ודים (Vadim) -> התחל ב: "ודים כתב: תמיכה מרחוק במשתמשת..."
        כך שבקובץ האקסל ודוח השעות יידעו תמיד בדיוק מי הטכנאי שהזין וביצע את המידע.
@@ -1582,13 +1608,13 @@ MANDATORY WORKFLOW:
                 : rawCustomerName;
             console.log(`[propose_entries] Customer verification: raw="${rawCustomerName}", resolved="${customerName}", score=${customerCheck.score}`);
             const date = String(raw.date || jCtx.todayIso).trim();
-            const rawDuration = raw.duration || "";
+            const rawDuration = String(raw.duration || "").trim();
             const parsedDuration = roundToQuarterHour(rawDuration);
-            // Seamless Non-Stop Workflow: If employee didn't specify duration, default to 60 minutes (1 hour)
-            const hasUserSpecifiedDuration = parsedDuration.minutes > 0;
-            const minutes = hasUserSpecifiedDuration ? parsedDuration.minutes : 60;
-            const hours = hasUserSpecifiedDuration ? parsedDuration.hours : 1;
-            const formatted = hasUserSpecifiedDuration ? parsedDuration.formatted : "60 דקות (1 שעה - ברירת מחדל)";
+            // Default to 15 minutes (0.25 שעה - מינימום לדיווח) if no duration was specified
+            const hasUserSpecifiedDuration = Boolean(rawDuration) && parsedDuration.minutes > 0;
+            const minutes = hasUserSpecifiedDuration ? Math.max(15, parsedDuration.minutes) : 15;
+            const hours = hasUserSpecifiedDuration ? Math.max(0.25, parsedDuration.hours) : 0.25;
+            const formatted = hasUserSpecifiedDuration ? parsedDuration.formatted : "15 דקות (0.25 שעה - מינימום)";
 
             // Find matching active draft if this is an update to an existing draft
             const matchingActiveDraft = (activeDrafts || []).find(
@@ -1597,10 +1623,27 @@ MANDATORY WORKFLOW:
                 (d.customerName && customerName && d.customerName.toLowerCase() === customerName.toLowerCase())
             );
 
+            // Extract multi-employee team members
+            const rawAdditional = raw.additionalEmployees || raw.teamMembers;
+            const extractedSecondary: string[] = Array.isArray(rawAdditional)
+              ? rawAdditional.map(String).map((s) => s.trim()).filter(Boolean)
+              : typeof rawAdditional === "string" && rawAdditional.trim()
+              ? rawAdditional.split(/[,+ ו]/).map((s) => s.trim()).filter(Boolean)
+              : matchingActiveDraft?.additionalEmployees || matchingActiveDraft?.teamMembers || [];
+
+            const primaryEmpName = user?.name || "גיא יעקובי";
+            const secondaryEmployeesList = extractedSecondary.filter(
+              (n) => n.toLowerCase() !== primaryEmpName.trim().toLowerCase()
+            );
+
+            const authorPrefix = secondaryEmployeesList.length > 0
+              ? `${primaryEmpName} (יחד עם ${secondaryEmployeesList.join(", ")})`
+              : primaryEmpName;
+
             // Work type / semantic tab request
             const rawWorkType = String(raw.workType || matchingActiveDraft?.activityType || matchingActiveDraft?.workType || "").trim();
             const rawDesc = String(raw.description || matchingActiveDraft?.description || "").trim();
-            const desc = prefixDescriptionWithAuthor(rawDesc, user?.name, user?.email);
+            const desc = prefixDescriptionWithAuthor(rawDesc, authorPrefix, user?.email);
             const inferredCategory = inferWorkType((rawWorkType ? rawWorkType + " " : "") + desc);
             const semanticActivityType =
               matchingActiveDraft?.activityType ||
@@ -1792,6 +1835,8 @@ MANDATORY WORKFLOW:
                   mappedRow = buildEnrichedRowPayload({
                     date,
                     userName: user.name,
+                    teamMembers: [primaryEmpName, ...secondaryEmployeesList],
+                    additionalEmployees: secondaryEmployeesList,
                     hours,
                     minutes,
                     formatted,
@@ -1806,6 +1851,8 @@ MANDATORY WORKFLOW:
                       "סוג פעילות": semanticActivityType,
                       "סוג הפעילות": semanticActivityType,
                       activityType: semanticActivityType,
+                      teamMembers: [primaryEmpName, ...secondaryEmployeesList],
+                      additionalEmployees: secondaryEmployeesList,
                     },
                   });
                 }
@@ -1837,6 +1884,8 @@ MANDATORY WORKFLOW:
               isTimeSuggested,
               contactPerson: raw.contactPerson || matchingActiveDraft?.contactPerson,
               ticketNumber: raw.ticketNumber || matchingActiveDraft?.ticketNumber,
+              teamMembers: [primaryEmpName, ...secondaryEmployeesList],
+              additionalEmployees: secondaryEmployeesList,
               workType: semanticActivityType,
               activityType: semanticActivityType,
               targetTabName,
@@ -2199,9 +2248,9 @@ MANDATORY WORKFLOW:
     }
 
     if (detectedCustomer) {
-      const finalMinutes = hasExplicitDuration ? durationAnalysis.minutes : 60;
-      const finalHours = hasExplicitDuration ? durationAnalysis.hours : 1;
-      const finalFormatted = hasExplicitDuration ? durationAnalysis.formatted : "60 דקות (1 שעה - ברירת מחדל)";
+      const finalMinutes = hasExplicitDuration ? Math.max(15, durationAnalysis.minutes) : 15;
+      const finalHours = hasExplicitDuration ? Math.max(0.25, durationAnalysis.hours) : 0.25;
+      const finalFormatted = hasExplicitDuration ? durationAnalysis.formatted : "15 דקות (0.25 שעה - מינימום)";
 
       const descPrefixed = prefixDescriptionWithAuthor(detectedDesc, user.name, user.email);
       const inferredCat = inferWorkType(descPrefixed);
