@@ -33,6 +33,7 @@ import {
   AssistantChatResponse,
 } from "../../services/hoursApiClient";
 import { HoursEntryCard } from "./HoursEntryCard";
+import { HoursErrorBoundary } from "./HoursErrorBoundary";
 
 export interface SavedChatSession {
   id: string;
@@ -1209,14 +1210,15 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                           {msg.drafts && msg.drafts.length > 0 && (
                             <div className="w-full space-y-2 pt-1">
                               {msg.drafts.map((d) => (
-                                <HoursEntryCard
-                                  key={d.id}
-                                  draft={activeDrafts.find((ad) => ad.id === d.id) || d}
-                                  currentUser={currentUser}
-                                  onConfirm={handleConfirmEntry}
-                                  onUpdateDraft={handleUpdateDraft}
-                                  isConfirming={loading}
-                                />
+                                <HoursErrorBoundary key={d.id} fallbackTitle="שגיאה בטעינת כרטיס הדיווח">
+                                  <HoursEntryCard
+                                    draft={activeDrafts.find((ad) => ad.id === d.id) || d}
+                                    currentUser={currentUser}
+                                    onConfirm={handleConfirmEntry}
+                                    onUpdateDraft={handleUpdateDraft}
+                                    isConfirming={loading}
+                                  />
+                                </HoursErrorBoundary>
                               ))}
                             </div>
                           )}
@@ -1225,13 +1227,14 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                           {msg.writtenEntries && msg.writtenEntries.length > 0 && (
                             <div className="w-full space-y-2 pt-1">
                               {msg.writtenEntries.map((w) => (
-                                <HoursEntryCard
-                                  key={w.id}
-                                  written={w}
-                                  currentUser={currentUser}
-                                  onUndo={(id, entry) => handleUndoEntry(id, entry || w)}
-                                  isUndoing={loading}
-                                />
+                                <HoursErrorBoundary key={w.id} fallbackTitle="שגיאה בטעינת כרטיס שורה שנרשמה">
+                                  <HoursEntryCard
+                                    written={w}
+                                    currentUser={currentUser}
+                                    onUndo={(id, entry) => handleUndoEntry(id, entry || w)}
+                                    isUndoing={loading}
+                                  />
+                                </HoursErrorBoundary>
                               ))}
                             </div>
                           )}
@@ -1254,14 +1257,15 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                       טיוטות ממתינות לאישורך:
                     </div>
                     {activeDrafts.map((d) => (
-                      <HoursEntryCard
-                        key={d.id}
-                        draft={d}
-                        currentUser={currentUser}
-                        onConfirm={handleConfirmEntry}
-                        onUpdateDraft={handleUpdateDraft}
-                        isConfirming={loading}
-                      />
+                      <HoursErrorBoundary key={d.id} fallbackTitle="שגיאה בטעינת כרטיס הדיווח">
+                        <HoursEntryCard
+                          draft={d}
+                          currentUser={currentUser}
+                          onConfirm={handleConfirmEntry}
+                          onUpdateDraft={handleUpdateDraft}
+                          isConfirming={loading}
+                        />
+                      </HoursErrorBoundary>
                     ))}
                   </div>
                 )}

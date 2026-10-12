@@ -4141,8 +4141,8 @@ export async function writeRows(
         webUrl,
         userContext,
         now,
-        listItemId: createdListItemId,
-        listItemWebUrl: createdListItemWebUrl,
+        listItemId: createdListItemIds[0],
+        listItemWebUrl: createdListItemWebUrls[0],
       });
     } catch (auditErr) {
       console.warn("[writeRows] Failed to record in audit store:", auditErr);

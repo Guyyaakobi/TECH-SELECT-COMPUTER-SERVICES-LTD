@@ -30,6 +30,7 @@ import { HoursAssistantChat } from "./HoursAssistantChat";
 import { HoursTestPanel } from "./HoursTestPanel";
 import { TodayHoursModal } from "./TodayHoursModal";
 import { CentralHoursLogModal } from "./CentralHoursLogModal";
+import { HoursErrorBoundary } from "./HoursErrorBoundary";
 import type { PublicClientApplication, AccountInfo } from "@azure/msal-browser";
 
 interface ServerUserInfo {
@@ -477,10 +478,15 @@ export const HoursTrackerPage: React.FC = () => {
           )}
 
           {/* Full-Window Gemini Hours Assistant */}
-          <HoursAssistantChat
-            currentUser={currentUserObj}
-            onOpenTodaySummary={() => setShowDailySummaryModal(true)}
-          />
+          <HoursErrorBoundary
+            fallbackTitle="אירעה שגיאה בטעינת עוזר דיווח השעות"
+            fallbackMessage="המערכת נתקלה בשגיאה זמנית. ניתן ללחוץ על 'נסה להציג שוב' או לרענן את העמוד."
+          >
+            <HoursAssistantChat
+              currentUser={currentUserObj}
+              onOpenTodaySummary={() => setShowDailySummaryModal(true)}
+            />
+          </HoursErrorBoundary>
         </main>
       ) : (
         <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 sm:px-8 py-6 sm:py-10">

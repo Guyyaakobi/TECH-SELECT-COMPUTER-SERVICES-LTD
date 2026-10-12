@@ -160,6 +160,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   const [editActivityType, setEditActivityType] = useState<string>(
     draft?.activityType || (draft?.workType && !["שעות", "Sheet1"].includes(draft.workType) ? draft.workType : "טיקטים")
   );
+  const [editDescription, setEditDescription] = useState(draft?.description || "");
   const defaultEmployee = currentUser?.name || "עובד";
   const [editEmployees, setEditEmployees] = useState<string[]>(
     draft?.assignedEmployees && draft.assignedEmployees.length > 0

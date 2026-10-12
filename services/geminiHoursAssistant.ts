@@ -451,6 +451,10 @@ export interface WrittenEntryResult {
   listItemId?: string;
   listItemWebUrl?: string;
   listsSyncResult?: { success: boolean; error?: string };
+  employeeName?: string;
+  ticketNumber?: string;
+  startTime?: string;
+  endTime?: string;
 }
 
 export interface AssistantChatParams {
