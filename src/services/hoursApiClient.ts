@@ -292,6 +292,7 @@ export async function apiGetHoursDiagnostics(forceRefresh = false): Promise<Hour
 export interface HoursAssistantEntryDraft {
   id: string;
   customerName: string;
+  projectName?: string;
   customerFolder?: string;
   fileId?: string;
   driveId?: string;

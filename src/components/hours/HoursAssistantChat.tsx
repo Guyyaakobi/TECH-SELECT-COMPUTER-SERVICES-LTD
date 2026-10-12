@@ -1342,8 +1342,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
             </button>
 
             {/* Text Input */}
-            <input
-              type="text"
+            <textarea
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => {
@@ -1360,7 +1359,8 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                   ? "שאל על שעות, בדוק תיעודי עובדים, בקש ריכוז שבועי או הזן דיווח..."
                   : "הזן דיווח טכני מפורט או הקלט הודעה קולית..."
               }
-              className="flex-1 bg-transparent text-slate-800 placeholder-slate-400 text-sm focus:outline-none py-1.5"
+              className="flex-1 bg-transparent text-slate-800 placeholder-slate-400 text-sm focus:outline-none py-1.5 resize-none overflow-y-auto max-h-32"
+              rows={1}
             />
 
             {/* Microphone icon */}

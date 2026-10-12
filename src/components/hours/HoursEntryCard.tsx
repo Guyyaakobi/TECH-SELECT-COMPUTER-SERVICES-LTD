@@ -398,6 +398,8 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   const draftHandlerDisplay = currentUser?.name || "עובד";
   const draftTitleDisplay = draft?.ticketNumber
     ? `טיקט ${draft.ticketNumber.replace(/^(טיקט|ticket)\s*/i, "")}`
+    : draft?.projectName
+    ? `פרוייקט: ${draft.projectName}`
     : draft?.description && draft.description.length <= 40
     ? draft.description
     : `${draft?.customerName || "לקוח"} - ${draft?.durationFormatted || "שעות"}`;

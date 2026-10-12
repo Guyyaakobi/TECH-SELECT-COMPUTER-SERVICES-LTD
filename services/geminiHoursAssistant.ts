@@ -1631,9 +1631,13 @@ MANDATORY WORKFLOW:
               console.warn("[propose_entries] auto-enrich error:", enrichErr);
             }
 
+            const projectMatch = (rawDesc + " " + rawWorkType).match(/(?:פרויקט|פרוייקט|project)\s+(?:-|:)?\s*([^\s,.;]+)/i);
+            const projectName = projectMatch ? projectMatch[1] : undefined;
+
             enriched.push({
               id: draftId,
               customerName,
+              projectName,
               customerFolder: customerName,
               fileId,
               driveId,
