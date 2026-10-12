@@ -515,6 +515,7 @@ import {
   writeEntryToSharePointList,
   deleteSharePointListItem,
   fetchSharePointListEntries,
+  resolveEffectiveName,
 } from "./sharepointLists";
 import {
   expandBilingualCustomerQueries,

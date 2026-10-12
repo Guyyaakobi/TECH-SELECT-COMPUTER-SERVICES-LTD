@@ -67,10 +67,11 @@ export async function authenticateHoursRequest(
     };
   }
 
-  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
-  let payload: any;
   try {
-    const JWKS = getTenantJWKS(tenantId);
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+    let payload: any;
+    try {
+      const JWKS = getTenantJWKS(tenantId);
     const verified = await jose.jwtVerify(token, JWKS, {
       algorithms: ["RS256"],
     });

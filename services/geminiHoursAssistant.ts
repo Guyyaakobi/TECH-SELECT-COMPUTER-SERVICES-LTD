@@ -30,6 +30,7 @@ import { resolveEffectiveName } from "./sharepointLists";
 export interface HoursAssistantEntryDraft {
   id: string; // card unique ID
   customerName: string;
+  projectName?: string;
   customerFolder?: string;
   fileId?: string;
   driveId?: string;

@@ -117,7 +117,6 @@ export async function initMsal(config: AzureHoursConfig): Promise<PublicClientAp
     },
     cache: {
       cacheLocation: "localStorage",
-      storeAuthStateInCookie: true,
     },
     system: {
       loggerOptions: {
