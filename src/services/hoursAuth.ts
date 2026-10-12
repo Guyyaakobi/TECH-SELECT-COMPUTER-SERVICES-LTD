@@ -19,30 +19,71 @@ export function isMsalInitialized(): boolean {
   return msalInstance !== null;
 }
 
-export function setCachedApiToken(token: string, expiresInSec = 3600): void {
-  if (!token) return;
-  cachedUserToken = {
-    token,
-    expiresAt: Date.now() + Math.max(300, expiresInSec - 120) * 1000,
-  };
+// 7-day persistent window for tenant users so they don't get kicked out
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function clearCachedApiToken(): void {
+  cachedUserToken = null;
   try {
-    sessionStorage.setItem("hours_bearer_token", token);
-    sessionStorage.setItem("hours_bearer_token_exp", String(cachedUserToken.expiresAt));
+    sessionStorage.removeItem("hours_bearer_token");
+    sessionStorage.removeItem("hours_bearer_token_exp");
+    localStorage.removeItem("hours_bearer_token");
+    localStorage.removeItem("hours_bearer_token_exp");
   } catch {}
 }
 
-export function getCachedApiToken(): string | null {
-  if (cachedUserToken && cachedUserToken.expiresAt > Date.now()) {
+export function setCachedApiToken(token: string, expiresInSec = 3600): void {
+  if (!token) return;
+  // Calculate standard expiration (at least 300s, default 1 hour)
+  const expiresAt = Date.now() + Math.max(300, expiresInSec - 120) * 1000;
+  // Also calculate 7-day persistent expiration
+  const persistentExp = Date.now() + SEVEN_DAYS_MS;
+
+  cachedUserToken = {
+    token,
+    expiresAt,
+  };
+
+  try {
+    // 1. Session Storage
+    sessionStorage.setItem("hours_bearer_token", token);
+    sessionStorage.setItem("hours_bearer_token_exp", String(expiresAt));
+
+    // 2. Persistent Local Storage (keeps user connected for days)
+    localStorage.setItem("hours_bearer_token", token);
+    localStorage.setItem("hours_bearer_token_exp", String(expiresAt));
+    localStorage.setItem("hours_persistent_auth_token_v3", token);
+    localStorage.setItem("hours_persistent_token_exp_v3", String(persistentExp));
+    localStorage.setItem("hours_token_saved_time", String(Date.now()));
+  } catch {}
+}
+
+export function getCachedApiToken(minRemainingSec = 120): string | null {
+  const minMs = minRemainingSec * 1000;
+
+  // 1. In-memory valid token
+  if (cachedUserToken && cachedUserToken.expiresAt - Date.now() > minMs) {
     return cachedUserToken.token;
   }
+
   try {
-    const stored = sessionStorage.getItem("hours_bearer_token");
-    const exp = Number(sessionStorage.getItem("hours_bearer_token_exp")) || 0;
-    if (stored && exp > Date.now()) {
+    // 2. Check localStorage standard cache
+    const stored = localStorage.getItem("hours_bearer_token") || sessionStorage.getItem("hours_bearer_token");
+    const exp = Number(localStorage.getItem("hours_bearer_token_exp") || sessionStorage.getItem("hours_bearer_token_exp")) || 0;
+    if (stored && exp - Date.now() > minMs) {
       cachedUserToken = { token: stored, expiresAt: exp };
       return stored;
     }
+
+    // 3. Check 7-day persistent token cache
+    const persistent = localStorage.getItem("hours_persistent_auth_token_v3");
+    const persistentExp = Number(localStorage.getItem("hours_persistent_token_exp_v3")) || 0;
+    if (persistent && persistentExp > Date.now()) {
+      cachedUserToken = { token: persistent, expiresAt: persistentExp };
+      return persistent;
+    }
   } catch {}
+
   return null;
 }
 
@@ -76,6 +117,7 @@ export async function initMsal(config: AzureHoursConfig): Promise<PublicClientAp
     },
     cache: {
       cacheLocation: "localStorage",
+      storeAuthStateInCookie: true,
     },
     system: {
       loggerOptions: {
@@ -97,8 +139,9 @@ export async function initMsal(config: AzureHoursConfig): Promise<PublicClientAp
 
 /**
  * Helper to acquire API Token:
- * Checks memory & sessionStorage cache first.
- * Then attempts acquireTokenSilent with fallback to User.Read and MSAL localStorage cache.
+ * Checks memory & localStorage persistent cache first.
+ * Then attempts acquireTokenSilent with fallback to User.Read, MSAL localStorage cache,
+ * and persistent 7-day token.
  */
 function findMsalLocalStorageToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -112,7 +155,7 @@ function findMsalLocalStorageToken(): string | null {
           const parsed = JSON.parse(itemStr);
           const secret = parsed.secret || parsed.idToken || parsed.accessToken;
           const exp = Number(parsed.expiresOn || parsed.extendedExpiresOn || 0) * 1000;
-          if (secret && (!exp || exp > Date.now())) {
+          if (secret && (!exp || exp + SEVEN_DAYS_MS > Date.now())) {
             return secret;
           }
         }
@@ -124,21 +167,22 @@ function findMsalLocalStorageToken(): string | null {
 
 export async function getApiToken(
   pca?: PublicClientApplication,
-  customScope?: string
+  customScope?: string,
+  forceRefresh = false
 ): Promise<string> {
-  // 1. Return cached valid token if available
-  const cached = getCachedApiToken();
-  if (cached) {
-    return cached;
+  // 1. Return cached valid token if available and not forcing refresh
+  if (!forceRefresh) {
+    const cached = getCachedApiToken(180);
+    if (cached) {
+      return cached;
+    }
   }
 
   const instance = pca || (msalInstance ? getMsalInstance() : null);
   if (!instance) {
-    const stored = sessionStorage.getItem("hours_bearer_token");
-    if (stored) return stored;
-    const lsToken = findMsalLocalStorageToken();
+    const lsToken = findMsalLocalStorageToken() || localStorage.getItem("hours_persistent_auth_token_v3") || sessionStorage.getItem("hours_bearer_token");
     if (lsToken) {
-      setCachedApiToken(lsToken, 1800);
+      setCachedApiToken(lsToken, 3600);
       return lsToken;
     }
     throw new Error("מערכת האימות טרם אותחלה. יש לבצע התחברות.");
@@ -148,11 +192,9 @@ export async function getApiToken(
   const activeAccount = instance.getActiveAccount() || (accounts.length > 0 ? accounts[0] : null);
 
   if (!activeAccount) {
-    const stored = sessionStorage.getItem("hours_bearer_token");
-    if (stored) return stored;
-    const lsToken = findMsalLocalStorageToken();
+    const lsToken = findMsalLocalStorageToken() || localStorage.getItem("hours_persistent_auth_token_v3") || sessionStorage.getItem("hours_bearer_token");
     if (lsToken) {
-      setCachedApiToken(lsToken, 1800);
+      setCachedApiToken(lsToken, 3600);
       return lsToken;
     }
     throw new Error("לא נמצא חשבון פעיל מחובר. יש לבצע התחברות למערכת.");
@@ -170,12 +212,13 @@ export async function getApiToken(
       scopes: [targetScope],
       account: activeAccount,
       redirectUri: getRedirectUri(),
+      forceRefresh: Boolean(forceRefresh),
     };
 
     const response = await Promise.race([
       instance.acquireTokenSilent(tokenRequest),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout during silent token refresh")), 7000)
+        setTimeout(() => reject(new Error("Timeout during silent token refresh")), 8000)
       ),
     ]);
 
@@ -185,6 +228,7 @@ export async function getApiToken(
       return token;
     }
   } catch (err: any) {
+    console.warn("[getApiToken] Silent token acquisition warning:", err?.message || err);
     // If custom scope failed, fallback to User.Read
     if (targetScope !== "User.Read") {
       try {
@@ -192,6 +236,7 @@ export async function getApiToken(
           scopes: ["User.Read"],
           account: activeAccount,
           redirectUri: getRedirectUri(),
+          forceRefresh: Boolean(forceRefresh),
         });
         const fallbackToken = fallbackRes?.idToken || fallbackRes?.accessToken;
         if (fallbackToken) {
@@ -204,24 +249,31 @@ export async function getApiToken(
     }
   }
 
-  // Fallback to activeAccount idToken if available
+  // Fallback 1: activeAccount idToken if available
   const accountIdToken = (activeAccount as any)?.idToken;
   if (accountIdToken) {
     setCachedApiToken(accountIdToken, 3600);
     return accountIdToken;
   }
 
-  // Fallback to sessionStorage
+  // Fallback 2: localStorage persistent token
+  const persistentToken = localStorage.getItem("hours_persistent_auth_token_v3") || localStorage.getItem("hours_bearer_token");
+  if (persistentToken) {
+    setCachedApiToken(persistentToken, 3600);
+    return persistentToken;
+  }
+
+  // Fallback 3: localStorage MSAL cache
+  const lsToken = findMsalLocalStorageToken();
+  if (lsToken) {
+    setCachedApiToken(lsToken, 3600);
+    return lsToken;
+  }
+
+  // Fallback 4: sessionStorage
   const stored = sessionStorage.getItem("hours_bearer_token");
   if (stored) {
     return stored;
-  }
-
-  // Fallback to localStorage MSAL cache
-  const lsToken = findMsalLocalStorageToken();
-  if (lsToken) {
-    setCachedApiToken(lsToken, 1800);
-    return lsToken;
   }
 
   throw new Error("פג תוקף החיבור ל-Microsoft 365. אנא רענן את העמוד והתחבר שוב.");

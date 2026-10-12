@@ -170,6 +170,20 @@ export const HoursTrackerPage: React.FC = () => {
           if (accounts.length > 0) {
             currentAccount = pca.getActiveAccount() || accounts[0];
             pca.setActiveAccount(currentAccount);
+          } else {
+            // Check if user has an active persistent session from prior logins
+            const persistentToken = localStorage.getItem("hours_persistent_auth_token_v3");
+            const rawSavedUser = localStorage.getItem("hours_saved_server_user_v2");
+            if (persistentToken && rawSavedUser) {
+              try {
+                const parsedUser = JSON.parse(rawSavedUser);
+                if (parsedUser && parsedUser.email) {
+                  setServerUser(parsedUser);
+                  setLoading(false);
+                  return;
+                }
+              } catch {}
+            }
           }
         }
 
@@ -214,11 +228,14 @@ export const HoursTrackerPage: React.FC = () => {
 
           const userData: ServerUserInfo = await response.json();
           setServerUser(userData);
+          try {
+            localStorage.setItem("hours_saved_server_user_v2", JSON.stringify(userData));
+          } catch {}
         } catch (apiErr: any) {
           console.warn("[HoursTracker] /api/hours/me info note:", apiErr);
           if (currentAccount) {
             const accOid = currentAccount.localAccountId || currentAccount.homeAccountId?.split(".")[0] || "";
-            setServerUser({
+            const fallbackUser: ServerUserInfo = {
               name: currentAccount.name || (currentAccount.username ? currentAccount.username.split("@")[0] : "עובד"),
               email: currentAccount.username || "g@tech-select.co.il",
               oid: accOid,
@@ -228,7 +245,11 @@ export const HoursTrackerPage: React.FC = () => {
               isAdmin: ["g@tech-select.co.il"].includes(
                 (currentAccount.username || "").toLowerCase()
               ),
-            });
+            };
+            setServerUser(fallbackUser);
+            try {
+              localStorage.setItem("hours_saved_server_user_v2", JSON.stringify(fallbackUser));
+            } catch {}
           }
         }
       } catch (err: any) {

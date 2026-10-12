@@ -243,6 +243,17 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
   // Chat scroll container
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  // Gemini-style auto-expanding textarea
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const nextHeight = Math.min(Math.max(el.scrollHeight, 26), 160);
+    el.style.height = `${nextHeight}px`;
+  }, [inputText]);
+
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -521,6 +532,9 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
     if (!text || loading) return;
 
     setInputText("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
 
     // Add user message to UI immediately
     const userMsgId = `user_${Date.now()}`;
@@ -1329,20 +1343,21 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
             </div>
           )}
 
-          {/* Floating Pill Input Bar */}
-          <div className="w-full rounded-3xl bg-[#f0f4f9] hover:bg-[#e9eef6] focus-within:bg-white focus-within:shadow-xl border border-slate-200/90 transition-all p-2.5 pl-4 flex items-center gap-3">
+          {/* Floating Pill Input Bar (Gemini Style - Clean & Auto-expanding) */}
+          <div className="w-full rounded-[28px] sm:rounded-[32px] bg-[#f0f4f9] hover:bg-[#e9eef6] focus-within:bg-white focus-within:shadow-xl focus-within:border-slate-300 border border-slate-200/90 transition-all p-2 sm:p-2.5 pl-3 sm:pl-3.5 flex items-end gap-2 sm:gap-2.5 shadow-2xs">
             {/* Plus icon on right (start) */}
             <button
               type="button"
               onClick={handleNewChat}
-              className="btn-icon-subtle w-9 h-9 rounded-full bg-white hover:bg-slate-200 flex items-center justify-center text-slate-600 shrink-0 shadow-xs cursor-pointer"
+              className="btn-icon-subtle w-9 h-9 rounded-full bg-white hover:bg-slate-200 flex items-center justify-center text-slate-600 shrink-0 shadow-xs cursor-pointer self-end mb-0.5 transition-colors"
               title="נקה ופתח שיחה חדשה"
             >
               <Plus className="w-4 h-4" />
             </button>
 
-            {/* Text Input */}
+            {/* Text Input - Gemini Auto-expanding & Clean, never clipped */}
             <textarea
+              ref={textareaRef}
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={(e) => {
@@ -1352,6 +1367,8 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                 }
               }}
               disabled={loading || isRecording}
+              dir="rtl"
+              rows={1}
               placeholder={
                 isRecording
                   ? "מקליט כעת (עד 2 דקות)..."
@@ -1359,34 +1376,37 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                   ? "שאל על שעות, בדוק תיעודי עובדים, בקש ריכוז שבועי או הזן דיווח..."
                   : "הזן דיווח טכני מפורט או הקלט הודעה קולית..."
               }
-              className="flex-1 bg-transparent text-slate-800 placeholder-slate-400 text-sm focus:outline-none py-1.5 resize-none overflow-y-auto max-h-32"
-              rows={1}
+              className="flex-1 bg-transparent text-slate-800 placeholder-slate-400 text-sm sm:text-[15px] leading-6 focus:outline-none py-1.5 px-2 resize-none overflow-y-auto max-h-40 min-h-[26px]"
             />
 
-            {/* Microphone icon */}
-            <button
-              onClick={isRecording ? stopRecording : startRecording}
-              disabled={loading}
-              className={`btn-icon-subtle w-10 h-10 rounded-full flex items-center justify-center shrink-0 cursor-pointer ${
-                isRecording
-                  ? "bg-red-500 text-white animate-pulse"
-                  : "text-slate-500 hover:text-blue-600 hover:bg-white"
-              }`}
-              title={isRecording ? "עצור הקלטה" : "הקלט הודעה קולית"}
-            >
-              {isRecording ? <Square className="w-4 h-4 fill-white" /> : <Mic className="w-4 h-4" />}
-            </button>
-
-            {/* Send icon if text */}
-            {inputText.trim() && (
+            {/* Actions Group (Microphone & Send) - Pinned cleanly at bottom */}
+            <div className="flex items-center gap-1.5 shrink-0 self-end mb-0.5">
+              {/* Microphone icon */}
               <button
-                onClick={() => handleSendText()}
+                onClick={isRecording ? stopRecording : startRecording}
                 disabled={loading}
-                className="btn-primary-subtle w-10 h-10 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shadow-md shrink-0 cursor-pointer"
+                className={`btn-icon-subtle w-9 h-9 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
+                  isRecording
+                    ? "bg-red-500 text-white animate-pulse"
+                    : "text-slate-500 hover:text-blue-600 hover:bg-white shadow-2xs"
+                }`}
+                title={isRecording ? "עצור הקלטה" : "הקלט הודעה קולית"}
               >
-                <Send className="w-4 h-4 -scale-x-100" />
+                {isRecording ? <Square className="w-4 h-4 fill-white" /> : <Mic className="w-4 h-4" />}
               </button>
-            )}
+
+              {/* Send icon if text */}
+              {inputText.trim() && (
+                <button
+                  onClick={() => handleSendText()}
+                  disabled={loading}
+                  className="btn-primary-subtle w-9 h-9 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center shadow-md shrink-0 cursor-pointer transition-all animate-in fade-in zoom-in-90 duration-150"
+                  title="שלח דיווח"
+                >
+                  <Send className="w-4 h-4 -scale-x-100" />
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="text-center mt-2 text-[11px] text-slate-400">

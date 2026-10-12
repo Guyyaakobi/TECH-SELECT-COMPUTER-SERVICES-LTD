@@ -1,13 +1,14 @@
-import { getApiToken } from "./hoursAuth";
+import { getApiToken, clearCachedApiToken } from "./hoursAuth";
 
 /**
  * Generic authenticated fetch wrapper for /api/hours/* endpoints
+ * Features automatic 401 interceptor: if token expired, automatically refreshes and retries once
  */
 export async function fetchHoursApi<T = any>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token = await getApiToken();
+  let token = await getApiToken();
   const headers = new Headers(options.headers || {});
   headers.set("Authorization", `Bearer ${token}`);
   if (!headers.has("Content-Type") && options.body && typeof options.body === "string") {
@@ -21,11 +22,32 @@ export async function fetchHoursApi<T = any>(
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
-    const res = await fetch(cleanEndpoint, {
+    let res = await fetch(cleanEndpoint, {
       ...options,
       headers,
       signal: options.signal || controller.signal,
     });
+
+    // Automatic 401 Token Refresh Interceptor:
+    // If the server returns 401 Unauthorized, immediately clear cached token,
+    // silently acquire a fresh token, and retry the request once before failing!
+    if (res.status === 401) {
+      try {
+        console.info("[fetchHoursApi] 401 detected, attempting transparent token auto-refresh...");
+        clearCachedApiToken();
+        const freshToken = await getApiToken(undefined, undefined, true);
+        if (freshToken) {
+          headers.set("Authorization", `Bearer ${freshToken}`);
+          res = await fetch(cleanEndpoint, {
+            ...options,
+            headers,
+            signal: options.signal || controller.signal,
+          });
+        }
+      } catch (retryErr) {
+        console.warn("[fetchHoursApi] Transparent token auto-refresh failed:", retryErr);
+      }
+    }
 
     clearTimeout(timeoutId);
 

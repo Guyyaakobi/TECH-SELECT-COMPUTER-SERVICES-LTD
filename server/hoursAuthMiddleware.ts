@@ -148,6 +148,8 @@ export async function validateAzureToken(token: string): Promise<AuthenticatedUs
 
   let verifiedPayload: jose.JWTPayload | null = null;
 
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
   // 2. Try verifying with tenant JWKS
   try {
     const tenantJWKS = getTenantJWKS(tenantId);
@@ -156,20 +158,37 @@ export async function validateAzureToken(token: string): Promise<AuthenticatedUs
     });
     verifiedPayload = result.payload;
   } catch (tenantJwtErr: any) {
-    // If expired, immediately fail
+    // If expired, check if within 7-day grace period for tenant users
     if (tenantJwtErr?.code === "ERR_JWT_EXPIRED" || tenantJwtErr instanceof jose.errors.JWTExpired) {
-      throw new AuthValidationError("expired", tenantJwtErr.message);
+      try {
+        const decoded = jose.decodeJwt(token);
+        const expMs = (decoded?.exp || 0) * 1000;
+        if (expMs && Date.now() < expMs + SEVEN_DAYS_MS) {
+          const decodedTid = String(decoded.tid || "").trim();
+          const decodedIss = String(decoded.iss || "").trim();
+          if ((decodedTid && decodedTid === tenantId) || (decodedIss && decodedIss.includes(tenantId))) {
+            console.info(`[HOURS AUTH GRACE] Valid tenant token accepted within 7-day grace period for: ${decoded.preferred_username || decoded.email || decoded.upn}`);
+            verifiedPayload = decoded;
+          }
+        }
+      } catch {}
+
+      if (!verifiedPayload) {
+        throw new AuthValidationError("expired", tenantJwtErr.message);
+      }
     }
 
-    // Try common JWKS as fallback for multi-tenant or v2.0 keys
-    try {
-      const commonJWKS = getCommonJWKS();
-      const result = await jose.jwtVerify(token, commonJWKS, {
-        algorithms: ["RS256"],
-      });
-      verifiedPayload = result.payload;
-    } catch {
-      // Will attempt Graph API validation below
+    if (!verifiedPayload) {
+      // Try common JWKS as fallback for multi-tenant or v2.0 keys
+      try {
+        const commonJWKS = getCommonJWKS();
+        const result = await jose.jwtVerify(token, commonJWKS, {
+          algorithms: ["RS256"],
+        });
+        verifiedPayload = result.payload;
+      } catch {
+        // Will attempt Graph API validation below
+      }
     }
   }
 
@@ -275,9 +294,10 @@ export async function validateAzureToken(token: string): Promise<AuthenticatedUs
   try {
     const decoded = jose.decodeJwt(token);
     if (decoded) {
-      const isExpired = decoded.exp ? Date.now() >= decoded.exp * 1000 : false;
-      if (isExpired) {
-        throw new AuthValidationError("expired", "Token has expired");
+      const expMs = (decoded.exp || 0) * 1000;
+      const isExpiredPastGrace = expMs ? Date.now() >= (expMs + SEVEN_DAYS_MS) : false;
+      if (isExpiredPastGrace) {
+        throw new AuthValidationError("expired", "Token has expired past 7-day grace period");
       }
 
       const decodedTid = String(decoded.tid || "").trim();
