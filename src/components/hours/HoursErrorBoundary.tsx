@@ -1,29 +1,30 @@
 import React, { Component, ErrorInfo, ReactNode } from "react";
 import { AlertTriangle, RefreshCw } from "lucide-react";
 
-interface Props {
-  children: ReactNode;
+export interface HoursErrorBoundaryProps {
+  children?: ReactNode;
   fallbackTitle?: string;
   fallbackMessage?: string;
   onReset?: () => void;
+  key?: React.Key;
 }
 
-interface State {
+export interface HoursErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
 }
 
-export class HoursErrorBoundary extends Component<Props, State> {
-  public state: State = {
+export class HoursErrorBoundary extends Component<HoursErrorBoundaryProps, HoursErrorBoundaryState> {
+  public override state: HoursErrorBoundaryState = {
     hasError: false,
     error: null,
   };
 
-  public static getDerivedStateFromError(error: Error): State {
+  public static getDerivedStateFromError(error: Error): HoursErrorBoundaryState {
     return { hasError: true, error };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  public override componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("[HoursErrorBoundary] Caught render error:", error, errorInfo);
   }
 
@@ -34,7 +35,7 @@ export class HoursErrorBoundary extends Component<Props, State> {
     }
   };
 
-  public render() {
+  public override render() {
     if (this.state.hasError) {
       return (
         <div
@@ -52,10 +53,10 @@ export class HoursErrorBoundary extends Component<Props, State> {
           <button
             type="button"
             onClick={this.handleReset}
-            className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-2xs transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-medium text-xs transition-colors shadow-xs cursor-pointer"
           >
             <RefreshCw className="w-3.5 h-3.5" />
-            <span>נסה להציג שוב</span>
+            <span>נסה שוב</span>
           </button>
         </div>
       );

@@ -389,6 +389,7 @@ export interface WrittenEntryResult {
   startTime?: string;
   endTime?: string;
   employeeName?: string;
+  skippedOccupiedRows?: number;
 }
 
 export interface AssistantChatRequest {

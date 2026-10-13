@@ -455,6 +455,7 @@ export interface WrittenEntryResult {
   ticketNumber?: string;
   startTime?: string;
   endTime?: string;
+  skippedOccupiedRows?: number;
 }
 
 export interface AssistantChatParams {
@@ -1031,6 +1032,7 @@ export async function processAssistantChat(
         listItemId: itemId,
         listItemWebUrl: writeRes.listItemWebUrl,
         listsSyncResult: writeRes.listsSyncResult,
+        skippedOccupiedRows: writeRes.skippedOccupiedRows,
       };
     });
 
@@ -2130,6 +2132,7 @@ MANDATORY WORKFLOW:
               listItemId: itemId,
               listItemWebUrl: writeRes.listItemWebUrl,
               listsSyncResult: writeRes.listsSyncResult,
+              skippedOccupiedRows: writeRes.skippedOccupiedRows,
             };
             newWrittenEntries.push(writtenItem);
           }

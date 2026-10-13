@@ -175,6 +175,7 @@ export interface WriteRowsResult {
   listItemIds?: string[];
   listItemWebUrl?: string;
   listsSyncResult?: { success: boolean; error?: string };
+  skippedOccupiedRows?: number;
 }
 
 export interface UndoRowParams {
@@ -2978,21 +2979,36 @@ export async function readSheetStructure(
   const dataRows: any[][] = [];
   const dataFormulas: any[][] = [];
   let totalsRowOffset = -1;
+  let lastOccupiedRowOffset = headerRowOffset;
   const totalsKeywords = ["סה״כ", "סה\"כ", "סך הכל", "סיכום", "total", "totals", "sum"];
 
   for (let r = headerRowOffset + 1; r < values.length; r++) {
     const row = values[r] || [];
     const rowFormulas = formulas[r] || [];
-    const isRowEmpty = row.every((c: any) => c === null || c === "" || c === undefined);
+    const isRowEmpty =
+      row.every((c: any) => c === null || c === "" || c === undefined || String(c).trim() === "") &&
+      (!rowFormulas ||
+        rowFormulas.every(
+          (f: any) => f === null || f === "" || f === undefined || String(f).trim() === "" || String(f).trim() === "="
+        ));
 
     if (isRowEmpty) {
       continue;
     }
 
     // Check if this row is a totals row
-    const isTotals = row.some((c: any) =>
-      typeof c === "string" && totalsKeywords.some((k) => c.toLowerCase().includes(k))
-    ) || rowFormulas.some((f: any) => typeof f === "string" && (f.startsWith("=SUM") || f.startsWith("=SUBTOTAL")));
+    const isTotals =
+      row.some(
+        (c: any) => typeof c === "string" && totalsKeywords.some((k) => c.toLowerCase().includes(k))
+      ) ||
+      rowFormulas.some(
+        (f: any) =>
+          typeof f === "string" &&
+          (f.startsWith("=SUM") ||
+            f.startsWith("=SUBTOTAL") ||
+            f.toLowerCase().includes("sum(") ||
+            f.toLowerCase().includes("subtotal("))
+      );
 
     if (isTotals) {
       totalsRowOffset = r;
@@ -3001,14 +3017,15 @@ export async function readSheetStructure(
 
     dataRows.push(row);
     dataFormulas.push(rowFormulas);
+    lastOccupiedRowOffset = r;
   }
 
   const last5Rows = dataRows.slice(-5);
   const totalDataRows = dataRows.length;
   const hasTotalsRow = totalsRowOffset !== -1;
 
-  // Calculate next empty row address (ABOVE any totals row)
-  let nextEmptyRowNumber = actualHeaderRowNumber + totalDataRows + 1;
+  // Calculate next empty row address (ABOVE any totals row, or immediately following the last occupied row)
+  let nextEmptyRowNumber = startRowIndex + lastOccupiedRowOffset + 1;
   let totalsRowAddress: string | undefined = undefined;
 
   const startColIdx = columnLetterToIndex(startColLetter);
@@ -3714,6 +3731,214 @@ export function resolveCellValueForHeader(
 }
 
 /**
+ * Verifies that candidate rows in an Excel worksheet are genuinely empty before writing.
+ * Requirement: "אם יש משהו בשורה אל תדרוס את השורה" (If there is anything in the row, do not overwrite the row).
+ *
+ * Scans starting from initialRowNumber:
+ * - Reads row cells across columns A through Z (or wider if headers span beyond Z).
+ * - If a row contains ANY value (string, number, boolean, date) or formula:
+ *   "אם יש משהו בשורה אל תדרוס את השורה" -> DO NOT overwrite the row!
+ *   Skips this row and advances downwards.
+ * - If a row is identified as a totals/summary row (סה"כ, SUM, SUBTOTAL):
+ *   Protects the totals row by inserting empty rows above it with shift: "Down".
+ * - Once `numRowsNeeded` consecutive rows are verified completely empty with zero content and zero formulas:
+ *   Returns the safe row range address.
+ */
+export async function findSafeEmptyRowRange(
+  driveId: string,
+  fileId: string,
+  sheetId: string,
+  initialRowNumber: number,
+  numRowsNeeded: number,
+  startColLetter: string,
+  endColLetter: string,
+  hasTotalsRowHint: boolean,
+  totalsRowAddressHint: string | undefined,
+  sessionHeaders: Record<string, string>,
+  env?: any
+): Promise<{
+  targetRowNumber: number;
+  targetAddress: string;
+  skippedOccupiedRows: number;
+  insertedRowsCount: number;
+}> {
+  let currentCandidateRow = Math.max(initialRowNumber || 2, 2);
+  const startColIdx = columnLetterToIndex(startColLetter || "A");
+  const endColIdx = columnLetterToIndex(endColLetter || "A");
+  const checkEndColIdx = Math.max(endColIdx, columnLetterToIndex("Z"), 26);
+  const checkEndColLetter = indexToColumnLetter(checkEndColIdx);
+
+  let skippedOccupiedRows = 0;
+  let insertedRowsCount = 0;
+  const totalsKeywords = ["סה״כ", "סה\"כ", "סך הכל", "סיכום", "total", "totals", "sum"];
+  const MAX_ROWS_TO_CHECK = 200;
+  let totalRowsChecked = 0;
+
+  while (totalRowsChecked < MAX_ROWS_TO_CHECK) {
+    const windowSize = Math.min(25, MAX_ROWS_TO_CHECK - totalRowsChecked);
+    const windowEndRow = currentCandidateRow + windowSize - 1;
+    const rangeAddress = `A${currentCandidateRow}:${checkEndColLetter}${windowEndRow}`;
+    const checkUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${encodeURIComponent(rangeAddress)}')`;
+
+    let rangeData: any = null;
+    try {
+      const checkRes = await fetchGraph(checkUrl, { method: "GET", headers: sessionHeaders }, env);
+      if (checkRes.ok) {
+        rangeData = await checkRes.json();
+      } else {
+        console.warn(`[findSafeEmptyRowRange] Could not inspect range ${rangeAddress} (${checkRes.status}). Proceeding with current candidate row ${currentCandidateRow}.`);
+        break;
+      }
+    } catch (err) {
+      console.warn(`[findSafeEmptyRowRange] Range fetch error for ${rangeAddress}:`, err);
+      break;
+    }
+
+    const values: any[][] = rangeData?.values || [];
+    const formulas: any[][] = rangeData?.formulas || [];
+
+    if (values.length === 0) {
+      break;
+    }
+
+    let foundSafeRowNumber = -1;
+
+    for (let i = 0; i < values.length; i++) {
+      const actualRowNumber = currentCandidateRow + i;
+      totalRowsChecked++;
+      const rowVals = values[i] || [];
+      const rowForms = formulas[i] || [];
+
+      let hasContent = false;
+      let isTotals = false;
+
+      const numColsToCheck = Math.max(rowVals.length, rowForms.length);
+      for (let c = 0; c < numColsToCheck; c++) {
+        const v = rowVals[c];
+        const f = rowForms[c];
+        const strVal = v !== null && v !== undefined ? String(v).trim() : "";
+        const strForm = f !== null && f !== undefined ? String(f).trim() : "";
+
+        if (strVal !== "") {
+          hasContent = true;
+          if (totalsKeywords.some((kw) => strVal.toLowerCase().includes(kw))) {
+            isTotals = true;
+          }
+        }
+
+        if (strForm !== "" && strForm !== "=") {
+          hasContent = true;
+          const lowerF = strForm.toLowerCase();
+          if (
+            lowerF.startsWith("=sum") ||
+            lowerF.startsWith("=subtotal") ||
+            lowerF.includes("sum(") ||
+            lowerF.includes("subtotal(")
+          ) {
+            isTotals = true;
+          }
+        }
+      }
+
+      // 1. If this row is totals row -> insert empty rows above it to protect formulas
+      if (isTotals) {
+        console.log(
+          `[findSafeEmptyRowRange] זוהתה שורת סיכום/סה"כ בשורה ${actualRowNumber}. מגן על נוסחת הסיכום ומבצע הכנסת ${numRowsNeeded} שורות ריקות מעליה.`
+        );
+        const insertAddress = `A${actualRowNumber}:${checkEndColLetter}${actualRowNumber + numRowsNeeded - 1}`;
+        const insertUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${encodeURIComponent(insertAddress)}')/insert`;
+        try {
+          const insertRes = await fetchGraph(
+            insertUrl,
+            {
+              method: "POST",
+              headers: sessionHeaders,
+              body: JSON.stringify({ shift: "Down" }),
+            },
+            env
+          );
+          if (insertRes.ok) {
+            insertedRowsCount = numRowsNeeded;
+            const targetAddress = `${startColLetter}${actualRowNumber}:${endColLetter}${actualRowNumber + numRowsNeeded - 1}`;
+            return {
+              targetRowNumber: actualRowNumber,
+              targetAddress,
+              skippedOccupiedRows,
+              insertedRowsCount,
+            };
+          } else {
+            console.warn("[findSafeEmptyRowRange] Insert shift down returned non-ok:", insertRes.status);
+          }
+        } catch (insertErr) {
+          console.warn("[findSafeEmptyRowRange] Insert shift down error:", insertErr);
+        }
+      }
+
+      // 2. If row has ANY content (values, formulas, dates, text) -> DO NOT OVERWRITE!
+      if (hasContent) {
+        console.log(
+          `[findSafeEmptyRowRange] שורה ${actualRowNumber} מכילה נתונים קיימים (ערכים/נוסחאות). מדלג על השורה כדי לא לדרוס מידע קיים!`
+        );
+        skippedOccupiedRows++;
+        continue;
+      }
+
+      // 3. Row is completely empty! Check if subsequent rows needed are also empty
+      let allNeededRowsEmpty = true;
+      for (let k = 1; k < numRowsNeeded; k++) {
+        if (i + k < values.length) {
+          const nextRowVals = values[i + k] || [];
+          const nextRowForms = formulas[i + k] || [];
+          const nextHasContent =
+            nextRowVals.some((v: any) => v !== null && v !== undefined && String(v).trim() !== "") ||
+            nextRowForms.some(
+              (f: any) => f !== null && f !== undefined && String(f).trim() !== "" && String(f).trim() !== "="
+            );
+          if (nextHasContent) {
+            allNeededRowsEmpty = false;
+            break;
+          }
+        } else {
+          // If subsequent row spans beyond the fetched window, let outer loop fetch next window
+          allNeededRowsEmpty = false;
+          break;
+        }
+      }
+
+      if (allNeededRowsEmpty) {
+        foundSafeRowNumber = actualRowNumber;
+        break;
+      }
+    }
+
+    if (foundSafeRowNumber !== -1) {
+      const targetAddress = `${startColLetter}${foundSafeRowNumber}:${endColLetter}${foundSafeRowNumber + numRowsNeeded - 1}`;
+      console.log(
+        `[findSafeEmptyRowRange] נבחרה שורה ריקה ומאומתת להזנה: ${targetAddress} (דולגו ${skippedOccupiedRows} שורות מלאות).`
+      );
+      return {
+        targetRowNumber: foundSafeRowNumber,
+        targetAddress,
+        skippedOccupiedRows,
+        insertedRowsCount,
+      };
+    }
+
+    // Move to next window
+    currentCandidateRow += values.length;
+  }
+
+  // Safety fallback if scan completed
+  const targetAddress = `${startColLetter}${currentCandidateRow}:${endColLetter}${currentCandidateRow + numRowsNeeded - 1}`;
+  return {
+    targetRowNumber: currentCandidateRow,
+    targetAddress,
+    skippedOccupiedRows,
+    insertedRowsCount,
+  };
+}
+
+/**
  * 5. writeRows(fileId, rows) – rows are objects keyed by the EXISTING header names.
  * - Table -> POST /workbook/tables/{id}/rows/add.
  * - Plain range -> PATCH exactly the next empty row(s). Never overwrite existing data,
@@ -3865,6 +4090,7 @@ export async function writeRows(
     });
 
     let writtenRowAddress = "";
+    let skippedOccupiedRows = 0;
 
     // CASE A: Excel Table
     if (structure.isTable && structure.tableId) {
@@ -3936,30 +4162,35 @@ export async function writeRows(
       const startColLetter = structure.startColLetter || "A";
       const startColIdx = columnLetterToIndex(startColLetter);
       const endColLetter = indexToColumnLetter(startColIdx + numCols - 1);
-      const targetRowNumber = structure.nextEmptyRowNumber || (structure.totalDataRows + 2);
-      const targetAddress = `${startColLetter}${targetRowNumber}:${endColLetter}${targetRowNumber + numRows - 1}`;
+      const initialRowNumber = structure.nextEmptyRowNumber || (structure.totalDataRows + 2);
 
-      // If there is a totals row right at this position, insert empty row(s) before writing
-      // to push totals row down and protect formulas/formatting!
-      if (structure.hasTotalsRow && structure.totalsRowAddress) {
-        const insertUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${structure.totalsRowAddress}')/insert`;
-        const insertRes = await fetchGraph(
-          insertUrl,
-          {
-            method: "POST",
-            headers: sessionHeaders,
-            body: JSON.stringify({ shift: "Down" }),
-          },
-          env
+      // Rule: "אם יש משהו בשורה אל תדרוס את השורה"
+      // Verify that candidate row(s) are genuinely empty before writing to avoid overwriting existing data/formulas!
+      const safeRowResult = await findSafeEmptyRowRange(
+        driveId,
+        fileId,
+        sheetId,
+        initialRowNumber,
+        numRows,
+        startColLetter,
+        endColLetter,
+        Boolean(structure.hasTotalsRow),
+        structure.totalsRowAddress,
+        sessionHeaders,
+        env
+      );
+
+      const targetAddress = safeRowResult.targetAddress;
+      skippedOccupiedRows = safeRowResult.skippedOccupiedRows;
+
+      if (skippedOccupiedRows > 0) {
+        console.log(
+          `[writeRows] נמנעה דריסה של ${skippedOccupiedRows} שורות קיימות! הנתונים הוזנו בבטחה לשורה ${safeRowResult.targetRowNumber} (${targetAddress}).`
         );
-
-        if (!insertRes.ok) {
-          console.warn("[writeRows] range insert shift down returned non-ok:", insertRes.status);
-        }
       }
 
-      // Write values to target address via PATCH
-      const writeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${targetAddress}')`;
+      // Write values to validated target address via PATCH
+      const writeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${encodeURIComponent(targetAddress)}')`;
       const writeRes = await fetchGraph(
         writeUrl,
         {
@@ -3979,7 +4210,7 @@ export async function writeRows(
 
       // Enable text wrapping on the written range so complete technician documentation is fully visible
       try {
-        const formatUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${targetAddress}')/format`;
+        const formatUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${encodeURIComponent(targetAddress)}')/format`;
         await fetchGraph(
           formatUrl,
           {
@@ -4015,6 +4246,7 @@ export async function writeRows(
       timestamp: now,
       writtenAt: now,
       writtenValues: rowValuesMatrix,
+      skippedOccupiedRows,
     };
 
     // Dual-write into Microsoft SharePoint Lists (https://techselectltd.sharepoint.com/sites/Customers/Lists/List)

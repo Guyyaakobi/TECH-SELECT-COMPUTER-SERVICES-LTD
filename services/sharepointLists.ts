@@ -959,6 +959,8 @@ export async function writeEntryToSharePointList(
     ticketNumber?: string;
     contactPerson?: string;
     fileWebUrl?: string;
+    additionalEmployees?: string[];
+    teamMembers?: string[];
   },
   env?: any
 ): Promise<ListItemWriteResult> {

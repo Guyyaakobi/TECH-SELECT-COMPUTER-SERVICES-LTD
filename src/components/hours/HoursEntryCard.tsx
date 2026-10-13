@@ -469,6 +469,14 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             <span className="text-emerald-700 font-semibold text-[11px] inline-flex items-center gap-1">
               <Check className="w-3 h-3 text-emerald-600" />
               <span>נרשם ב-Excel (טאב: {written.sheetName || written.workType}, שורה {written.targetRow})</span>
+              {typeof written.skippedOccupiedRows === "number" && written.skippedOccupiedRows > 0 && (
+                <span
+                  className="bg-emerald-100 text-emerald-800 text-[10px] px-1.5 py-0.5 rounded font-medium mr-1"
+                  title={`זוהו ${written.skippedOccupiedRows} שורות קיימות והמערכת דילגה עליהן כדי לא לדרוס מידע קיים`}
+                >
+                  נמנעה דריסה ({written.skippedOccupiedRows})
+                </span>
+              )}
             </span>
             {written.listItemId ? (
               <span className="text-purple-700 font-semibold text-[11px] inline-flex items-center gap-1">

@@ -311,7 +311,7 @@ ${answers.biggestBottleneck || 'עומס ידני וצורך באבטחת מיד
       email: emailVal,
       phone: phoneVal,
       companySize: leadForm.companySize,
-      role: leadForm.role,
+      role: leadForm.role as any,
       customPainPoints: compiledBrief,
       dreamGoalTomorrow: answers.primaryGoal,
       erpCrmDetails: answers.mainSystems,
