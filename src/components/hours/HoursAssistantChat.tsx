@@ -245,6 +245,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
   } | null>(null);
 
   // Chat scroll container
+  const feedContainerRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Gemini-style auto-expanding textarea
@@ -259,11 +260,22 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
   }, [inputText]);
 
   const scrollToBottom = () => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (feedContainerRef.current) {
+      feedContainerRef.current.scrollTo({
+        top: feedContainerRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    } else {
+      chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    }
   };
 
   useEffect(() => {
     scrollToBottom();
+    const timer = setTimeout(() => {
+      scrollToBottom();
+    }, 120);
+    return () => clearTimeout(timer);
   }, [messages, activeDrafts, writtenEntries, loading]);
 
   // Audio Recording: Start
@@ -632,21 +644,45 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
       }
     }
 
-    // Update active drafts
-    if (res.drafts) {
-      setActiveDrafts(res.drafts);
+    // Determine only genuinely new written entries from this turn
+    const existingWrittenIds = new Set<string>([
+      ...writtenEntries.map((w) => w.id),
+      ...messages.flatMap((m) => (m.writtenEntries || []).map((w) => w.id)),
+    ]);
+    const newlyWrittenThisTurn = (res.writtenEntries || []).filter(
+      (w) => !existingWrittenIds.has(w.id)
+    );
+
+    // Update active drafts (always chronological top-to-bottom, with newest draft at the bottom)
+    if (res.isConfirmed) {
+      // A draft was confirmed -> set remaining drafts returned by server
+      setActiveDrafts(res.drafts || []);
+    } else if (res.drafts && res.drafts.length > 0) {
+      setActiveDrafts((prev) => {
+        // Keep unconfirmed drafts for other customers above, and place the new/updated draft(s) at the bottom
+        const incomingCustomers = new Set(
+          res.drafts.map((d) => (d.customerName || "").trim().toLowerCase())
+        );
+        const incomingIds = new Set(res.drafts.map((d) => d.id));
+        const keptPrev = prev.filter(
+          (p) =>
+            !incomingIds.has(p.id) &&
+            !incomingCustomers.has((p.customerName || "").trim().toLowerCase())
+        );
+        return [...keptPrev, ...res.drafts];
+      });
     }
 
-    // Update written entries
-    if (res.writtenEntries && res.writtenEntries.length > 0) {
+    // Append newly written entries at the bottom (chronological order: oldest -> newest)
+    if (newlyWrittenThisTurn.length > 0) {
       setWrittenEntries((prev) => {
-        const merged = [...res.writtenEntries];
-        for (const existing of prev) {
-          if (!merged.some((m) => m.id === existing.id)) {
-            merged.push(existing);
+        const next = [...prev];
+        for (const item of newlyWrittenThisTurn) {
+          if (!next.some((m) => m.id === item.id)) {
+            next.push(item);
           }
         }
-        return merged;
+        return next;
       });
     }
 
@@ -665,20 +701,24 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
       );
     }
 
-    // Add model response message
+    // Add model response message at the bottom, and clear stale drafts from older messages
     if (res.reply) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `model_${Date.now()}`,
-          role: "model",
-          text: res.reply,
-          drafts: res.drafts && res.drafts.length > 0 ? res.drafts : undefined,
-          writtenEntries:
-            res.writtenEntries && res.writtenEntries.length > 0 ? res.writtenEntries : undefined,
-          timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
-        },
-      ]);
+      setMessages((prev) => {
+        const cleanedPrev = prev.map((m) =>
+          m.drafts ? { ...m, drafts: undefined } : m
+        );
+        return [
+          ...cleanedPrev,
+          {
+            id: `model_${Date.now()}`,
+            role: "model",
+            text: res.reply,
+            writtenEntries:
+              newlyWrittenThisTurn.length > 0 ? newlyWrittenThisTurn : undefined,
+            timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
+          },
+        ];
+      });
     }
   };
 
@@ -1187,106 +1227,98 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
           </div>
         ) : (
           /* Messages Feed: Full Viewport Width, Comfortable Centered Max-Width Reading Column */
-          <div className="flex-1 overflow-y-auto px-4 py-6 scroll-smooth">
+          <div ref={feedContainerRef} className="flex-1 overflow-y-auto px-4 py-6 scroll-smooth">
             <div className="max-w-3xl mx-auto w-full space-y-6">
-              {messages.map((msg) => {
-                const isUser = msg.role === "user";
+              {(() => {
+                const seenWrittenIds = new Set<string>();
+                return messages.map((msg) => {
+                  const isUser = msg.role === "user";
+                  const uniqueWrittenForMsg = (msg.writtenEntries || []).filter((w) => {
+                    if (seenWrittenIds.has(w.id)) return false;
+                    seenWrittenIds.add(w.id);
+                    return true;
+                  });
 
-                return (
-                  <div
-                    key={msg.id}
-                    className={`flex flex-col ${isUser ? "items-start" : "items-stretch"} space-y-2.5`}
-                  >
-                    {/* User Message Bubble */}
-                    {isUser ? (
-                      <div className="bg-[#f0f4f9] text-slate-900 rounded-3xl px-5 py-3.5 text-sm sm:text-base leading-relaxed max-w-[85%] shadow-xs">
-                        {msg.isVoice && (
-                          <div className="flex items-center gap-1.5 text-xs text-blue-600 mb-1.5 font-semibold pb-1 border-b border-slate-200">
-                            <Volume2 className="w-3.5 h-3.5" />
-                            <span>תמלול קולי</span>
-                          </div>
-                        )}
-                        <p className="whitespace-pre-line">{msg.text}</p>
-                        <div className="text-[10px] text-slate-400 mt-1.5 text-left">
-                          {msg.timestamp}
-                        </div>
-                      </div>
-                    ) : (
-                      /* Model / Assistant Message: Gemini Canvas Style */
-                      <div className="flex items-start gap-3 w-full">
-                        {/* Gemini Sparkles Avatar */}
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5">
-                          <Sparkles className="w-4 h-4" />
-                        </div>
-
-                        <div className="flex-1 space-y-3">
-                          <div className="text-sm sm:text-base text-slate-800 leading-relaxed font-normal">
-                            <p className="whitespace-pre-line">{msg.text}</p>
-                          </div>
-
-                          {/* Render Cards attached to this turn */}
-                          {msg.drafts && msg.drafts.length > 0 && (
-                            <div className="w-full space-y-2 pt-1">
-                              {msg.drafts.map((d) => (
-                                <HoursErrorBoundary key={d.id} fallbackTitle="שגיאה בטעינת כרטיס הדיווח">
-                                  <HoursEntryCard
-                                    draft={activeDrafts.find((ad) => ad.id === d.id) || d}
-                                    currentUser={currentUser}
-                                    onConfirm={handleConfirmEntry}
-                                    onUpdateDraft={handleUpdateDraft}
-                                    isConfirming={loading}
-                                  />
-                                </HoursErrorBoundary>
-                              ))}
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`flex flex-col ${isUser ? "items-start" : "items-stretch"} space-y-2.5`}
+                    >
+                      {/* User Message Bubble */}
+                      {isUser ? (
+                        <div className="bg-[#f0f4f9] text-slate-900 rounded-3xl px-5 py-3.5 text-sm sm:text-base leading-relaxed max-w-[85%] shadow-xs">
+                          {msg.isVoice && (
+                            <div className="flex items-center gap-1.5 text-xs text-blue-600 mb-1.5 font-semibold pb-1 border-b border-slate-200">
+                              <Volume2 className="w-3.5 h-3.5" />
+                              <span>תמלול קולי</span>
                             </div>
                           )}
-
-                          {/* Render Written Entries */}
-                          {msg.writtenEntries && msg.writtenEntries.length > 0 && (
-                            <div className="w-full space-y-2 pt-1">
-                              {msg.writtenEntries.map((w) => (
-                                <HoursErrorBoundary key={w.id} fallbackTitle="שגיאה בטעינת כרטיס שורה שנרשמה">
-                                  <HoursEntryCard
-                                    written={w}
-                                    currentUser={currentUser}
-                                    onUndo={(id, entry) => handleUndoEntry(id, entry || w)}
-                                    isUndoing={loading}
-                                  />
-                                </HoursErrorBoundary>
-                              ))}
-                            </div>
-                          )}
-
-                          <div className="text-[10px] text-slate-400">
+                          <p className="whitespace-pre-line">{msg.text}</p>
+                          <div className="text-[10px] text-slate-400 mt-1.5 text-left">
                             {msg.timestamp}
                           </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+                      ) : (
+                        /* Model / Assistant Message: Gemini Canvas Style */
+                        <div className="flex items-start gap-3 w-full">
+                          {/* Gemini Sparkles Avatar */}
+                          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5">
+                            <Sparkles className="w-4 h-4" />
+                          </div>
 
-              {/* Global Active Drafts if not in the last message */}
-              {activeDrafts.length > 0 &&
-                !messages[messages.length - 1]?.drafts?.length && (
-                  <div className="w-full space-y-2 pt-2 pr-11">
-                    <div className="text-xs text-blue-600 font-semibold mb-1">
-                      טיוטות ממתינות לאישורך:
+                          <div className="flex-1 space-y-3">
+                            <div className="text-sm sm:text-base text-slate-800 leading-relaxed font-normal">
+                              <p className="whitespace-pre-line">{msg.text}</p>
+                            </div>
+
+                            {/* Render Confirmed Written Entries for this turn (in chronological order) */}
+                            {uniqueWrittenForMsg.length > 0 && (
+                              <div className="w-full space-y-2 pt-1">
+                                {uniqueWrittenForMsg.map((w) => (
+                                  <HoursErrorBoundary key={w.id} fallbackTitle="שגיאה בטעינת כרטיס שורה שנרשמה">
+                                    <HoursEntryCard
+                                      written={w}
+                                      currentUser={currentUser}
+                                      onUndo={(id, entry) => handleUndoEntry(id, entry || w)}
+                                      isUndoing={loading}
+                                    />
+                                  </HoursErrorBoundary>
+                                ))}
+                              </div>
+                            )}
+
+                            <div className="text-[10px] text-slate-400">
+                              {msg.timestamp}
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    {activeDrafts.map((d) => (
-                      <HoursErrorBoundary key={d.id} fallbackTitle="שגיאה בטעינת כרטיס הדיווח">
-                        <HoursEntryCard
-                          draft={d}
-                          currentUser={currentUser}
-                          onConfirm={handleConfirmEntry}
-                          onUpdateDraft={handleUpdateDraft}
-                          isConfirming={loading}
-                        />
-                      </HoursErrorBoundary>
-                    ))}
-                  </div>
-                )}
+                  );
+                });
+              })()}
+
+              {/* Pending Active Drafts ALWAYS pinned at the VERY BOTTOM of the feed (never pushed up!) */}
+              {activeDrafts.length > 0 && (
+                <div className="w-full space-y-3 pt-2 pr-11">
+                  {activeDrafts.length > 1 && (
+                    <div className="text-xs text-blue-600 font-semibold mb-1">
+                      טיוטות לחיוב לקוח ממתינות לאישורך ({activeDrafts.length}):
+                    </div>
+                  )}
+                  {activeDrafts.map((d) => (
+                    <HoursErrorBoundary key={d.id} fallbackTitle="שגיאה בטעינת כרטיס הדיווח">
+                      <HoursEntryCard
+                        draft={d}
+                        currentUser={currentUser}
+                        onConfirm={handleConfirmEntry}
+                        onUpdateDraft={handleUpdateDraft}
+                        isConfirming={loading}
+                      />
+                    </HoursErrorBoundary>
+                  ))}
+                </div>
+              )}
 
               {/* Loading Indicator */}
               {loading && (

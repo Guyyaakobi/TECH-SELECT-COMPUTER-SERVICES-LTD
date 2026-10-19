@@ -1037,10 +1037,6 @@ export async function processAssistantChat(
     });
 
     const remainingDrafts = activeDrafts.filter((d) => d.id !== cardId);
-    const updatedWrittenEntries = [
-      ...newWrittenItems,
-      ...(params.writtenEntries || []).filter((w) => !newWrittenItems.some((nw) => nw.id === w.id)),
-    ];
 
     const replyMsg =
       effectiveEmployees.length > 1
@@ -1050,7 +1046,7 @@ export async function processAssistantChat(
     return {
       reply: replyMsg,
       drafts: remainingDrafts,
-      writtenEntries: updatedWrittenEntries,
+      writtenEntries: newWrittenItems,
       undoneCardIds: [],
       isConfirmed: true,
     };
@@ -2383,18 +2379,11 @@ MANDATORY WORKFLOW:
     }
   }
 
-  const effectiveWritten = [
-    ...newWrittenEntries,
-    ...(params.writtenEntries || []).filter(
-      (w) => !newWrittenEntries.some((nw) => nw.id === w.id) && !undoneCardIds.includes(w.id)
-    ),
-  ];
-
   return {
     reply: dynamicReply,
     transcript: userTranscript,
     drafts: collectedDrafts,
-    writtenEntries: effectiveWritten,
+    writtenEntries: newWrittenEntries,
     undoneCardIds,
     isConfirmed,
     suggestedAction: isConfirmed
