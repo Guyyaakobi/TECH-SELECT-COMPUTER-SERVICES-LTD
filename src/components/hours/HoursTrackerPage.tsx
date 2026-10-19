@@ -26,6 +26,7 @@ import {
   setCachedApiToken,
   loginWithMicrosoft,
   logoutFromMicrosoft,
+  purgeAllMsalAndHoursAuthStorage,
 } from "../../services/hoursAuth";
 import { HoursAssistantChat } from "./HoursAssistantChat";
 import { HoursTestPanel } from "./HoursTestPanel";
@@ -157,8 +158,33 @@ export const HoursTrackerPage: React.FC = () => {
         setLoadingMessage("בודק אימות מול Microsoft 365...");
         const redirectResponse = await pca.handleRedirectPromise();
 
+        // Check if the user explicitly clicked Logout (either via URL query param or storage flag)
+        const urlParams = new URLSearchParams(window.location.search);
+        const isExplicitLogout =
+          !redirectResponse &&
+          (urlParams.get("logged_out") === "1" ||
+            sessionStorage.getItem("hours_logged_out_explicitly") === "true" ||
+            Boolean(localStorage.getItem("hours_logged_out_explicitly")));
+
+        if (isExplicitLogout) {
+          purgeAllMsalAndHoursAuthStorage(pca);
+          if (urlParams.has("logged_out")) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+          setAccount(null);
+          setServerUser(null);
+          setShowFallbackButton(true);
+          setLoading(false);
+          return;
+        }
+
         let currentAccount: AccountInfo | null = null;
         if (redirectResponse) {
+          try {
+            sessionStorage.removeItem("hours_logged_out_explicitly");
+            localStorage.removeItem("hours_logged_out_explicitly");
+          } catch {}
+
           if (redirectResponse.account) {
             currentAccount = redirectResponse.account;
             pca.setActiveAccount(currentAccount);
@@ -295,11 +321,23 @@ export const HoursTrackerPage: React.FC = () => {
   const handleLogout = async () => {
     try {
       setLoading(true);
-      setLoadingMessage("מתנתק מהמערכת...");
+      setErrorMessage(null);
+      setLoadingMessage("מנקה נתוני חיבור SSO 365 ומתנתק מהמערכת...");
+      setShowMyLoggedHoursModal(false);
+      setShowDailySummaryModal(false);
+      setShowCentralLogModal(false);
+      setShowTestPanel(false);
+      setAccount(null);
+      setServerUser(null);
       await logoutFromMicrosoft(pcaInstance || undefined);
+      setShowFallbackButton(true);
+      setLoading(false);
     } catch (err: any) {
       console.error("[HoursTracker] Logout error:", err);
-      setErrorMessage(err?.message || "ההתנתקות נכשלה.");
+      purgeAllMsalAndHoursAuthStorage(pcaInstance || undefined);
+      setAccount(null);
+      setServerUser(null);
+      setShowFallbackButton(true);
       setLoading(false);
     }
   };

@@ -2,7 +2,6 @@ import {
   PublicClientApplication,
   Configuration,
   LogLevel,
-  InteractionRequiredAuthError,
   AccountInfo,
 } from "@azure/msal-browser";
 import {
@@ -22,6 +21,144 @@ export function isMsalInitialized(): boolean {
 // 7-day persistent window for tenant users so they don't get kicked out
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
+/**
+ * Helper to inspect whether a storage key or value belongs to MSAL / Microsoft 365 SSO / Hours Auth
+ */
+function isSsoOrHoursStorageEntry(key: string, value: string | null): boolean {
+  const k = key.toLowerCase();
+  if (
+    k.startsWith("msal.") ||
+    k.includes("msal") ||
+    k.includes("login.windows.net") ||
+    k.includes("login.microsoftonline.com") ||
+    k.includes("microsoft") ||
+    k.includes("idtoken") ||
+    k.includes("accesstoken") ||
+    k.includes("refreshtoken") ||
+    k.includes("client.info") ||
+    k.includes("authority") ||
+    k === "hours_bearer_token" ||
+    k === "hours_bearer_token_exp" ||
+    k === "hours_persistent_auth_token_v3" ||
+    k === "hours_persistent_token_exp_v3" ||
+    k === "hours_token_saved_time" ||
+    k === "hours_saved_server_user_v2"
+  ) {
+    return true;
+  }
+
+  // Also detect MSAL JSON cache objects stored under GUID/account keys in localStorage/sessionStorage
+  if (value && value.startsWith("{")) {
+    if (
+      value.includes('"credentialType"') ||
+      value.includes('"homeAccountId"') ||
+      value.includes('"authorityType"') ||
+      value.includes('"clientInfo"') ||
+      (value.includes('"secret"') && value.includes('"realm"'))
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Completely purges all tokens, MSAL cache entries, persistent SSO data, and cookies from the browser
+ */
+export function purgeAllMsalAndHoursAuthStorage(pca?: PublicClientApplication): void {
+  cachedUserToken = null;
+
+  if (typeof window === "undefined") return;
+
+  // 1. Clear active account in MSAL instance
+  try {
+    const instance = pca || msalInstance;
+    if (instance) {
+      instance.setActiveAccount(null);
+      if (typeof (instance as any).clearCache === "function") {
+        (instance as any).clearCache().catch(() => {});
+      }
+    }
+  } catch {}
+
+  // 2. Purge all matching keys in localStorage
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key) continue;
+      const val = localStorage.getItem(key);
+      if (isSsoOrHoursStorageEntry(key, val)) {
+        keysToRemove.push(key);
+      }
+    }
+    for (const key of keysToRemove) {
+      localStorage.removeItem(key);
+    }
+  } catch {}
+
+  // 3. Purge all matching keys in sessionStorage
+  try {
+    const sessionKeysToRemove: string[] = [];
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (!key) continue;
+      // Preserve explicit logout marker so the page knows not to auto-login immediately
+      if (key === "hours_logged_out_explicitly") continue;
+      const val = sessionStorage.getItem(key);
+      if (isSsoOrHoursStorageEntry(key, val)) {
+        sessionKeysToRemove.push(key);
+      }
+    }
+    for (const key of sessionKeysToRemove) {
+      sessionStorage.removeItem(key);
+    }
+  } catch {}
+
+  // 4. Clear any accessible cookies related to MSAL / SSO / Hours auth
+  try {
+    if (document.cookie) {
+      const cookies = document.cookie.split(";");
+      const hostname = window.location.hostname;
+      for (const cookie of cookies) {
+        const eqPos = cookie.indexOf("=");
+        const name = (eqPos > -1 ? cookie.slice(0, eqPos) : cookie).trim();
+        if (!name) continue;
+        const lowerName = name.toLowerCase();
+        if (
+          lowerName.includes("msal") ||
+          lowerName.includes("auth") ||
+          lowerName.includes("token") ||
+          lowerName.includes("sso") ||
+          lowerName.includes("hours") ||
+          lowerName.includes("aad")
+        ) {
+          document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+          document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${hostname}`;
+          document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.${hostname}`;
+        }
+      }
+    }
+  } catch {}
+
+  // 5. Clear any MSAL IndexedDB databases if created by the browser
+  try {
+    if (window.indexedDB && typeof window.indexedDB.databases === "function") {
+      window.indexedDB
+        .databases()
+        .then((dbs) => {
+          dbs.forEach((db) => {
+            if (db.name && (db.name.toLowerCase().includes("msal") || db.name.toLowerCase().includes("auth"))) {
+              window.indexedDB.deleteDatabase(db.name);
+            }
+          });
+        })
+        .catch(() => {});
+    }
+  } catch {}
+}
+
 export function clearCachedApiToken(): void {
   cachedUserToken = null;
   try {
@@ -29,6 +166,10 @@ export function clearCachedApiToken(): void {
     sessionStorage.removeItem("hours_bearer_token_exp");
     localStorage.removeItem("hours_bearer_token");
     localStorage.removeItem("hours_bearer_token_exp");
+    localStorage.removeItem("hours_persistent_auth_token_v3");
+    localStorage.removeItem("hours_persistent_token_exp_v3");
+    localStorage.removeItem("hours_token_saved_time");
+    localStorage.removeItem("hours_saved_server_user_v2");
   } catch {}
 }
 
@@ -45,11 +186,15 @@ export function setCachedApiToken(token: string, expiresInSec = 3600): void {
   };
 
   try {
+    // Clear any previous explicit logout flags once a fresh token is set
+    sessionStorage.removeItem("hours_logged_out_explicitly");
+    localStorage.removeItem("hours_logged_out_explicitly");
+
     // 1. Session Storage
     sessionStorage.setItem("hours_bearer_token", token);
     sessionStorage.setItem("hours_bearer_token_exp", String(expiresAt));
 
-    // 2. Persistent Local Storage (keeps user connected for days)
+    // 2. Persistent Local Storage (keeps user connected for days until explicit logout)
     localStorage.setItem("hours_bearer_token", token);
     localStorage.setItem("hours_bearer_token_exp", String(expiresAt));
     localStorage.setItem("hours_persistent_auth_token_v3", token);
@@ -67,9 +212,18 @@ export function getCachedApiToken(minRemainingSec = 120): string | null {
   }
 
   try {
+    // If user explicitly logged out, never return a cached token
+    if (
+      sessionStorage.getItem("hours_logged_out_explicitly") === "true" ||
+      localStorage.getItem("hours_logged_out_explicitly")
+    ) {
+      return null;
+    }
+
     // 2. Check localStorage standard cache
     const stored = localStorage.getItem("hours_bearer_token") || sessionStorage.getItem("hours_bearer_token");
-    const exp = Number(localStorage.getItem("hours_bearer_token_exp") || sessionStorage.getItem("hours_bearer_token_exp")) || 0;
+    const exp =
+      Number(localStorage.getItem("hours_bearer_token_exp") || sessionStorage.getItem("hours_bearer_token_exp")) || 0;
     if (stored && exp - Date.now() > minMs) {
       cachedUserToken = { token: stored, expiresAt: exp };
       return stored;
@@ -113,7 +267,7 @@ export async function initMsal(config: AzureHoursConfig): Promise<PublicClientAp
       clientId: config.clientId || "00000000-0000-0000-0000-000000000000",
       authority: getAuthority(config.tenantId),
       redirectUri: typeof window !== "undefined" ? getRedirectUri() : "",
-      postLogoutRedirectUri: typeof window !== "undefined" ? getRedirectUri() : "",
+      postLogoutRedirectUri: typeof window !== "undefined" ? `${getRedirectUri()}?logged_out=1` : "",
     },
     cache: {
       cacheLocation: "localStorage",
@@ -145,6 +299,12 @@ export async function initMsal(config: AzureHoursConfig): Promise<PublicClientAp
 function findMsalLocalStorageToken(): string | null {
   if (typeof window === "undefined") return null;
   try {
+    if (
+      sessionStorage.getItem("hours_logged_out_explicitly") === "true" ||
+      localStorage.getItem("hours_logged_out_explicitly")
+    ) {
+      return null;
+    }
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i) || "";
       // Match MSAL ID token or Access token entries
@@ -179,7 +339,10 @@ export async function getApiToken(
 
   const instance = pca || (msalInstance ? getMsalInstance() : null);
   if (!instance) {
-    const lsToken = findMsalLocalStorageToken() || localStorage.getItem("hours_persistent_auth_token_v3") || sessionStorage.getItem("hours_bearer_token");
+    const lsToken =
+      findMsalLocalStorageToken() ||
+      localStorage.getItem("hours_persistent_auth_token_v3") ||
+      sessionStorage.getItem("hours_bearer_token");
     if (lsToken) {
       setCachedApiToken(lsToken, 3600);
       return lsToken;
@@ -191,7 +354,10 @@ export async function getApiToken(
   const activeAccount = instance.getActiveAccount() || (accounts.length > 0 ? accounts[0] : null);
 
   if (!activeAccount) {
-    const lsToken = findMsalLocalStorageToken() || localStorage.getItem("hours_persistent_auth_token_v3") || sessionStorage.getItem("hours_bearer_token");
+    const lsToken =
+      findMsalLocalStorageToken() ||
+      localStorage.getItem("hours_persistent_auth_token_v3") ||
+      sessionStorage.getItem("hours_bearer_token");
     if (lsToken) {
       setCachedApiToken(lsToken, 3600);
       return lsToken;
@@ -256,7 +422,8 @@ export async function getApiToken(
   }
 
   // Fallback 2: localStorage persistent token
-  const persistentToken = localStorage.getItem("hours_persistent_auth_token_v3") || localStorage.getItem("hours_bearer_token");
+  const persistentToken =
+    localStorage.getItem("hours_persistent_auth_token_v3") || localStorage.getItem("hours_bearer_token");
   if (persistentToken) {
     setCachedApiToken(persistentToken, 3600);
     return persistentToken;
@@ -285,6 +452,11 @@ export async function loginWithMicrosoft(
   pca?: PublicClientApplication,
   customScope?: string
 ): Promise<void> {
+  try {
+    sessionStorage.removeItem("hours_logged_out_explicitly");
+    localStorage.removeItem("hours_logged_out_explicitly");
+  } catch {}
+
   const instance = pca || getMsalInstance();
   const defaultScopes = ["openid", "profile", "email", "User.Read"];
   const scopes = customScope ? [customScope] : defaultScopes;
@@ -297,13 +469,48 @@ export async function loginWithMicrosoft(
 }
 
 /**
- * Sign out and return to the hidden route
+ * Sign out completely:
+ * 1. Marks explicit logout so the app does not auto-login upon return
+ * 2. Purges all tokens, MSAL storage, persistent tokens, and cookies in browser
+ * 3. Redirects through Microsoft 365 end_session endpoint to terminate SSO session
  */
 export async function logoutFromMicrosoft(pca?: PublicClientApplication): Promise<void> {
-  const instance = pca || getMsalInstance();
-  const account = instance.getActiveAccount() || instance.getAllAccounts()[0];
-  await instance.logoutRedirect({
-    account,
-    postLogoutRedirectUri: getRedirectUri(),
-  });
+  const instance = pca || msalInstance;
+  let account: AccountInfo | undefined = undefined;
+  try {
+    if (instance) {
+      account = instance.getActiveAccount() || instance.getAllAccounts()[0];
+    }
+  } catch {}
+
+  const postLogoutUrl = `${getRedirectUri()}?logged_out=1`;
+
+  try {
+    sessionStorage.setItem("hours_logged_out_explicitly", "true");
+    localStorage.setItem("hours_logged_out_explicitly", String(Date.now()));
+  } catch {}
+
+  // Purge all custom & MSAL tokens/cache from localStorage, sessionStorage, cookies, IndexedDB
+  purgeAllMsalAndHoursAuthStorage(instance || undefined);
+
+  if (instance) {
+    try {
+      await instance.logoutRedirect({
+        account,
+        postLogoutRedirectUri: postLogoutUrl,
+      });
+      return;
+    } catch (err) {
+      console.warn("[logoutFromMicrosoft] MSAL logoutRedirect fallback:", err);
+    }
+  }
+
+  // Fallback: direct redirect to Microsoft 365 OAuth2 logout endpoint or postLogoutUrl
+  if (typeof window !== "undefined") {
+    const tenantId = currentConfig?.tenantId || "common";
+    const msLogoutUrl = `https://login.microsoftonline.com/${encodeURIComponent(
+      tenantId
+    )}/oauth2/v2.0/logout?post_logout_redirect_uri=${encodeURIComponent(postLogoutUrl)}`;
+    window.location.href = msLogoutUrl;
+  }
 }
