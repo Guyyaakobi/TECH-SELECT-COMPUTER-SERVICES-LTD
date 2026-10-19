@@ -33,6 +33,7 @@ import {
   writeEntryToSharePointList,
   fetchSharePointListEntries,
   resolveEffectiveName,
+  getUserListsDailySummary,
 } from "./services/sharepointLists";
 import {
   evaluateHoursRequestComplexity,
@@ -4843,14 +4844,36 @@ ${!isAteraCustomer ? `
         const employee = String(req.query.employee || "").trim() || undefined;
         const reqUser = (req as any).user || {};
         const userEmail = reqUser.email || "g@tech-select.co.il";
+        const requestEnv = { ...process.env, userToken: (req as any).rawToken };
         const report = await getDailyHoursReport(
           { date, period, customer, employee, userEmail },
-          process.env
+          requestEnv
         );
         return res.json(report);
       } catch (err: any) {
         console.error("[GET /api/hours/today-summary] Error:", err);
         return res.status(500).json({ error: err?.message || "שגיאה בטעינת דוח שעות יומי" });
+      }
+    });
+
+    // 10.05 GET /api/hours/my-lists-hours: Per-user daily breakdown directly from Microsoft Lists ("כמה תיעדתי היום")
+    hoursRouter.get("/my-lists-hours", async (req, res) => {
+      try {
+        const reqUser = (req as any).user || {};
+        const queryName = String(req.query.employeeName || req.query.employee || "").trim();
+        const queryEmail = String(req.query.employeeEmail || req.query.email || "").trim();
+        const employeeName = queryName || reqUser.name || "";
+        const employeeEmail = queryEmail || reqUser.email || "";
+        const requestEnv = { ...process.env, userToken: (req as any).rawToken };
+
+        const summary = await getUserListsDailySummary(
+          { employeeName, employeeEmail, top: 500 },
+          requestEnv
+        );
+        return res.json(summary);
+      } catch (err: any) {
+        console.error("[GET /api/hours/my-lists-hours] Error:", err);
+        return res.status(500).json({ error: err?.message || "שגיאה בשליפת נתוני התיעוד מ-Microsoft Lists" });
       }
     });
 

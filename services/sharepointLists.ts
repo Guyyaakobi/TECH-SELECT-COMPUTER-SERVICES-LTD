@@ -216,10 +216,22 @@ export const BILINGUAL_EMPLOYEE_DICTIONARY: Record<string, string[]> = {
 
 export function resolveEffectiveName(name?: string, email?: string): string {
   const cleanName = (name || "").trim();
-  if (cleanName && !cleanName.includes("@") && cleanName !== "משתמש") {
-    return cleanName;
-  }
   const cleanEmail = (email || "").toLowerCase().trim();
+
+  // 1. Try matching cleanName against BILINGUAL_EMPLOYEE_DICTIONARY (so English SSO names like "Guy Yaakobi" resolve to "גיא יעקובי")
+  if (cleanName && !cleanName.includes("@") && cleanName !== "משתמש" && cleanName !== "עובד") {
+    const nLower = cleanName.toLowerCase();
+    for (const [canonicalName, aliases] of Object.entries(BILINGUAL_EMPLOYEE_DICTIONARY)) {
+      if (
+        canonicalName.toLowerCase() === nLower ||
+        aliases.some((a) => a.toLowerCase().trim() === nLower)
+      ) {
+        return canonicalName;
+      }
+    }
+  }
+
+  // 2. Try matching cleanEmail or emailPrefix against BILINGUAL_EMPLOYEE_DICTIONARY
   if (cleanEmail) {
     const emailPrefix = cleanEmail.split("@")[0].toLowerCase().trim();
     for (const [canonicalName, aliases] of Object.entries(BILINGUAL_EMPLOYEE_DICTIONARY)) {
@@ -232,10 +244,80 @@ export function resolveEffectiveName(name?: string, email?: string): string {
         return canonicalName;
       }
     }
-    const prefix = emailPrefix.replace(/[._-]/g, " ");
+  }
+
+  if (cleanName && !cleanName.includes("@") && cleanName !== "משתמש") {
+    return cleanName;
+  }
+
+  if (cleanEmail) {
+    const prefix = cleanEmail.split("@")[0].toLowerCase().trim().replace(/[._-]/g, " ");
     if (prefix) return prefix;
   }
+
   return cleanName || "עובד";
+}
+
+export function doesEmployeeMatchQuery(
+  entryName: string,
+  entryEmail: string,
+  queryName?: string,
+  queryEmail?: string
+): boolean {
+  const qName = (queryName || "").trim();
+  const qEmail = (queryEmail || "").trim().toLowerCase();
+  if (!qName && !qEmail) return true;
+
+  const eName = (entryName || "").trim();
+  const eEmail = (entryEmail || "").trim().toLowerCase();
+
+  // 1. Direct email match
+  if (qEmail && eEmail && (eEmail === qEmail || eEmail.includes(qEmail) || qEmail.includes(eEmail))) {
+    return true;
+  }
+
+  // 2. Canonical name resolution via BILINGUAL_EMPLOYEE_DICTIONARY
+  const canonicalQuery = resolveEffectiveName(qName, qEmail).toLowerCase();
+  const canonicalEntry = resolveEffectiveName(eName, eEmail).toLowerCase();
+  if (
+    canonicalQuery &&
+    canonicalEntry &&
+    canonicalQuery !== "עובד" &&
+    canonicalEntry !== "עובד" &&
+    (canonicalQuery === canonicalEntry ||
+      canonicalEntry.includes(canonicalQuery) ||
+      canonicalQuery.includes(canonicalEntry))
+  ) {
+    return true;
+  }
+
+  // 3. Check all aliases in BILINGUAL_EMPLOYEE_DICTIONARY
+  for (const [canon, aliases] of Object.entries(BILINGUAL_EMPLOYEE_DICTIONARY)) {
+    const allTerms = [canon.toLowerCase(), ...aliases.map((a) => a.toLowerCase().trim())];
+    const queryMatchesGroup =
+      (qName && allTerms.some((t) => t === qName.toLowerCase() || (qName.length >= 2 && t.includes(qName.toLowerCase())))) ||
+      (qEmail && allTerms.some((t) => t === qEmail || t === qEmail.split("@")[0]));
+    const entryMatchesGroup =
+      (eName && allTerms.some((t) => t === eName.toLowerCase() || (eName.length >= 2 && eName.toLowerCase().includes(t)))) ||
+      (eEmail && allTerms.some((t) => t === eEmail || t === eEmail.split("@")[0]));
+
+    if (queryMatchesGroup && entryMatchesGroup) {
+      return true;
+    }
+  }
+
+  // 4. Direct substring match on name or email prefix
+  if (qName && eName) {
+    const qLower = qName.toLowerCase();
+    const eLower = eName.toLowerCase();
+    if (eLower.includes(qLower) || qLower.includes(eLower)) return true;
+  }
+  if (qEmail && eName) {
+    const prefix = qEmail.split("@")[0].toLowerCase();
+    if (prefix.length >= 2 && eName.toLowerCase().includes(prefix)) return true;
+  }
+
+  return false;
 }
 
 export const KNOWN_TEAM_MEMBERS: Array<{ name: string; email: string; shortName: string }> = [
@@ -771,6 +853,17 @@ export async function resolveSharePointList(env?: any): Promise<SharePointListIn
       if (currentHandlerScore > bestHandlerScore) {
         bestHandlerScore = currentHandlerScore;
         columnMap["handler"] = colName;
+      }
+
+      if (
+        dispNorm === "עובד" ||
+        decodedNorm === "עובד" ||
+        colName === "_x05e2__x05d5__x05d1__x05d3_" ||
+        dispNorm === "שםהעובד" ||
+        dispNorm === "שםעובד" ||
+        (!columnMap["worker"] && (dispNorm.includes("עובד") || dispNorm === "מטפל" || dispNorm === "טכנאי"))
+      ) {
+        columnMap["worker"] = colName;
       }
 
       // 5. שעת התחלה (Start Time)
@@ -1874,14 +1967,15 @@ export async function fetchSharePointListEntries(
     endDate?: string;
     customer?: string;
     employee?: string;
+    employeeEmail?: string;
     query?: string;
     top?: number;
   }
 ): Promise<SharePointListEntry[]> {
   try {
     const listInfo = await resolveSharePointList(env);
-    const { siteId, listId, columnMap } = listInfo;
-    const top = filterOptions?.top || (filterOptions?.startDate ? 500 : 250);
+    const { siteId, listId, columnMap, columns } = listInfo;
+    const top = filterOptions?.top || (filterOptions?.startDate || filterOptions?.employee || filterOptions?.employeeEmail ? 500 : 250);
 
     // Try lastModifiedDateTime desc first (standard for SharePoint lists), and fall back without orderby
     let itemsRes = await fetchGraph(
@@ -1905,7 +1999,25 @@ export async function fetchSharePointListEntries(
     }
 
     const itemsData: any = await itemsRes.json();
-    const rawItems: any[] = itemsData.value || [];
+    const rawItems: any[] = [...(itemsData.value || [])];
+
+    // Follow up to 2 pagination links if present so newest items at the end of large lists are never missed
+    let nextLink: string | undefined = itemsData["@odata.nextLink"];
+    let pageCount = 0;
+    while (nextLink && pageCount < 2) {
+      pageCount++;
+      try {
+        const nextRes = await fetchGraph(nextLink, { method: "GET" }, env);
+        if (!nextRes.ok) break;
+        const nextData: any = await nextRes.json();
+        if (Array.isArray(nextData.value)) {
+          rawItems.push(...nextData.value);
+        }
+        nextLink = nextData["@odata.nextLink"];
+      } catch {
+        break;
+      }
+    }
 
     const result: SharePointListEntry[] = [];
 
@@ -1913,50 +2025,95 @@ export async function fetchSharePointListEntries(
       const f = item.fields || {};
 
       // Extract Customer Name
-      let customerName =
+      let customerName = extractRawWorkerVal(
         f[columnMap["customer"] || ""] ||
         f["_x05dc__x05e7__x05d5__x05d7_"] ||
         f["לקוח"] ||
         f["Customer"] ||
         f["Title"] ||
-        "";
+        ""
+      );
 
       // Extract Work Type
-      let workType =
+      let workType = extractRawWorkerVal(
         f[columnMap["workType"] || ""] ||
         f["_x05e1__x05d5__x05d2_"] ||
         f["סוג"] ||
         f["סוגהפעילות"] ||
         f["WorkType"] ||
-        "קריאות שירות";
+        "קריאות שירות"
+      );
 
-      // Extract Employee Name & Email: prioritize the 'עובד' column!
-      const rawWorkerVal = extractRawWorkerVal(
+      // Extract Employee Name & Email: check worker column, handler column, and any employee/user columns in schema
+      let rawWorkerVal = extractRawWorkerVal(
         f["_x05e2__x05d5__x05d1__x05d3_"] ||
         f["עובד"] ||
-        f[columnMap["worker"] || ""]
+        f[columnMap["worker"] || ""] ||
+        f["Employee"] ||
+        f["מטפל"]
       );
 
-      const rawUserVal = extractRawWorkerVal(
+      let rawUserVal = extractRawWorkerVal(
         f["_x05de__x05e9__x05ea__x05de__x05e9_"] ||
         f["משתמש"] ||
-        f[columnMap["handler"] || ""]
+        f[columnMap["handler"] || ""] ||
+        f["User"]
       );
+
+      if (!rawWorkerVal && !rawUserVal && columns && columns.length > 0) {
+        for (const col of columns) {
+          const dNorm = normalizeColString(col.displayName || "");
+          const decNorm = normalizeColString(decodeSharePointColName(col.name || ""));
+          if (
+            dNorm.includes("עובד") ||
+            dNorm.includes("מטפל") ||
+            dNorm.includes("טכנאי") ||
+            decNorm.includes("עובד") ||
+            decNorm.includes("מטפל")
+          ) {
+            const val = extractRawWorkerVal(f[col.name]);
+            if (val) {
+              rawWorkerVal = val;
+              break;
+            }
+          } else if (dNorm.includes("משתמש") || decNorm.includes("משתמש")) {
+            const val = extractRawWorkerVal(f[col.name]);
+            if (val) {
+              rawUserVal = val;
+              break;
+            }
+          }
+        }
+      }
+
+      // Fallback to SharePoint item createdBy user if custom columns were left blank
+      const createdByName = item.createdBy?.user?.displayName || "";
+      const createdByEmail = item.createdBy?.user?.email || "";
 
       const employeeEmail =
         (rawUserVal && rawUserVal.includes("@") ? rawUserVal : "") ||
+        (rawWorkerVal && rawWorkerVal.includes("@") ? rawWorkerVal : "") ||
         f["UserEmail"] ||
         f["Email"] ||
+        createdByEmail ||
         "";
 
       const employeeName = resolveEffectiveName(
-        rawWorkerVal || (rawUserVal && !rawUserVal.includes("@") ? rawUserVal : ""),
+        rawWorkerVal || (rawUserVal && !rawUserVal.includes("@") ? rawUserVal : "") || createdByName,
         employeeEmail
       );
 
       // Extract Start Time & End Time
-      let startTime = f[columnMap["startTime"] || ""] || f["שעתהתחלה"] || f["startTime"] || "";
-      let endTime = f[columnMap["endTime"] || ""] || f["שעתסיום"] || f["endTime"] || "";
+      let startTime = String(f[columnMap["startTime"] || ""] || f["שעתהתחלה"] || f["startTime"] || "").trim();
+      let endTime = String(f[columnMap["endTime"] || ""] || f["שעתסיום"] || f["endTime"] || "").trim();
+      if (startTime.includes("T")) {
+        const m = startTime.match(/T(\d{2}:\d{2})/);
+        if (m) startTime = m[1];
+      }
+      if (endTime.includes("T")) {
+        const m = endTime.match(/T(\d{2}:\d{2})/);
+        if (m) endTime = m[1];
+      }
 
       // Extract Date with comprehensive parser supporting DD/MM/YYYY, ISO, etc.
       const rawDateVal =
@@ -1974,9 +2131,18 @@ export async function fetchSharePointListEntries(
         f[columnMap["duration"] || ""] ||
         f["_x05db__x05de__x05d4__x05d6__x05de__x05df__x05d4__x05d5__x05e9__x05e7__x05e2_"] ||
         f["כמהזמנהושקע"] ||
+        f["שעות"] ||
         f["duration"] ||
         f["hours"];
-      let durationHours = typeof rawDur === "number" ? rawDur : parseFloat(String(rawDur || "0"));
+      let durationHours = 0;
+      if (typeof rawDur === "number") {
+        durationHours = rawDur;
+      } else if (typeof rawDur === "string" && rawDur.includes(":")) {
+        const [dh, dm] = rawDur.trim().split(":").map(Number);
+        if (!isNaN(dh)) durationHours = Math.round((dh + (dm || 0) / 60) * 100) / 100;
+      } else {
+        durationHours = parseFloat(String(rawDur || "0"));
+      }
       if (isNaN(durationHours) || durationHours <= 0) {
         if (startTime && endTime) {
           durationHours = calculateHoursFromTimes(startTime, endTime);
@@ -1986,14 +2152,15 @@ export async function fetchSharePointListEntries(
       }
 
       // Extract Description
-      let description =
+      let description = extractRawWorkerVal(
         f[columnMap["description"] || ""] ||
         f["_x05de__x05d4_"] ||
         f["מהנעשה"] ||
         f["תיאור"] ||
         f["description"] ||
         f["Title"] ||
-        "";
+        ""
+      );
 
       // Filter checks
       if (filterOptions?.date && date !== filterOptions.date) {
@@ -2010,9 +2177,8 @@ export async function fetchSharePointListEntries(
           continue;
         }
       }
-      if (filterOptions?.employee) {
-        const eLower = filterOptions.employee.toLowerCase();
-        if (!employeeName.toLowerCase().includes(eLower) && !employeeEmail.toLowerCase().includes(eLower)) {
+      if (filterOptions?.employee || filterOptions?.employeeEmail) {
+        if (!doesEmployeeMatchQuery(employeeName, employeeEmail, filterOptions.employee, filterOptions.employeeEmail)) {
           continue;
         }
       }
@@ -2035,8 +2201,8 @@ export async function fetchSharePointListEntries(
         startTime: String(startTime).trim(),
         endTime: String(endTime).trim(),
         date,
-        durationHours,
-        durationFormatted: `${durationHours} שעות`,
+        durationHours: Math.round(durationHours * 100) / 100,
+        durationFormatted: `${Math.round(durationHours * 100) / 100} שעות`,
         description: String(description).trim(),
         createdDateTime: item.createdDateTime,
         lastModifiedDateTime: item.lastModifiedDateTime,
@@ -2044,9 +2210,236 @@ export async function fetchSharePointListEntries(
       });
     }
 
+    // Sort newest date first, then highest numeric ID first
+    result.sort((a, b) => {
+      if (a.date !== b.date) return b.date.localeCompare(a.date);
+      return (Number(b.id) || 0) - (Number(a.id) || 0);
+    });
+
     return result;
   } catch (err: any) {
     console.warn("[fetchSharePointListEntries] Error:", err);
     return [];
   }
+}
+
+export interface UserListsDayGroup {
+  date: string; // YYYY-MM-DD
+  displayDate: string; // DD/MM/YYYY
+  dayNameHe: string; // e.g. "יום שני"
+  isToday: boolean;
+  isYesterday: boolean;
+  totalHours: number;
+  entriesCount: number;
+  customers: string[];
+  entries: SharePointListEntry[];
+}
+
+export interface UserListsDailySummaryResult {
+  employeeName: string;
+  employeeEmail: string;
+  todayDate: string;
+  todayDisplayDate: string;
+  todayHours: number;
+  todayEntriesCount: number;
+  todayEntries: SharePointListEntry[];
+  weekHours: number;
+  weekEntriesCount: number;
+  monthHours: number;
+  monthEntriesCount: number;
+  totalHoursAllTime: number;
+  totalEntriesAllTime: number;
+  byDay: UserListsDayGroup[];
+  availableEmployees: Array<{ name: string; email: string }>;
+  listWebUrl: string;
+}
+
+function getIsraelDateIso(offsetDays = 0): string {
+  try {
+    const now = new Date();
+    if (offsetDays !== 0) {
+      now.setDate(now.getDate() + offsetDays);
+    }
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Jerusalem",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(now);
+    const y = parts.find((p) => p.type === "year")?.value || String(now.getFullYear());
+    const m = parts.find((p) => p.type === "month")?.value || String(now.getMonth() + 1).padStart(2, "0");
+    const d = parts.find((p) => p.type === "day")?.value || String(now.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  } catch {
+    const d = new Date();
+    if (offsetDays !== 0) d.setDate(d.getDate() + offsetDays);
+    return d.toISOString().split("T")[0];
+  }
+}
+
+function formatIsoToDisplayDmy(iso: string): string {
+  const parts = (iso || "").split("-");
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return iso;
+}
+
+function getHebrewDayOfWeek(iso: string): string {
+  const daysHe = [
+    "יום ראשון",
+    "יום שני",
+    "יום שלישי",
+    "יום רביעי",
+    "יום חמישי",
+    "יום שישי",
+    "יום שבת",
+  ];
+  try {
+    const [y, m, d] = iso.split("-").map(Number);
+    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+      const dt = new Date(y, m - 1, d);
+      return daysHe[dt.getDay()] || "";
+    }
+  } catch {}
+  return "";
+}
+
+/**
+ * Queries Microsoft Lists directly and builds a per-day breakdown for the specified user
+ * ("כמה תיעדתי היום" & כמה תיעד בכל יום לפי ה-LISTS)
+ */
+export async function getUserListsDailySummary(
+  options: {
+    employeeName?: string;
+    employeeEmail?: string;
+    top?: number;
+  },
+  env?: any
+): Promise<UserListsDailySummaryResult> {
+  const todayIso = getIsraelDateIso(0);
+  const yesterdayIso = getIsraelDateIso(-1);
+  const effectiveEmployeeName = resolveEffectiveName(options.employeeName, options.employeeEmail);
+  const effectiveEmail = (options.employeeEmail || "").trim();
+
+  // Fetch all recent entries from Microsoft Lists so we can both filter for the user and list available employees
+  const allEntries = await fetchSharePointListEntries(env, {
+    top: options.top || 500,
+  });
+
+  // Filter entries belonging to this user
+  const userEntries = allEntries.filter((entry) =>
+    doesEmployeeMatchQuery(entry.employeeName, entry.employeeEmail, options.employeeName || effectiveEmployeeName, effectiveEmail)
+  );
+
+  // Calculate week start (Sunday of current week in Israel time) and month prefix
+  const [ty, tm, td] = todayIso.split("-").map(Number);
+  const todayObj = new Date(ty, tm - 1, td);
+  const sundayObj = new Date(todayObj);
+  sundayObj.setDate(todayObj.getDate() - todayObj.getDay());
+  const weekStartIso = `${sundayObj.getFullYear()}-${String(sundayObj.getMonth() + 1).padStart(2, "0")}-${String(sundayObj.getDate()).padStart(2, "0")}`;
+  const monthPrefix = `${ty}-${String(tm).padStart(2, "0")}`;
+
+  let todayHours = 0;
+  let todayEntriesCount = 0;
+  const todayEntries: SharePointListEntry[] = [];
+
+  let weekHours = 0;
+  let weekEntriesCount = 0;
+
+  let monthHours = 0;
+  let monthEntriesCount = 0;
+
+  let totalHoursAllTime = 0;
+  const dayMap = new Map<string, SharePointListEntry[]>();
+
+  for (const entry of userEntries) {
+    const d = entry.date || todayIso;
+    const h = Number(entry.durationHours) || 0;
+
+    totalHoursAllTime += h;
+
+    if (d === todayIso) {
+      todayHours += h;
+      todayEntriesCount++;
+      todayEntries.push(entry);
+    }
+    if (d >= weekStartIso && d <= todayIso) {
+      weekHours += h;
+      weekEntriesCount++;
+    }
+    if (d.startsWith(monthPrefix)) {
+      monthHours += h;
+      monthEntriesCount++;
+    }
+
+    if (!dayMap.has(d)) {
+      dayMap.set(d, []);
+    }
+    dayMap.get(d)!.push(entry);
+  }
+
+  // Ensure Today is always represented in byDay even if 0 entries so user clearly sees Today's status
+  if (!dayMap.has(todayIso)) {
+    dayMap.set(todayIso, []);
+  }
+
+  const sortedDates = Array.from(dayMap.keys()).sort((a, b) => b.localeCompare(a));
+
+  const byDay: UserListsDayGroup[] = sortedDates.map((dateIso) => {
+    const entriesForDay = dayMap.get(dateIso) || [];
+    const dayHours = Math.round(entriesForDay.reduce((acc, e) => acc + (Number(e.durationHours) || 0), 0) * 100) / 100;
+    const customers = Array.from(
+      new Set(entriesForDay.map((e) => e.customerName).filter(Boolean))
+    );
+
+    return {
+      date: dateIso,
+      displayDate: formatIsoToDisplayDmy(dateIso),
+      dayNameHe: getHebrewDayOfWeek(dateIso),
+      isToday: dateIso === todayIso,
+      isYesterday: dateIso === yesterdayIso,
+      totalHours: dayHours,
+      entriesCount: entriesForDay.length,
+      customers,
+      entries: entriesForDay,
+    };
+  });
+
+  // Collect available employees from KNOWN_TEAM_MEMBERS + any extra names seen in Lists
+  const empMap = new Map<string, { name: string; email: string }>();
+  for (const tm of KNOWN_TEAM_MEMBERS) {
+    empMap.set(tm.name, { name: tm.name, email: tm.email });
+  }
+  for (const e of allEntries) {
+    const canon = resolveEffectiveName(e.employeeName, e.employeeEmail);
+    if (canon && canon !== "עובד" && !empMap.has(canon)) {
+      empMap.set(canon, { name: canon, email: e.employeeEmail || "" });
+    }
+  }
+
+  let listWebUrl = "https://techselectltd.sharepoint.com/sites/Customers/Lists/List/AllItems.aspx";
+  try {
+    const info = await resolveSharePointList(env);
+    if (info.webUrl) listWebUrl = info.webUrl;
+  } catch {}
+
+  return {
+    employeeName: effectiveEmployeeName,
+    employeeEmail: effectiveEmail,
+    todayDate: todayIso,
+    todayDisplayDate: formatIsoToDisplayDmy(todayIso),
+    todayHours: Math.round(todayHours * 100) / 100,
+    todayEntriesCount,
+    todayEntries,
+    weekHours: Math.round(weekHours * 100) / 100,
+    weekEntriesCount,
+    monthHours: Math.round(monthHours * 100) / 100,
+    monthEntriesCount,
+    totalHoursAllTime: Math.round(totalHoursAllTime * 100) / 100,
+    totalEntriesAllTime: userEntries.length,
+    byDay,
+    availableEmployees: Array.from(empMap.values()),
+    listWebUrl,
+  };
 }

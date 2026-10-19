@@ -14,6 +14,7 @@ import {
   Check,
   BarChart3,
   FileSpreadsheet,
+  ListChecks,
 } from "lucide-react";
 import {
   fetchHoursConfig,
@@ -30,6 +31,7 @@ import { HoursAssistantChat } from "./HoursAssistantChat";
 import { HoursTestPanel } from "./HoursTestPanel";
 import { TodayHoursModal } from "./TodayHoursModal";
 import { CentralHoursLogModal } from "./CentralHoursLogModal";
+import { MyLoggedHoursModal } from "./MyLoggedHoursModal";
 import { HoursErrorBoundary } from "./HoursErrorBoundary";
 import type { PublicClientApplication, AccountInfo } from "@azure/msal-browser";
 
@@ -56,6 +58,7 @@ export const HoursTrackerPage: React.FC = () => {
   const [showTestPanel, setShowTestPanel] = useState<boolean>(false);
   const [showDailySummaryModal, setShowDailySummaryModal] = useState<boolean>(false);
   const [showCentralLogModal, setShowCentralLogModal] = useState<boolean>(false);
+  const [showMyLoggedHoursModal, setShowMyLoggedHoursModal] = useState<boolean>(false);
 
   // Modern Color Palette Switcher State ("cyan" = Deep Cyber, "amber" = Obsidian Amber)
   const [colorPalette, setColorPalette] = useState<"cyan" | "amber">(() => {
@@ -82,7 +85,7 @@ export const HoursTrackerPage: React.FC = () => {
 
   // 1. Meta tag: ensure <meta name="robots" content="noindex,nofollow"> is present & Title
   useEffect(() => {
-    document.title = "TECH-SELECT | מסך זיהוי עובד - תיעוד שעות";
+    document.title = "TECH-SELECT | שעות לחיוב לקוח";
     document.documentElement.dir = "rtl";
     document.documentElement.lang = "he";
 
@@ -357,8 +360,8 @@ export const HoursTrackerPage: React.FC = () => {
           <div className="flex items-center gap-2">
             <span className="text-sm font-bold text-slate-900 tracking-tight">TECH-SELECT</span>
             <span className="text-slate-300 font-light">|</span>
-            <span className="text-xs font-medium text-slate-600 bg-slate-100/90 px-2.5 py-0.5 rounded-full border border-slate-200 flex items-center gap-1">
-              <span>Gemini Hours</span>
+            <span className="text-xs font-semibold text-slate-700 bg-slate-100/90 px-2.5 py-0.5 rounded-full border border-slate-200 flex items-center gap-1">
+              <span>שעות לחיוב לקוח</span>
               <ChevronDown className="w-3 h-3 text-slate-400" />
             </span>
           </div>
@@ -368,6 +371,16 @@ export const HoursTrackerPage: React.FC = () => {
         <div className="flex items-center gap-2 sm:gap-3">
           {(account || serverUser) ? (
             <>
+              {/* "כמה תיעדתי היום" Button for EVERY User - Checks directly against Microsoft Lists */}
+              <button
+                onClick={() => setShowMyLoggedHoursModal(true)}
+                className="btn-hover-subtle text-xs px-3 py-1.5 rounded-full border border-emerald-200 bg-emerald-50/90 hover:bg-emerald-100 text-emerald-800 font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                title="בדוק כמה שעות לחיוב לקוח תיעדת היום ובכל יום מתוך Microsoft Lists"
+              >
+                <ListChecks className="w-3.5 h-3.5 text-emerald-600" />
+                <span>כמה תיעדתי היום</span>
+              </button>
+
               {/* Today's Hours Summary Button for Manager Guy & Admins */}
               {isGuyOrAdmin && (
                 <button
@@ -376,7 +389,7 @@ export const HoursTrackerPage: React.FC = () => {
                   title="דוח וריכוז שעות עבודה יומי לכל העובדים (מנהל)"
                 >
                   <BarChart3 className="w-3.5 h-3.5 text-blue-600" />
-                  <span>שעות היום</span>
+                  <span>שעות היום (מנהל)</span>
                 </button>
               )}
 
@@ -435,6 +448,15 @@ export const HoursTrackerPage: React.FC = () => {
       {/* Main Content Area: Full Viewport Gemini Window when authenticated */}
       {(account || serverUser) ? (
         <main className="relative z-10 flex-1 w-full h-[calc(100dvh-3.5rem)] overflow-hidden flex flex-col bg-[#f8fafd]">
+          {/* Per-User "כמה תיעדתי היום" Modal (Directly queries Microsoft Lists) */}
+          {showMyLoggedHoursModal && (
+            <MyLoggedHoursModal
+              isOpen={showMyLoggedHoursModal}
+              onClose={() => setShowMyLoggedHoursModal(false)}
+              currentUser={currentUserObj}
+            />
+          )}
+
           {/* Daily Hours Summary Modal for Manager Guy & Admins */}
           {showDailySummaryModal && (
             <TodayHoursModal
@@ -479,12 +501,13 @@ export const HoursTrackerPage: React.FC = () => {
 
           {/* Full-Window Gemini Hours Assistant */}
           <HoursErrorBoundary
-            fallbackTitle="אירעה שגיאה בטעינת עוזר דיווח השעות"
+            fallbackTitle="אירעה שגיאה בטעינת מערכת שעות לחיוב לקוח"
             fallbackMessage="המערכת נתקלה בשגיאה זמנית. ניתן ללחוץ על 'נסה להציג שוב' או לרענן את העמוד."
           >
             <HoursAssistantChat
               currentUser={currentUserObj}
               onOpenTodaySummary={() => setShowDailySummaryModal(true)}
+              onOpenMyLoggedHours={() => setShowMyLoggedHoursModal(true)}
             />
           </HoursErrorBoundary>
         </main>
@@ -551,7 +574,7 @@ export const HoursTrackerPage: React.FC = () => {
                   מסך זיהוי עובד
                 </h2>
                 <p className="text-xs sm:text-sm text-slate-500 font-medium mb-6">
-                  מערכת תיעוד ודיווח שעות &middot; TECH-SELECT LTD
+                  מערכת שעות לחיוב לקוח &middot; TECH-SELECT LTD
                 </p>
 
                 <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-right mb-6">

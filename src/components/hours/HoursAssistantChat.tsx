@@ -25,6 +25,7 @@ import {
   BarChart3,
   Users,
   FileSpreadsheet,
+  ListChecks,
 } from "lucide-react";
 import {
   apiAssistantChat,
@@ -67,6 +68,7 @@ interface HoursAssistantChatProps {
     isAdmin?: boolean;
   };
   onOpenTodaySummary?: () => void;
+  onOpenMyLoggedHours?: () => void;
 }
 
 function getFriendlyHebrewErrorMessage(err: any): string {
@@ -137,6 +139,7 @@ function getFriendlyHebrewErrorMessage(err: any): string {
 export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
   currentUser,
   onOpenTodaySummary,
+  onOpenMyLoggedHours,
 }) => {
   const isGuyOrAdmin = Boolean(
     currentUser.isAdmin ||
@@ -1050,12 +1053,24 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
             <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] flex items-center justify-center text-white shadow-2xs">
               <Sparkles className="w-3 h-3" />
             </div>
-            <span className="text-xs font-semibold text-slate-700">עוזר דיווח שעות</span>
+            <span className="text-xs font-semibold text-slate-700">שעות לחיוב לקוח</span>
             {activeDrafts.length > 0 && (
               <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-semibold flex items-center gap-1">
                 <Clock className="w-3 h-3 text-blue-600" />
                 <span>{activeDrafts.length} טיוטות</span>
               </span>
+            )}
+
+            {/* Per-User "כמה תיעדתי היום" Quick Button (Checks Microsoft Lists) */}
+            {onOpenMyLoggedHours && (
+              <button
+                onClick={onOpenMyLoggedHours}
+                className="btn-hover-subtle text-xs px-2.5 py-1 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs mr-1"
+                title="בדוק כמה תיעדת היום ובכל יום לפי Microsoft Lists"
+              >
+                <ListChecks className="w-3.5 h-3.5 text-emerald-600" />
+                <span>כמה תיעדתי היום</span>
+              </button>
             )}
 
             {/* Manager Today Hours Summary Quick Button */}
@@ -1066,7 +1081,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                 title="דוח וריכוז שעות עבודה יומי לכל העובדים"
               >
                 <BarChart3 className="w-3.5 h-3.5 text-blue-600" />
-                <span>שעות היום</span>
+                <span>שעות היום (מנהל)</span>
               </button>
             )}
           </div>
@@ -1100,11 +1115,20 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                 </span>
               </h1>
               <p className="text-base sm:text-xl font-normal text-slate-500 mb-6">
-                איך אוכל לעזור לך לתעד או לבדוק שעות היום?
+                איך אוכל לעזור לך לתעד שעות לחיוב לקוח היום?
               </p>
 
               {/* Quick Starter Suggestion Pills */}
               <div className="flex flex-wrap items-center justify-center gap-2 max-w-xl mx-auto">
+                {onOpenMyLoggedHours && (
+                  <button
+                    onClick={onOpenMyLoggedHours}
+                    className="px-3.5 py-1.5 rounded-full bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 hover:border-emerald-300 text-xs text-emerald-800 font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
+                  >
+                    <ListChecks className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>כמה תיעדתי היום (לפי Lists)</span>
+                  </button>
+                )}
                 {isGuyOrAdmin ? (
                   <>
                     <button
@@ -1155,12 +1179,6 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                       className="px-3.5 py-1.5 rounded-full bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-xs text-slate-700 hover:text-blue-700 font-medium transition-all shadow-2xs cursor-pointer"
                     >
                       📁 פרויקט והקמה
-                    </button>
-                    <button
-                      onClick={() => handleSendText("כמה שעות רשמתי היום?")}
-                      className="px-3.5 py-1.5 rounded-full bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-xs text-slate-700 hover:text-blue-700 font-medium transition-all shadow-2xs cursor-pointer"
-                    >
-                      ⏱️ כמה שעות רשמתי היום?
                     </button>
                   </>
                 )}
@@ -1433,7 +1451,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
           </div>
 
           <div className="text-center mt-2 text-[11px] text-slate-400">
-            Tech-Select Assistant &middot; דיווח שעות מקצועי מסונכרן ישירות ל-SharePoint ו-Excel
+            Tech-Select Assistant &middot; שעות לחיוב לקוח מסונכרן ישירות ל-Microsoft Lists, SharePoint ו-Excel
           </div>
         </div>
       </div>

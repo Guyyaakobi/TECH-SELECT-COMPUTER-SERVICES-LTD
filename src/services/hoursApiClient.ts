@@ -684,7 +684,7 @@ export async function apiInspectMicrosoftLists(): Promise<{
 /**
  * 16. Test write an item to Microsoft Lists
  */
-export async function apiTestWriteMicrosoftList(payload?: {
+export function apiTestWriteMicrosoftList(payload?: {
   customerName?: string;
   durationHours?: number;
   description?: string;
@@ -696,5 +696,66 @@ export async function apiTestWriteMicrosoftList(payload?: {
   });
 }
 
+export interface UserListsEntryClient {
+  id: string;
+  webUrl?: string;
+  customerName: string;
+  workType: string;
+  employeeName: string;
+  employeeEmail: string;
+  startTime: string;
+  endTime: string;
+  date: string;
+  durationHours: number;
+  durationFormatted: string;
+  description: string;
+  createdDateTime?: string;
+  lastModifiedDateTime?: string;
+}
 
+export interface UserListsDayGroupClient {
+  date: string;
+  displayDate: string;
+  dayNameHe: string;
+  isToday: boolean;
+  isYesterday: boolean;
+  totalHours: number;
+  entriesCount: number;
+  customers: string[];
+  entries: UserListsEntryClient[];
+}
 
+export interface UserListsDailySummaryClient {
+  employeeName: string;
+  employeeEmail: string;
+  todayDate: string;
+  todayDisplayDate: string;
+  todayHours: number;
+  todayEntriesCount: number;
+  todayEntries: UserListsEntryClient[];
+  weekHours: number;
+  weekEntriesCount: number;
+  monthHours: number;
+  monthEntriesCount: number;
+  totalHoursAllTime: number;
+  totalEntriesAllTime: number;
+  byDay: UserListsDayGroupClient[];
+  availableEmployees: Array<{ name: string; email: string }>;
+  listWebUrl: string;
+}
+
+/**
+ * 17. Fetch per-user daily logged hours breakdown directly from Microsoft Lists ("כמה תיעדתי היום")
+ */
+export async function apiGetMyListsDailySummary(options?: {
+  employeeName?: string;
+  employeeEmail?: string;
+}): Promise<UserListsDailySummaryClient> {
+  const params = new URLSearchParams();
+  if (options?.employeeName) params.set("employeeName", options.employeeName);
+  if (options?.employeeEmail) params.set("employeeEmail", options.employeeEmail);
+  const q = params.toString() ? `?${params.toString()}` : "";
+  return fetchHoursApi<UserListsDailySummaryClient>(`/api/hours/my-lists-hours${q}`, {
+    method: "GET",
+  });
+}

@@ -29,9 +29,12 @@ export async function onRequestGet(context: { request: Request; env: any }): Pro
     const period = (url.searchParams.get("period") as any) || undefined;
     const customer = url.searchParams.get("customer") || undefined;
     const employee = url.searchParams.get("employee") || undefined;
+    const authHeader = request.headers.get("Authorization") || request.headers.get("authorization") || "";
+    const userToken = authHeader.replace(/^Bearer\s+/i, "").trim();
+    const requestEnv = { ...env, userToken };
     const report = await getDailyHoursReport(
-      { date, period, customer, employee },
-      env
+      { date, period, customer, employee, userEmail: auth.user?.email },
+      requestEnv
     );
 
     return new Response(JSON.stringify(report), {
