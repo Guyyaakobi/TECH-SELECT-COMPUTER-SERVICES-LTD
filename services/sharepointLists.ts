@@ -22,6 +22,7 @@ import {
   scoreBilingualCustomerMatch,
   expandBilingualCustomerQueries,
 } from "./bilingualCustomerMatcher";
+import { queryCentralLog } from "./hoursCentralLog";
 
 export interface SharePointListColumn {
   id: string;
@@ -1975,19 +1976,25 @@ export async function fetchSharePointListEntries(
   try {
     const listInfo = await resolveSharePointList(env);
     const { siteId, listId, columnMap, columns } = listInfo;
-    const top = filterOptions?.top || (filterOptions?.startDate || filterOptions?.employee || filterOptions?.employeeEmail ? 500 : 250);
+    const requestedTop = filterOptions?.top || (filterOptions?.startDate || filterOptions?.employee || filterOptions?.employeeEmail ? 400 : 200);
+    const pageTop = Math.min(requestedTop, 200);
 
-    // Try lastModifiedDateTime desc first (standard for SharePoint lists), and fall back without orderby
+    // Try lastModifiedDateTime desc first with HonorNonIndexedQueriesWarningMayFailRandomly header, and fall back without orderby
     let itemsRes = await fetchGraph(
-      `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=${top}&$orderby=lastModifiedDateTime desc`,
-      { method: "GET" },
+      `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=${pageTop}&$orderby=lastModifiedDateTime desc`,
+      {
+        method: "GET",
+        headers: {
+          Prefer: "HonorNonIndexedQueriesWarningMayFailRandomly",
+        },
+      },
       env
     );
 
     if (!itemsRes.ok) {
       console.warn(`[fetchSharePointListEntries] Orderby query returned ${itemsRes.status}. Retrying without orderby...`);
       itemsRes = await fetchGraph(
-        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=${top}`,
+        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=${pageTop}`,
         { method: "GET" },
         env
       );
@@ -2004,7 +2011,7 @@ export async function fetchSharePointListEntries(
     // Follow up to 2 pagination links if present so newest items at the end of large lists are never missed
     let nextLink: string | undefined = itemsData["@odata.nextLink"];
     let pageCount = 0;
-    while (nextLink && pageCount < 2) {
+    while (nextLink && pageCount < 2 && rawItems.length < requestedTop) {
       pageCount++;
       try {
         const nextRes = await fetchGraph(nextLink, { method: "GET" }, env);
@@ -2319,17 +2326,57 @@ export async function getUserListsDailySummary(
 ): Promise<UserListsDailySummaryResult> {
   const todayIso = getIsraelDateIso(0);
   const yesterdayIso = getIsraelDateIso(-1);
-  const effectiveEmployeeName = resolveEffectiveName(options.employeeName, options.employeeEmail);
+  const rawInputName = (options.employeeName || "").trim();
+  const isGenericName = !rawInputName || rawInputName === "עובד" || rawInputName === "עובד מערכת" || rawInputName.toLowerCase() === "user";
   const effectiveEmail = (options.employeeEmail || "").trim();
+  const effectiveEmployeeName = resolveEffectiveName(isGenericName ? "" : rawInputName, effectiveEmail);
 
   // Fetch all recent entries from Microsoft Lists so we can both filter for the user and list available employees
   const allEntries = await fetchSharePointListEntries(env, {
-    top: options.top || 500,
+    top: options.top || 400,
   });
+
+  // Also merge any dual-write entries from Central Log that might not yet be indexed by SharePoint Lists
+  try {
+    const centralRecords = queryCentralLog({ includeCancelled: false });
+    for (const r of centralRecords) {
+      const rId = r.sharepointListItemId || r.id;
+      const alreadyExists = allEntries.some(
+        (ae) =>
+          ae.id === String(rId) ||
+          (ae.date === r.date &&
+            ae.customerName === r.customerName &&
+            ae.description === r.description &&
+            Math.abs(ae.durationHours - r.durationHours) < 0.05)
+      );
+      if (!alreadyExists) {
+        allEntries.push({
+          id: String(rId),
+          webUrl: r.sharepointListWebUrl || "https://techselectltd.sharepoint.com/sites/Customers/Lists/List/AllItems.aspx",
+          customerName: r.customerName,
+          workType: r.workType,
+          employeeName: resolveEffectiveName(r.employeeName, r.employeeEmail),
+          employeeEmail: r.employeeEmail || "",
+          startTime: r.startTime,
+          endTime: r.endTime,
+          date: r.date,
+          durationHours: r.durationHours,
+          durationFormatted: r.durationFormatted || `${r.durationHours} שעות`,
+          description: r.description,
+          createdDateTime: r.createdAt,
+        });
+      }
+    }
+  } catch {}
 
   // Filter entries belonging to this user
   const userEntries = allEntries.filter((entry) =>
-    doesEmployeeMatchQuery(entry.employeeName, entry.employeeEmail, options.employeeName || effectiveEmployeeName, effectiveEmail)
+    doesEmployeeMatchQuery(
+      entry.employeeName,
+      entry.employeeEmail,
+      isGenericName ? effectiveEmployeeName : rawInputName,
+      effectiveEmail
+    )
   );
 
   // Calculate week start (Sunday of current week in Israel time) and month prefix

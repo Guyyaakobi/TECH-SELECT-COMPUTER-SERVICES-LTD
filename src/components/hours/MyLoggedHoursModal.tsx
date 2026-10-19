@@ -142,40 +142,40 @@ export const MyLoggedHoursModal: React.FC<MyLoggedHoursModalProps> = ({
   return (
     <div
       dir="rtl"
-      className="fixed inset-0 z-50 bg-slate-900/55 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 transition-opacity"
+      className="fixed inset-0 z-50 bg-slate-900/55 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-5 transition-opacity"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-4xl max-h-[92vh] bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col text-right animate-in fade-in zoom-in-95 duration-200"
+        className="w-full max-w-4xl h-[92dvh] sm:h-auto sm:max-h-[92vh] bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col text-right animate-in fade-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="px-5 py-4 border-b border-slate-200/90 flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-emerald-50/70 via-blue-50/50 to-white shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-600 to-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
-              <ListChecks className="w-5 h-5" />
+        <div className="px-3.5 sm:px-5 py-3 sm:py-4 border-b border-slate-200/90 flex items-center justify-between gap-2 bg-gradient-to-r from-emerald-50/70 via-blue-50/50 to-white shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-emerald-600 to-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
+              <ListChecks className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-base sm:text-lg font-bold text-slate-900">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                <h2 className="text-sm sm:text-lg font-bold text-slate-900 truncate">
                   כמה תיעדתי היום &middot; פירוט יומי
                 </h2>
-                <span className="text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100/90 text-emerald-800 border border-emerald-200 flex items-center gap-1">
+                <span className="hidden sm:inline-flex text-[11px] font-semibold px-2.5 py-0.5 rounded-full bg-emerald-100/90 text-emerald-800 border border-emerald-200 items-center gap-1">
                   <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                   <span>בדיקה ישירה מול Microsoft Lists</span>
                 </span>
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                מציג שעות לחיוב לקוח שתועדו ב-Lists עבור{" "}
+              <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5 truncate">
+                שעות לחיוב לקוח מ-Lists עבור{" "}
                 <strong className="text-slate-800">{summary?.employeeName || selectedEmployee.name}</strong>
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {/* Employee switcher if admin or multiple employees available */}
             {currentUser.isAdmin && summary?.availableEmployees && summary.availableEmployees.length > 0 && (
-              <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1 shadow-2xs">
+              <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-2 py-1 shadow-2xs max-w-[125px] sm:max-w-none">
                 <User className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                 <select
                   value={selectedEmployee.name}
@@ -189,7 +189,7 @@ export const MyLoggedHoursModal: React.FC<MyLoggedHoursModalProps> = ({
                     setSelectedEmployee(nextEmp);
                     fetchSummary(nextEmp.name, nextEmp.email);
                   }}
-                  className="text-xs font-semibold text-slate-700 bg-transparent focus:outline-none cursor-pointer"
+                  className="text-[11px] sm:text-xs font-semibold text-slate-700 bg-transparent focus:outline-none cursor-pointer truncate"
                   title="בחר עובד לבדיקה מול Lists"
                 >
                   {!summary.availableEmployees.some((emp) => emp.name === selectedEmployee.name) && (
@@ -207,7 +207,7 @@ export const MyLoggedHoursModal: React.FC<MyLoggedHoursModalProps> = ({
             <button
               onClick={() => fetchSummary(selectedEmployee.name, selectedEmployee.email)}
               disabled={loading}
-              className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-semibold text-slate-700 hover:text-slate-900 shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
+              className="p-2 sm:px-3 sm:py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-semibold text-slate-700 hover:text-slate-900 shadow-2xs transition-colors flex items-center gap-1.5 cursor-pointer"
               title="בדוק שוב מול Microsoft Lists"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-blue-600" : "text-slate-500"}`} />
@@ -219,7 +219,7 @@ export const MyLoggedHoursModal: React.FC<MyLoggedHoursModalProps> = ({
                 href={summary.listWebUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-semibold shadow-2xs flex items-center gap-1.5 cursor-pointer transition-colors"
+                className="p-2 sm:px-3 sm:py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 text-xs font-semibold shadow-2xs flex items-center gap-1.5 cursor-pointer transition-colors"
                 title="פתח את רשימת Microsoft Lists"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
@@ -239,77 +239,77 @@ export const MyLoggedHoursModal: React.FC<MyLoggedHoursModalProps> = ({
 
         {/* KPI Cards Row */}
         {summary && (
-          <div className="p-4 sm:px-6 bg-slate-50/80 border-b border-slate-200/80 shrink-0">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="p-2.5 sm:p-4 sm:px-6 bg-slate-50/80 border-b border-slate-200/80 shrink-0">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
               {/* Today Card - Highlighted */}
-              <div className="p-3.5 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-sm">
-                <div className="flex items-center justify-between text-xs text-emerald-100 mb-1">
-                  <span className="font-semibold">תיעדתי היום ({summary.todayDisplayDate})</span>
-                  <Clock className="w-4 h-4 text-emerald-200" />
+              <div className="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-sm">
+                <div className="flex items-center justify-between text-[11px] sm:text-xs text-emerald-100 mb-0.5 sm:mb-1">
+                  <span className="font-semibold truncate">היום ({summary.todayDisplayDate})</span>
+                  <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-200 shrink-0" />
                 </div>
-                <div className="text-2xl font-black tracking-tight">
+                <div className="text-lg sm:text-2xl font-black tracking-tight leading-tight">
                   {summary.todayHours}{" "}
-                  <span className="text-xs font-normal text-emerald-100">שעות</span>
+                  <span className="text-[11px] sm:text-xs font-normal text-emerald-100">שעות</span>
                 </div>
-                <div className="text-[11px] text-emerald-100 font-medium mt-0.5">
+                <div className="text-[10px] sm:text-[11px] text-emerald-100 font-medium mt-0.5 truncate">
                   {summary.todayEntriesCount === 0
-                    ? "טרם נרשם תיעוד היום ב-Lists"
-                    : `${summary.todayEntriesCount} תיעודים נרשמו היום`}
+                    ? "טרם נרשם תיעוד היום"
+                    : `${summary.todayEntriesCount} תיעודים היום`}
                 </div>
               </div>
 
               {/* This Week Card */}
-              <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
-                <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
+              <div className="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+                <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-0.5 sm:mb-1">
                   <span>סה״כ השבוע</span>
-                  <CalendarDays className="w-3.5 h-3.5 text-blue-600" />
+                  <CalendarDays className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                 </div>
-                <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                <div className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight leading-tight">
                   {summary.weekHours}{" "}
-                  <span className="text-xs font-normal text-slate-500">שעות</span>
+                  <span className="text-[11px] sm:text-xs font-normal text-slate-500">שעות</span>
                 </div>
-                <div className="text-[11px] text-blue-600 font-medium mt-0.5">
+                <div className="text-[10px] sm:text-[11px] text-blue-600 font-medium mt-0.5 truncate">
                   {summary.weekEntriesCount} תיעודים השבוע
                 </div>
               </div>
 
               {/* This Month Card */}
-              <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
-                <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
+              <div className="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+                <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-0.5 sm:mb-1">
                   <span>סה״כ החודש</span>
-                  <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                  <Calendar className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                 </div>
-                <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                <div className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight leading-tight">
                   {summary.monthHours}{" "}
-                  <span className="text-xs font-normal text-slate-500">שעות</span>
+                  <span className="text-[11px] sm:text-xs font-normal text-slate-500">שעות</span>
                 </div>
-                <div className="text-[11px] text-indigo-600 font-medium mt-0.5">
+                <div className="text-[10px] sm:text-[11px] text-indigo-600 font-medium mt-0.5 truncate">
                   {summary.monthEntriesCount} תיעודים החודש
                 </div>
               </div>
 
               {/* Active Days Count Card */}
-              <div className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
-                <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
+              <div className="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+                <div className="flex items-center justify-between text-[11px] sm:text-xs text-slate-500 mb-0.5 sm:mb-1">
                   <span>סה״כ ב-Lists</span>
-                  <ListChecks className="w-3.5 h-3.5 text-purple-600" />
+                  <ListChecks className="w-3.5 h-3.5 text-purple-600 shrink-0" />
                 </div>
-                <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                <div className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight leading-tight">
                   {summary.totalHoursAllTime}{" "}
-                  <span className="text-xs font-normal text-slate-500">שעות</span>
+                  <span className="text-[11px] sm:text-xs font-normal text-slate-500">שעות</span>
                 </div>
-                <div className="text-[11px] text-slate-500 font-medium mt-0.5">
-                  {summary.totalEntriesAllTime} רשומות ב-Microsoft Lists
+                <div className="text-[10px] sm:text-[11px] text-slate-500 font-medium mt-0.5 truncate">
+                  {summary.totalEntriesAllTime} רשומות ב-Lists
                 </div>
               </div>
             </div>
 
             {/* Filter & Search Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-2 mt-3 pt-3 border-t border-slate-200/70">
-              <div className="flex flex-wrap items-center gap-1.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mt-2.5 sm:mt-3 pt-2.5 sm:pt-3 border-t border-slate-200/70">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 sm:pb-0">
                 <button
                   onClick={() => setPeriodFilter("all")}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
                     periodFilter === "all"
                       ? "bg-slate-900 text-white shadow-2xs"
                       : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
@@ -319,26 +319,26 @@ export const MyLoggedHoursModal: React.FC<MyLoggedHoursModalProps> = ({
                 </button>
                 <button
                   onClick={() => setPeriodFilter("today")}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
                     periodFilter === "today"
                       ? "bg-emerald-600 text-white shadow-2xs"
                       : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
                   }`}
                 >
-                  היום בלבד ({summary.todayHours} שעות)
+                  היום ({summary.todayHours} ש׳)
                 </button>
                 <button
                   onClick={() => setPeriodFilter("week")}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
+                  className={`px-2.5 sm:px-3 py-1.5 rounded-xl text-[11px] sm:text-xs font-semibold transition-colors cursor-pointer shrink-0 ${
                     periodFilter === "week"
                       ? "bg-blue-600 text-white shadow-2xs"
                       : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
                   }`}
                 >
-                  השבוע ({summary.weekHours} שעות)
+                  השבוע ({summary.weekHours} ש׳)
                 </button>
 
-                <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-2.5 py-1">
+                <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-2 py-1 shrink-0">
                   <Calendar className="w-3.5 h-3.5 text-slate-400" />
                   <input
                     type="date"
@@ -351,7 +351,7 @@ export const MyLoggedHoursModal: React.FC<MyLoggedHoursModalProps> = ({
                         setPeriodFilter("all");
                       }
                     }}
-                    className="text-xs text-slate-700 focus:outline-none bg-transparent cursor-pointer"
+                    className="text-[11px] sm:text-xs text-slate-700 focus:outline-none bg-transparent cursor-pointer"
                     title="בחר תאריך ספציפי לבדיקה"
                   />
                   {periodFilter === "custom" && customDate && (
@@ -370,7 +370,7 @@ export const MyLoggedHoursModal: React.FC<MyLoggedHoursModalProps> = ({
               </div>
 
               {/* Search by customer or description */}
-              <div className="relative flex-1 min-w-[180px] max-w-xs">
+              <div className="relative w-full sm:flex-1 sm:min-w-[180px] sm:max-w-xs">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
@@ -385,7 +385,7 @@ export const MyLoggedHoursModal: React.FC<MyLoggedHoursModalProps> = ({
         )}
 
         {/* Body Content - Per-Day List from Microsoft Lists */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3 bg-[#f8fafd]">
+        <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-2.5 sm:space-y-3 bg-[#f8fafd]">
           {loading ? (
             <div className="py-16 text-center flex flex-col items-center justify-center">
               <div className="w-10 h-10 rounded-full border-3 border-emerald-100 border-t-emerald-600 animate-spin mb-3" />

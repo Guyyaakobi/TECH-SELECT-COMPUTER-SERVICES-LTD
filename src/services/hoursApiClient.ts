@@ -57,7 +57,12 @@ export async function fetchHoursApi<T = any>(
       throw new Error(message);
     }
 
-    return res.json();
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("text/html")) {
+      throw new Error(`נתיב ה-API אינו זמין בשרת (${cleanEndpoint})`);
+    }
+
+    return await res.json();
   } catch (err: any) {
     clearTimeout(timeoutId);
     if (err.name === "AbortError") {
@@ -746,6 +751,7 @@ export interface UserListsDailySummaryClient {
 
 /**
  * 17. Fetch per-user daily logged hours breakdown directly from Microsoft Lists ("כמה תיעדתי היום")
+ * Includes automatic fallback to /api/hours/today-summary if /api/hours/my-lists-hours is unavailable.
  */
 export async function apiGetMyListsDailySummary(options?: {
   employeeName?: string;
@@ -755,7 +761,112 @@ export async function apiGetMyListsDailySummary(options?: {
   if (options?.employeeName) params.set("employeeName", options.employeeName);
   if (options?.employeeEmail) params.set("employeeEmail", options.employeeEmail);
   const q = params.toString() ? `?${params.toString()}` : "";
-  return fetchHoursApi<UserListsDailySummaryClient>(`/api/hours/my-lists-hours${q}`, {
+
+  try {
+    const res = await fetchHoursApi<UserListsDailySummaryClient>(`/api/hours/my-lists-hours${q}`, {
+      method: "GET",
+    });
+    if (res && Array.isArray(res.byDay)) {
+      return res;
+    }
+  } catch (err) {
+    console.warn("[apiGetMyListsDailySummary] Primary endpoint fallback triggered:", err);
+  }
+
+  // Fallback to /api/hours/today-summary?mode=my-lists
+  const fallbackParams = new URLSearchParams(params);
+  fallbackParams.set("mode", "my-lists");
+  fallbackParams.set("period", "month");
+  if (options?.employeeName && options.employeeName !== "עובד") {
+    fallbackParams.set("employee", options.employeeName);
+  }
+  const fallbackData = await fetchHoursApi<any>(`/api/hours/today-summary?${fallbackParams.toString()}`, {
     method: "GET",
   });
+
+  if (fallbackData && Array.isArray(fallbackData.byDay)) {
+    return fallbackData as UserListsDailySummaryClient;
+  }
+
+  // Transform DailyHoursReport into UserListsDailySummaryClient if legacy today-summary format returned
+  const todayIso = new Date().toISOString().split("T")[0];
+  const entriesList: any[] = Array.isArray(fallbackData?.entries) ? fallbackData.entries : [];
+  const dayMap = new Map<string, UserListsEntryClient[]>();
+  const daysHe = ["יום ראשון", "יום שני", "יום שלישי", "יום רביעי", "יום חמישי", "יום שישי", "יום שבת"];
+
+  let todayHours = 0;
+  let todayEntriesCount = 0;
+  const todayEntries: UserListsEntryClient[] = [];
+  let totalHours = 0;
+
+  for (const e of entriesList) {
+    const d = e.date || todayIso;
+    const h = Number(e.durationHours) || 0;
+    totalHours += h;
+    const mapped: UserListsEntryClient = {
+      id: String(e.id || `${d}_${Math.random()}`),
+      webUrl: e.webUrl || "https://techselectltd.sharepoint.com/sites/Customers/Lists/List/AllItems.aspx",
+      customerName: e.customerName || "",
+      workType: e.workType || "טיקטים",
+      employeeName: e.employeeName || options?.employeeName || "עובד",
+      employeeEmail: e.employeeEmail || options?.employeeEmail || "",
+      startTime: e.startTime || "",
+      endTime: e.endTime || "",
+      date: d,
+      durationHours: h,
+      durationFormatted: e.durationFormatted || `${h} שעות`,
+      description: e.description || "",
+    };
+    if (d === todayIso) {
+      todayHours += h;
+      todayEntriesCount++;
+      todayEntries.push(mapped);
+    }
+    if (!dayMap.has(d)) dayMap.set(d, []);
+    dayMap.get(d)!.push(mapped);
+  }
+
+  if (!dayMap.has(todayIso)) {
+    dayMap.set(todayIso, []);
+  }
+
+  const byDay: UserListsDayGroupClient[] = Array.from(dayMap.keys())
+    .sort((a, b) => b.localeCompare(a))
+    .map((dateIso) => {
+      const dayEntries = dayMap.get(dateIso) || [];
+      const parts = dateIso.split("-");
+      const displayDate = parts.length === 3 ? `${parts[2]}/${parts[1]}/${parts[0]}` : dateIso;
+      const dt = parts.length === 3 ? new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])) : new Date();
+      return {
+        date: dateIso,
+        displayDate,
+        dayNameHe: daysHe[dt.getDay()] || "",
+        isToday: dateIso === todayIso,
+        isYesterday: false,
+        totalHours: Math.round(dayEntries.reduce((acc, x) => acc + x.durationHours, 0) * 100) / 100,
+        entriesCount: dayEntries.length,
+        customers: Array.from(new Set(dayEntries.map((x) => x.customerName).filter(Boolean))),
+        entries: dayEntries,
+      };
+    });
+
+  const tParts = todayIso.split("-");
+  return {
+    employeeName: options?.employeeName || "עובד",
+    employeeEmail: options?.employeeEmail || "",
+    todayDate: todayIso,
+    todayDisplayDate: tParts.length === 3 ? `${tParts[2]}/${tParts[1]}/${tParts[0]}` : todayIso,
+    todayHours: Math.round(todayHours * 100) / 100,
+    todayEntriesCount,
+    todayEntries,
+    weekHours: Math.round(totalHours * 100) / 100,
+    weekEntriesCount: entriesList.length,
+    monthHours: Math.round(totalHours * 100) / 100,
+    monthEntriesCount: entriesList.length,
+    totalHoursAllTime: Math.round(totalHours * 100) / 100,
+    totalEntriesAllTime: entriesList.length,
+    byDay,
+    availableEmployees: [],
+    listWebUrl: "https://techselectltd.sharepoint.com/sites/Customers/Lists/List/AllItems.aspx",
+  };
 }

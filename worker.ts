@@ -39,6 +39,7 @@ import * as hoursJobsHandler from "./functions/api/hours/jobs";
 import * as hoursDiagnosticsHandler from "./functions/api/hours/diagnostics";
 import * as hoursAssistantHandler from "./functions/api/hours/assistant";
 import * as hoursTodaySummaryHandler from "./functions/api/hours/today-summary";
+import * as hoursMyListsHoursHandler from "./functions/api/hours/my-lists-hours";
 import * as hoursLogHandler from "./functions/api/hours/log";
 import * as hoursListsHandler from "./functions/api/hours/lists";
 
@@ -269,6 +270,14 @@ export default {
         return hoursTodaySummaryHandler.onRequestOptions(context);
       }
       return hoursTodaySummaryHandler.onRequestGet(context);
+    }
+
+    // 9.105 Per-User Daily Breakdown from Microsoft Lists (/api/hours/my-lists-hours)
+    if (pathname === "/api/hours/my-lists-hours") {
+      if (request.method === "OPTIONS") {
+        return hoursMyListsHoursHandler.onRequestOptions(context);
+      }
+      return hoursMyListsHoursHandler.onRequestGet(context);
     }
 
     // 9.11 Central Hours Log (/api/hours/log)

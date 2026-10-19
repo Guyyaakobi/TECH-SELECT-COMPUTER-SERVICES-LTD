@@ -4838,13 +4838,27 @@ ${!isAteraCustomer ? `
     // 10. GET /api/hours/today-summary: Retrieve today's (or given date's) hours report & employee/customer breakdown
     hoursRouter.get("/today-summary", async (req, res) => {
       try {
+        const mode = String(req.query.mode || "").trim();
+        const reqUser = (req as any).user || {};
+        const requestEnv = { ...process.env, userToken: (req as any).rawToken };
+
+        if (mode === "my-lists") {
+          const queryName = String(req.query.employeeName || req.query.employee || "").trim();
+          const queryEmail = String(req.query.employeeEmail || req.query.email || "").trim();
+          const employeeName = queryName || reqUser.name || "";
+          const employeeEmail = queryEmail || reqUser.email || "";
+          const summary = await getUserListsDailySummary(
+            { employeeName, employeeEmail, top: 500 },
+            requestEnv
+          );
+          return res.json(summary);
+        }
+
         const date = String(req.query.date || "").trim() || undefined;
         const period = (String(req.query.period || "").trim() as any) || undefined;
         const customer = String(req.query.customer || "").trim() || undefined;
         const employee = String(req.query.employee || "").trim() || undefined;
-        const reqUser = (req as any).user || {};
         const userEmail = reqUser.email || "g@tech-select.co.il";
-        const requestEnv = { ...process.env, userToken: (req as any).rawToken };
         const report = await getDailyHoursReport(
           { date, period, customer, employee, userEmail },
           requestEnv

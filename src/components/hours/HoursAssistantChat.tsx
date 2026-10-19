@@ -163,11 +163,12 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
 
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
+      if (window.innerWidth < 768) return false;
       const saved = localStorage.getItem("tech_select_hours_sidebar_open");
       if (saved !== null) return saved === "true";
       return window.innerWidth >= 1024;
     }
-    return true;
+    return false;
   });
 
   const [currentSessionId, setCurrentSessionId] = useState<string>(() => `sess_${Date.now()}`);
@@ -1070,57 +1071,60 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
       </aside>
 
       {/* MAIN GEMINI CHAT CANVAS */}
-      <div dir="rtl" className="flex-1 h-full flex flex-col justify-between overflow-hidden relative text-right">
+      <div dir="rtl" className="flex-1 h-full flex flex-col justify-between overflow-hidden relative text-right min-w-0">
         {/* Top Status Bar */}
-        <div className="px-4 sm:px-6 py-2.5 border-b border-slate-200/60 bg-white/70 backdrop-blur-xs flex items-center justify-between shrink-0 z-10">
-          <div className="flex items-center gap-2">
+        <div className="px-3 sm:px-6 py-2 sm:py-2.5 border-b border-slate-200/60 bg-white/80 backdrop-blur-xs flex items-center justify-between gap-2 shrink-0 z-10">
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 overflow-x-auto no-scrollbar">
             {/* Sidebar Toggle Button */}
             <button
               onClick={toggleSidebar}
-              className="btn-icon-subtle p-1.5 rounded-xl hover:bg-slate-100 text-slate-600 hover:text-slate-900 cursor-pointer flex items-center gap-1.5 border border-slate-200/80 shadow-2xs"
+              className="btn-icon-subtle px-2 py-1.5 rounded-xl hover:bg-slate-100 text-slate-600 hover:text-slate-900 cursor-pointer flex items-center gap-1.5 border border-slate-200/80 shadow-2xs shrink-0"
               title={isSidebarOpen ? "צמצם היסטוריה" : "פתח היסטוריית שיחות (5 אחרונות)"}
             >
               {isSidebarOpen ? (
-                <PanelLeftClose className="w-4 h-4 text-blue-600" />
+                <PanelLeftClose className="w-4 h-4 text-blue-600 shrink-0" />
               ) : (
-                <PanelLeftOpen className="w-4 h-4 text-slate-600" />
+                <PanelLeftOpen className="w-4 h-4 text-slate-600 shrink-0" />
               )}
-              <span className="text-[11px] font-semibold text-slate-600 hidden sm:inline">
+              <span className="text-[11px] font-semibold text-slate-600 whitespace-nowrap">
                 {isSidebarOpen ? "צמצם" : "היסטוריה"}
               </span>
             </button>
 
-            <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] flex items-center justify-center text-white shadow-2xs">
+            <div className="hidden sm:flex w-6 h-6 rounded-full bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] items-center justify-center text-white shadow-2xs shrink-0">
               <Sparkles className="w-3 h-3" />
             </div>
-            <span className="text-xs font-semibold text-slate-700">שעות לחיוב לקוח</span>
+            <span className="hidden sm:inline text-xs font-semibold text-slate-700 whitespace-nowrap">
+              שעות לחיוב לקוח
+            </span>
+
             {activeDrafts.length > 0 && (
-              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-semibold flex items-center gap-1">
-                <Clock className="w-3 h-3 text-blue-600" />
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-semibold flex items-center gap-1 whitespace-nowrap shrink-0">
+                <Clock className="w-3 h-3 text-blue-600 shrink-0" />
                 <span>{activeDrafts.length} טיוטות</span>
               </span>
             )}
 
-            {/* Per-User "כמה תיעדתי היום" Quick Button (Checks Microsoft Lists) */}
+            {/* Per-User "כמה תיעדתי היום" Quick Button (Hidden on xs since it's in the main top navbar, visible on sm+) */}
             {onOpenMyLoggedHours && (
               <button
                 onClick={onOpenMyLoggedHours}
-                className="btn-hover-subtle text-xs px-2.5 py-1 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs mr-1"
+                className="hidden sm:flex btn-hover-subtle text-xs px-2.5 py-1 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold items-center gap-1 cursor-pointer transition-colors shadow-2xs mr-1 whitespace-nowrap shrink-0"
                 title="בדוק כמה תיעדת היום ובכל יום לפי Microsoft Lists"
               >
-                <ListChecks className="w-3.5 h-3.5 text-emerald-600" />
+                <ListChecks className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                 <span>כמה תיעדתי היום</span>
               </button>
             )}
 
-            {/* Manager Today Hours Summary Quick Button */}
+            {/* Manager Today Hours Summary Quick Button (Hidden on xs since it's in the main top navbar, visible on sm+) */}
             {isGuyOrAdmin && onOpenTodaySummary && (
               <button
                 onClick={onOpenTodaySummary}
-                className="btn-hover-subtle text-xs px-2.5 py-1 rounded-full bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-semibold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs mr-1"
+                className="hidden sm:flex btn-hover-subtle text-xs px-2.5 py-1 rounded-full bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 font-semibold items-center gap-1 cursor-pointer transition-colors shadow-2xs mr-1 whitespace-nowrap shrink-0"
                 title="דוח וריכוז שעות עבודה יומי לכל העובדים"
               >
-                <BarChart3 className="w-3.5 h-3.5 text-blue-600" />
+                <BarChart3 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                 <span>שעות היום (מנהל)</span>
               </button>
             )}
@@ -1128,44 +1132,44 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
 
           <button
             onClick={handleNewChat}
-            className="btn-hover-subtle flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white hover:bg-slate-100 border border-slate-200 text-xs text-slate-600 hover:text-slate-900 cursor-pointer shadow-xs"
+            className="btn-hover-subtle flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl sm:rounded-full bg-white hover:bg-slate-100 border border-slate-200 text-[11px] sm:text-xs text-slate-600 hover:text-slate-900 cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
             title="שיחה חדשה"
           >
-            <RotateCcw className="w-3 h-3 text-slate-400" />
+            <RotateCcw className="w-3 h-3 text-slate-400 shrink-0" />
             <span>שיחה חדשה</span>
           </button>
         </div>
 
         {/* Content Area: If empty -> Greeting, else -> Message Feed */}
         {messages.length === 0 && activeDrafts.length === 0 && !loading ? (
-          <div className="flex-1 flex flex-col items-center justify-center w-full max-w-3xl mx-auto my-auto px-4 overflow-y-auto relative">
+          <div className="flex-1 flex flex-col items-center justify-center w-full max-w-3xl mx-auto my-auto px-4 py-4 overflow-y-auto relative">
             {/* Soft Ethereal Glow in the Center */}
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[34rem] h-[22rem] bg-gradient-to-tr from-sky-200/35 via-purple-100/30 to-indigo-100/20 rounded-full blur-3xl pointer-events-none -z-10" />
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[20rem] sm:w-[34rem] h-[16rem] sm:h-[22rem] bg-gradient-to-tr from-sky-200/35 via-purple-100/30 to-indigo-100/20 rounded-full blur-3xl pointer-events-none -z-10" />
 
             {/* Sparkles Icon */}
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] flex items-center justify-center text-white shadow-md shadow-indigo-500/20 mb-5">
-              <Sparkles className="w-6 h-6 animate-pulse" />
+            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] flex items-center justify-center text-white shadow-md shadow-indigo-500/20 mb-3.5 sm:mb-5 shrink-0">
+              <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 animate-pulse" />
             </div>
 
             {/* Big Gemini Headline */}
-            <div className="text-center">
-              <h1 className="text-4xl sm:text-5xl font-medium tracking-tight mb-3">
+            <div className="text-center w-full max-w-xl">
+              <h1 className="text-2xl sm:text-5xl font-bold sm:font-medium tracking-tight mb-2 sm:mb-3">
                 <span className="bg-gradient-to-r from-[#1a73e8] via-[#7c3aed] to-[#d946ef] bg-clip-text text-transparent">
                   {greeting}, {firstName}
                 </span>
               </h1>
-              <p className="text-base sm:text-xl font-normal text-slate-500 mb-6">
+              <p className="text-sm sm:text-xl font-normal text-slate-500 mb-5 sm:mb-6 px-2">
                 איך אוכל לעזור לך לתעד שעות לחיוב לקוח היום?
               </p>
 
-              {/* Quick Starter Suggestion Pills */}
+              {/* Quick Starter Suggestion Buttons */}
               <div className="flex flex-wrap items-center justify-center gap-2 max-w-xl mx-auto">
                 {onOpenMyLoggedHours && (
                   <button
                     onClick={onOpenMyLoggedHours}
-                    className="px-3.5 py-1.5 rounded-full bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 hover:border-emerald-300 text-xs text-emerald-800 font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
+                    className="w-full sm:w-auto justify-center px-4 py-2.5 sm:py-1.5 rounded-2xl sm:rounded-full bg-emerald-50 hover:bg-emerald-100 border border-emerald-300/90 text-xs text-emerald-900 font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
                   >
-                    <ListChecks className="w-3.5 h-3.5 text-emerald-600" />
+                    <ListChecks className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-emerald-600 shrink-0" />
                     <span>כמה תיעדתי היום (לפי Lists)</span>
                   </button>
                 )}
@@ -1173,62 +1177,62 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                   <>
                     <button
                       onClick={() => handleSendText("כמה אנשים תיעדו היום?")}
-                      className="px-3.5 py-1.5 rounded-full bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-xs text-slate-700 hover:text-blue-700 font-medium transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
+                      className="px-3.5 py-2 sm:py-1.5 rounded-xl sm:rounded-full bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-xs text-slate-700 hover:text-blue-700 font-medium transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
                     >
-                      <Users className="w-3.5 h-3.5 text-blue-600" />
+                      <Users className="w-3.5 h-3.5 text-blue-600 shrink-0" />
                       <span>כמה אנשים תיעדו היום?</span>
                     </button>
                     <button
                       onClick={() => handleSendText("ריכוז שבועי")}
-                      className="px-3.5 py-1.5 rounded-full bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-xs text-slate-700 hover:text-blue-700 font-medium transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
+                      className="px-3.5 py-2 sm:py-1.5 rounded-xl sm:rounded-full bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-xs text-slate-700 hover:text-blue-700 font-medium transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
                     >
-                      <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
+                      <BarChart3 className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                       <span>ריכוז שבועי</span>
                     </button>
                     <button
                       onClick={() => handleSendText("כמה שעות נרשמו היום?")}
-                      className="px-3.5 py-1.5 rounded-full bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-xs text-slate-700 hover:text-blue-700 font-medium transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
+                      className="px-3.5 py-2 sm:py-1.5 rounded-xl sm:rounded-full bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-xs text-slate-700 hover:text-blue-700 font-medium transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
                     >
-                      <Clock className="w-3.5 h-3.5 text-purple-600" />
+                      <Clock className="w-3.5 h-3.5 text-purple-600 shrink-0" />
                       <span>כמה שעות נרשמו היום?</span>
                     </button>
                     <button
                       onClick={() => handleSendText("דוח שעות לאתמול")}
-                      className="px-3.5 py-1.5 rounded-full bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-xs text-slate-700 hover:text-blue-700 font-medium transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
+                      className="px-3.5 py-2 sm:py-1.5 rounded-xl sm:rounded-full bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-xs text-slate-700 hover:text-blue-700 font-medium transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
                     >
-                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                       <span>דוח שעות לאתמול</span>
                     </button>
                   </>
                 ) : (
-                  <>
+                  <div className="grid grid-cols-1 sm:flex sm:flex-wrap gap-2 w-full sm:w-auto justify-center">
                     <button
                       onClick={() => setInputText("הייתי היום שעתיים בביקור אצל ")}
-                      className="px-3.5 py-1.5 rounded-full bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-xs text-slate-700 hover:text-blue-700 font-medium transition-all shadow-2xs cursor-pointer"
+                      className="px-3.5 py-2.5 sm:py-1.5 rounded-xl sm:rounded-full bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-xs text-slate-700 hover:text-blue-700 font-medium transition-all shadow-2xs cursor-pointer text-center"
                     >
                       🚗 ביקור פיזי אצל לקוח
                     </button>
                     <button
                       onClick={() => setInputText("שעה תמיכה מרחוק וטלפון עם ")}
-                      className="px-3.5 py-1.5 rounded-full bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-xs text-slate-700 hover:text-blue-700 font-medium transition-all shadow-2xs cursor-pointer"
+                      className="px-3.5 py-2.5 sm:py-1.5 rounded-xl sm:rounded-full bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-xs text-slate-700 hover:text-blue-700 font-medium transition-all shadow-2xs cursor-pointer text-center"
                     >
                       💻 תמיכה מרחוק וטיקטים
                     </button>
                     <button
                       onClick={() => setInputText("3 שעות בפרויקט שדרוג אצל ")}
-                      className="px-3.5 py-1.5 rounded-full bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-xs text-slate-700 hover:text-blue-700 font-medium transition-all shadow-2xs cursor-pointer"
+                      className="px-3.5 py-2.5 sm:py-1.5 rounded-xl sm:rounded-full bg-white hover:bg-blue-50 border border-slate-200 hover:border-blue-300 text-xs text-slate-700 hover:text-blue-700 font-medium transition-all shadow-2xs cursor-pointer text-center"
                     >
                       📁 פרויקט והקמה
                     </button>
-                  </>
+                  </div>
                 )}
               </div>
             </div>
           </div>
         ) : (
           /* Messages Feed: Full Viewport Width, Comfortable Centered Max-Width Reading Column */
-          <div ref={feedContainerRef} className="flex-1 overflow-y-auto px-4 py-6 scroll-smooth">
-            <div className="max-w-3xl mx-auto w-full space-y-6">
+          <div ref={feedContainerRef} className="flex-1 overflow-y-auto px-2.5 sm:px-4 py-4 sm:py-6 scroll-smooth">
+            <div className="max-w-3xl mx-auto w-full space-y-4 sm:space-y-6">
               {(() => {
                 const seenWrittenIds = new Set<string>();
                 return messages.map((msg) => {
@@ -1242,33 +1246,36 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                   return (
                     <div
                       key={msg.id}
-                      className={`flex flex-col ${isUser ? "items-start" : "items-stretch"} space-y-2.5`}
+                      className={`flex flex-col ${isUser ? "items-start" : "items-stretch"} space-y-2`}
                     >
                       {/* User Message Bubble */}
                       {isUser ? (
-                        <div className="bg-[#f0f4f9] text-slate-900 rounded-3xl px-5 py-3.5 text-sm sm:text-base leading-relaxed max-w-[85%] shadow-xs">
+                        <div className="bg-[#f0f4f9] text-slate-900 rounded-2xl sm:rounded-3xl px-4 sm:px-5 py-3 sm:py-3.5 text-sm sm:text-base leading-relaxed max-w-[92%] sm:max-w-[85%] shadow-2xs">
                           {msg.isVoice && (
                             <div className="flex items-center gap-1.5 text-xs text-blue-600 mb-1.5 font-semibold pb-1 border-b border-slate-200">
                               <Volume2 className="w-3.5 h-3.5" />
                               <span>תמלול קולי</span>
                             </div>
                           )}
-                          <p className="whitespace-pre-line">{msg.text}</p>
-                          <div className="text-[10px] text-slate-400 mt-1.5 text-left">
+                          <p className="whitespace-pre-line break-words">{msg.text}</p>
+                          <div className="text-[10px] text-slate-400 mt-1 text-left">
                             {msg.timestamp}
                           </div>
                         </div>
                       ) : (
                         /* Model / Assistant Message: Gemini Canvas Style */
-                        <div className="flex items-start gap-3 w-full">
+                        <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-2 sm:gap-3 w-full min-w-0">
                           {/* Gemini Sparkles Avatar */}
-                          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] text-white flex items-center justify-center shrink-0 shadow-xs mt-0.5">
-                            <Sparkles className="w-4 h-4" />
+                          <div className="flex items-center gap-2 sm:block shrink-0">
+                            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] text-white flex items-center justify-center shrink-0 shadow-2xs sm:mt-0.5">
+                              <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                            </div>
+                            <span className="text-[11px] font-bold text-slate-600 sm:hidden">עוזר שעות לחיוב</span>
                           </div>
 
-                          <div className="flex-1 space-y-3">
-                            <div className="text-sm sm:text-base text-slate-800 leading-relaxed font-normal">
-                              <p className="whitespace-pre-line">{msg.text}</p>
+                          <div className="flex-1 min-w-0 space-y-2.5 sm:space-y-3">
+                            <div className="text-sm sm:text-base text-slate-800 leading-relaxed font-normal px-0.5 sm:px-0">
+                              <p className="whitespace-pre-line break-words">{msg.text}</p>
                             </div>
 
                             {/* Render Confirmed Written Entries for this turn (in chronological order) */}
@@ -1287,7 +1294,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                               </div>
                             )}
 
-                            <div className="text-[10px] text-slate-400">
+                            <div className="text-[10px] text-slate-400 px-0.5 sm:px-0">
                               {msg.timestamp}
                             </div>
                           </div>
@@ -1300,7 +1307,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
 
               {/* Pending Active Drafts ALWAYS pinned at the VERY BOTTOM of the feed (never pushed up!) */}
               {activeDrafts.length > 0 && (
-                <div className="w-full space-y-3 pt-2 pr-11">
+                <div className="w-full space-y-3 pt-1 sm:pt-2 pr-0 sm:pr-11">
                   {activeDrafts.length > 1 && (
                     <div className="text-xs text-blue-600 font-semibold mb-1">
                       טיוטות לחיוב לקוח ממתינות לאישורך ({activeDrafts.length}):
@@ -1322,7 +1329,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
 
               {/* Loading Indicator */}
               {loading && (
-                <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-white border border-slate-200 max-w-[75%] shadow-xs animate-pulse pr-11">
+                <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-white border border-slate-200 max-w-full sm:max-w-[75%] shadow-xs animate-pulse">
                   <div className="w-4 h-4 rounded-full border-2 border-blue-600 border-t-transparent animate-spin flex-shrink-0" />
                   <span className="text-xs text-slate-700 font-medium">{loadingStep}</span>
                 </div>
@@ -1334,7 +1341,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
         )}
 
         {/* Docked Floating Pill Input at the Bottom */}
-        <div className="w-full max-w-3xl mx-auto px-4 pb-4 pt-2 shrink-0">
+        <div className="w-full max-w-3xl mx-auto px-2.5 sm:px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-4 pt-1.5 sm:pt-2 shrink-0 bg-gradient-to-t from-[#f8fafd] via-[#f8fafd] to-transparent">
           {/* Active Audio Recording Bar */}
           {isRecording && (
             <div className="mb-2 flex items-center justify-between p-3.5 rounded-2xl bg-red-50 border border-red-200 animate-pulse shadow-sm">
@@ -1482,8 +1489,8 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
             </div>
           </div>
 
-          <div className="text-center mt-2 text-[11px] text-slate-400">
-            Tech-Select Assistant &middot; שעות לחיוב לקוח מסונכרן ישירות ל-Microsoft Lists, SharePoint ו-Excel
+          <div className="text-center mt-1.5 sm:mt-2 text-[10px] sm:text-[11px] text-slate-400 truncate px-2">
+            שעות לחיוב לקוח &middot; סנכרון אוטומטי ל-Microsoft Lists ו-SharePoint Excel
           </div>
         </div>
       </div>

@@ -35,6 +35,11 @@ import * as hoursFindDuplicatesHandler from "../functions/api/hours/find-duplica
 import * as hoursUndoHandler from "../functions/api/hours/undo";
 import * as hoursDiagnosticsHandler from "../functions/api/hours/diagnostics";
 import * as hoursAssistantHandler from "../functions/api/hours/assistant";
+import * as hoursTodaySummaryHandler from "../functions/api/hours/today-summary";
+import * as hoursMyListsHoursHandler from "../functions/api/hours/my-lists-hours";
+import * as hoursListsHandler from "../functions/api/hours/lists";
+import * as hoursLogHandler from "../functions/api/hours/log";
+import * as hoursJobsHandler from "../functions/api/hours/jobs";
 
 export interface Env {
   GEMINI_API_KEY?: string;
@@ -238,6 +243,52 @@ export default {
         return hoursAssistantHandler.onRequestOptions();
       }
       return hoursAssistantHandler.onRequestPost({ request, env });
+    }
+
+    // Route 25: Today / Period Hours Summary (/api/hours/today-summary)
+    if (url.pathname.endsWith("/api/hours/today-summary")) {
+      if (request.method === "OPTIONS") {
+        return hoursTodaySummaryHandler.onRequestOptions({ request, env });
+      }
+      return hoursTodaySummaryHandler.onRequestGet({ request, env });
+    }
+
+    // Route 26: Per-User Daily Breakdown from Microsoft Lists (/api/hours/my-lists-hours)
+    if (url.pathname.endsWith("/api/hours/my-lists-hours")) {
+      if (request.method === "OPTIONS") {
+        return hoursMyListsHoursHandler.onRequestOptions({ request, env });
+      }
+      return hoursMyListsHoursHandler.onRequestGet({ request, env });
+    }
+
+    // Route 27: Microsoft Lists Integration (/api/hours/lists)
+    if (url.pathname.endsWith("/api/hours/lists") || url.pathname.includes("/api/hours/lists/")) {
+      if (request.method === "OPTIONS") {
+        return hoursListsHandler.onRequestOptions({ request, env });
+      }
+      if (request.method === "POST") {
+        return hoursListsHandler.onRequestPost({ request, env });
+      }
+      return hoursListsHandler.onRequestGet({ request, env });
+    }
+
+    // Route 28: Central Hours Log (/api/hours/log)
+    if (url.pathname.includes("/api/hours/log")) {
+      if (request.method === "OPTIONS") {
+        return hoursLogHandler.onRequestOptions({ request, env });
+      }
+      return hoursLogHandler.onRequest({ request, env });
+    }
+
+    // Route 29: Hours Job Queue (/api/hours/jobs)
+    if (url.pathname.includes("/api/hours/jobs")) {
+      if (request.method === "OPTIONS") {
+        return hoursJobsHandler.onRequestOptions({ request, env });
+      }
+      if (request.method === "POST") {
+        return hoursJobsHandler.onRequestPost({ request, env });
+      }
+      return hoursJobsHandler.onRequestGet({ request, env });
     }
 
     return new Response(

@@ -549,35 +549,35 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       : [currentUser?.name || "עובד"];
 
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-white border border-slate-200/90 p-4 sm:p-5 shadow-sm text-right my-2 text-slate-800">
+    <div className="relative overflow-hidden rounded-2xl bg-white border border-slate-200/90 p-3 sm:p-5 shadow-sm text-right my-1.5 sm:my-2 text-slate-800">
       {/* Top Banner: כותרת, סוג ולקוח */}
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2.5 border-b border-slate-100">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200/80 flex items-center justify-center text-blue-600 shadow-xs">
+      <div className="flex items-start justify-between gap-2 mb-2.5 sm:mb-3 pb-2.5 border-b border-slate-100">
+        <div className="flex items-start gap-2 min-w-0 flex-1">
+          <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200/80 flex items-center justify-center text-blue-600 shadow-xs shrink-0 mt-0.5">
             <Building2 className="w-4 h-4" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h4 className="text-sm font-bold text-slate-900 leading-tight">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <h4 className="text-xs sm:text-sm font-bold text-slate-900 leading-tight break-words">
                 {draftTitleDisplay}
               </h4>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border shadow-2xs ${draftWorkTypeBadge.bg}`}>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border shadow-2xs shrink-0 ${draftWorkTypeBadge.bg}`}>
                 {draftWorkTypeBadge.label}
               </span>
               {assignedList.length > 1 && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 shadow-2xs flex items-center gap-1">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 shadow-2xs flex items-center gap-1 shrink-0">
                   <Users className="w-3 h-3 text-purple-600" />
-                  <span>צוות: {assignedList.length} עובדים (ייפתחו {assignedList.length} שורות)</span>
+                  <span>צוות: {assignedList.length} עובדים</span>
                 </span>
               )}
             </div>
-            <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-1 mt-0.5">
-              <span>לקוח: <strong>{draft.customerName}</strong></span>
+            <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-1 mt-1">
+              <span>לקוח: <strong className="text-slate-800">{draft.customerName}</strong></span>
               <span>•</span>
-              <span className="text-blue-700 font-semibold flex items-center gap-1">
-                <Users className="w-3 h-3 text-blue-600 inline" />
-                <span>עובדים בדיווח:</span>
-                {assignedList.map((emp, i) => (
+              <span className="text-blue-700 font-semibold inline-flex flex-wrap items-center gap-1">
+                <Users className="w-3 h-3 text-blue-600 inline shrink-0" />
+                <span className="hidden sm:inline">עובדים בדיווח:</span>
+                {assignedList.map((emp) => (
                   <span
                     key={emp}
                     className="inline-block bg-blue-50 text-blue-800 px-1.5 py-0.2 rounded border border-blue-200 font-bold"
@@ -590,10 +590,10 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             onClick={() => setIsEditing(!isEditing)}
-            className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-medium transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
+            className="px-2 sm:px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-medium transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
             title="עריכה ידנית"
           >
             <Edit3 className="w-3.5 h-3.5" />
@@ -941,11 +941,11 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
               </span>
             </div>
 
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-3 gap-1 sm:gap-1.5">
               {[
-                { id: "טיקטים", label: "טיקטים / שירות", icon: <Ticket className="w-3.5 h-3.5" />, activeBg: "bg-blue-600 text-white border-blue-600" },
-                { id: "ביקור באתר", label: "ביקור באתר", icon: <MapPin className="w-3.5 h-3.5" />, activeBg: "bg-emerald-600 text-white border-emerald-600" },
-                { id: "פרויקטים", label: "פרויקטים", icon: <FolderKanban className="w-3.5 h-3.5" />, activeBg: "bg-amber-600 text-white border-amber-600" },
+                { id: "טיקטים", label: "טיקטים", desktopLabel: "טיקטים / שירות", icon: <Ticket className="w-3.5 h-3.5 shrink-0" />, activeBg: "bg-blue-600 text-white border-blue-600" },
+                { id: "ביקור באתר", label: "ביקור באתר", desktopLabel: "ביקור באתר", icon: <MapPin className="w-3.5 h-3.5 shrink-0" />, activeBg: "bg-emerald-600 text-white border-emerald-600" },
+                { id: "פרויקטים", label: "פרויקטים", desktopLabel: "פרויקטים", icon: <FolderKanban className="w-3.5 h-3.5 shrink-0" />, activeBg: "bg-amber-600 text-white border-amber-600" },
               ].map((opt) => {
                 const isSelected =
                   (opt.id === "טיקטים" && draftWorkTypeBadge.label === "טיקטים") ||
@@ -978,14 +978,15 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                         });
                       }
                     }}
-                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-all ${
+                    className={`py-1.5 px-1.5 sm:px-2 rounded-lg text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-all ${
                       isSelected
                         ? `${opt.activeBg} font-bold shadow-xs border`
                         : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
                     }`}
                   >
                     {opt.icon}
-                    <span className="truncate">{opt.label}</span>
+                    <span className="truncate sm:hidden">{opt.label}</span>
+                    <span className="truncate hidden sm:inline">{opt.desktopLabel}</span>
                   </button>
                 );
               })}
@@ -1288,8 +1289,8 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             </div>
 
             {/* Currently selected file display */}
-            <div className="mt-1.5 flex items-center justify-between bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-xs">
-              <span className="font-mono text-slate-900 font-semibold text-xs truncate max-w-[220px] sm:max-w-xs" dir="ltr">
+            <div className="mt-1.5 flex items-center justify-between gap-2 bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-xs">
+              <span className="font-mono text-slate-900 font-semibold text-[11px] sm:text-xs truncate min-w-0 flex-1" dir="ltr">
                 {draft.fileName || (
                   <span className="text-amber-600 font-sans text-xs">⚠️ לא זוהה קובץ אוטומטית - בחר מהרשימה מטה</span>
                 )}
@@ -1363,7 +1364,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       )}
 
       {/* Action Buttons: "אשר והזן" / "ערוך" */}
-      <div className="flex flex-col sm:flex-row items-center gap-2.5 pt-2 border-t border-slate-100">
+      <div className="flex flex-row items-center gap-2 pt-2 border-t border-slate-100">
         <button
           onClick={() => {
             if (!draft.fileId && !draft.fileName) {
@@ -1376,26 +1377,26 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             if (onConfirm) onConfirm(draft.id, draft);
           }}
           disabled={isConfirming || !draft.isReadyForConfirmation}
-          className="btn-primary-subtle w-full sm:flex-1 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-sm shadow-blue-500/20 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+          className="btn-primary-subtle flex-1 py-2.5 px-3 sm:px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 sm:gap-2 shadow-sm shadow-blue-500/20 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
         >
-          <CheckCircle2 className={`w-4 h-4 ${isConfirming ? "animate-spin" : ""}`} />
-          <span>
+          <CheckCircle2 className={`w-4 h-4 shrink-0 ${isConfirming ? "animate-spin" : ""}`} />
+          <span className="truncate">
             {isConfirming
               ? assignedList.length > 1
-                ? `מזין ${assignedList.length} שורות לקובץ ול-Lists...`
+                ? `מזין ${assignedList.length} שורות...`
                 : "מזין שורה לקובץ..."
               : assignedList.length > 1
-              ? `אשר והזן ${assignedList.length} שורות (עבור כל העובדים)`
+              ? `אשר והזן ${assignedList.length} שורות`
               : "אשר והזן"}
           </span>
         </button>
 
         <button
           onClick={() => setIsEditing(!isEditing)}
-          className="btn-hover-subtle w-full sm:w-auto py-2.5 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-semibold text-slate-700 hover:text-slate-900 cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+          className="btn-hover-subtle shrink-0 py-2.5 px-3 sm:px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-semibold text-slate-700 hover:text-slate-900 cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
         >
           <Edit3 className="w-3.5 h-3.5" />
-          <span>{isEditing ? "בטל עריכה" : "ערוך שדות"}</span>
+          <span>{isEditing ? "בטל עריכה" : "ערוך"}</span>
         </button>
       </div>
 

@@ -351,33 +351,34 @@ export const HoursTrackerPage: React.FC = () => {
         <div className="w-[36rem] sm:w-[46rem] h-[26rem] sm:h-[32rem] bg-gradient-to-tr from-sky-200/50 via-blue-100/45 to-indigo-100/30 rounded-full blur-3xl opacity-80" />
       </div>
 
-      {/* Top Header - Ultra-clean Gemini-style navbar */}
-      <header className="relative z-20 h-14 border-b border-slate-200/80 bg-white/90 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between shadow-xs shrink-0">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] flex items-center justify-center text-white shadow-xs">
-            <Sparkles className="w-4 h-4" />
+      {/* Top Header - Ultra-clean responsive navbar for mobile & desktop */}
+      <header className="relative z-20 h-14 border-b border-slate-200/80 bg-white/95 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between gap-2 shadow-2xs shrink-0">
+        <div className="flex items-center gap-2 shrink-0 min-w-0">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl sm:rounded-full bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] flex items-center justify-center text-white shadow-2xs shrink-0">
+            <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-bold text-slate-900 tracking-tight">TECH-SELECT</span>
-            <span className="text-slate-300 font-light">|</span>
-            <span className="text-xs font-semibold text-slate-700 bg-slate-100/90 px-2.5 py-0.5 rounded-full border border-slate-200 flex items-center gap-1">
-              <span>שעות לחיוב לקוח</span>
-              <ChevronDown className="w-3 h-3 text-slate-400" />
+          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+            <span className="hidden sm:inline text-sm font-bold text-slate-900 tracking-tight whitespace-nowrap">
+              TECH-SELECT
+            </span>
+            <span className="hidden sm:inline text-slate-300 font-light">|</span>
+            <span className="text-xs sm:text-xs font-bold sm:font-semibold text-slate-800 sm:text-slate-700 sm:bg-slate-100/90 sm:px-2.5 sm:py-0.5 sm:rounded-full sm:border sm:border-slate-200 whitespace-nowrap truncate">
+              שעות לחיוב לקוח
             </span>
           </div>
         </div>
 
-        {/* User Status & Actions */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        {/* User Status & Actions - Single-line horizontal scroll on small phones */}
+        <div className="flex items-center gap-1.5 sm:gap-2.5 overflow-x-auto no-scrollbar py-1 shrink-0 max-w-[72vw] sm:max-w-none">
           {(account || serverUser) ? (
             <>
               {/* "כמה תיעדתי היום" Button for EVERY User - Checks directly against Microsoft Lists */}
               <button
                 onClick={() => setShowMyLoggedHoursModal(true)}
-                className="btn-hover-subtle text-xs px-3 py-1.5 rounded-full border border-emerald-200 bg-emerald-50/90 hover:bg-emerald-100 text-emerald-800 font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                className="btn-hover-subtle text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl sm:rounded-full border border-emerald-300/90 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs transition-colors whitespace-nowrap shrink-0"
                 title="בדוק כמה שעות לחיוב לקוח תיעדת היום ובכל יום מתוך Microsoft Lists"
               >
-                <ListChecks className="w-3.5 h-3.5 text-emerald-600" />
+                <ListChecks className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                 <span>כמה תיעדתי היום</span>
               </button>
 
@@ -385,11 +386,12 @@ export const HoursTrackerPage: React.FC = () => {
               {isGuyOrAdmin && (
                 <button
                   onClick={() => setShowDailySummaryModal(true)}
-                  className="btn-hover-subtle text-xs px-3 py-1.5 rounded-full border border-blue-200 bg-blue-50/90 hover:bg-blue-100 text-blue-700 font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                  className="btn-hover-subtle text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl sm:rounded-full border border-blue-200 bg-blue-50/90 hover:bg-blue-100 text-blue-700 font-bold flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs transition-colors whitespace-nowrap shrink-0"
                   title="דוח וריכוז שעות עבודה יומי לכל העובדים (מנהל)"
                 >
-                  <BarChart3 className="w-3.5 h-3.5 text-blue-600" />
-                  <span>שעות היום (מנהל)</span>
+                  <BarChart3 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                  <span className="sm:hidden">שעות היום</span>
+                  <span className="hidden sm:inline">שעות היום (מנהל)</span>
                 </button>
               )}
 
@@ -397,47 +399,50 @@ export const HoursTrackerPage: React.FC = () => {
               {isGuy && (
                 <button
                   onClick={() => setShowCentralLogModal(true)}
-                  className="btn-hover-subtle text-xs px-3 py-1.5 rounded-full border border-indigo-200 bg-indigo-50/90 hover:bg-indigo-100 text-indigo-700 font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                  className="btn-hover-subtle text-[11px] sm:text-xs px-2 sm:px-3 py-1.5 rounded-xl sm:rounded-full border border-indigo-200 bg-indigo-50/90 hover:bg-indigo-100 text-indigo-700 font-bold flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs transition-colors whitespace-nowrap shrink-0"
                   title="יומן שעות מרכזי (LOG) לכל העובדים"
                 >
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>יומן מרכזי (LOG)</span>
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                  <span className="sm:hidden">LOG</span>
+                  <span className="hidden sm:inline">יומן מרכזי (LOG)</span>
                 </button>
               )}
 
               {serverUser?.isAdmin && (
                 <button
                   onClick={() => setShowTestPanel(!showTestPanel)}
-                  className={`btn-hover-subtle text-xs px-3 py-1.5 rounded-full border font-medium flex items-center gap-1.5 cursor-pointer ${
+                  className={`btn-hover-subtle text-xs p-1.5 sm:px-3 sm:py-1.5 rounded-xl sm:rounded-full border font-medium flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
                     showTestPanel
-                      ? "bg-purple-600 text-white border-purple-600 shadow-xs"
+                      ? "bg-purple-600 text-white border-purple-600 shadow-2xs"
                       : "bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300"
                   }`}
                   title="פאנל בדיקות טכני וסריקת מבנה קבצים"
                 >
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">מצב בדיקה טכני</span>
+                  <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                  <span className="hidden md:inline">מצב בדיקה טכני</span>
                 </button>
               )}
 
-              <div className="flex items-center gap-2 text-right bg-slate-50 border border-slate-200/80 rounded-full py-1 px-3 shadow-xs">
-                <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xs font-bold">
+              <div className="flex items-center gap-1.5 sm:gap-2 text-right bg-slate-50 border border-slate-200/80 rounded-full p-1 sm:py-1 sm:px-3 shadow-2xs shrink-0">
+                <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
                   {displayName.charAt(0)}
                 </div>
-                <span className="text-xs font-medium text-slate-800 hidden sm:inline">{displayName}</span>
+                <span className="text-xs font-medium text-slate-800 hidden md:inline whitespace-nowrap">
+                  {displayName}
+                </span>
               </div>
 
               <button
                 onClick={handleLogout}
                 disabled={loading}
-                className="btn-icon-subtle p-1.5 sm:px-2.5 sm:py-1 rounded-full text-xs font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 cursor-pointer"
+                className="btn-icon-subtle p-1.5 rounded-full text-xs font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 cursor-pointer shrink-0"
                 title="התנתק"
               >
                 <LogOut className="w-3.5 h-3.5" />
               </button>
             </>
           ) : (
-            <div className="flex items-center gap-2 text-xs text-slate-500 bg-white border border-slate-200 px-3 py-1 rounded-full shadow-xs">
+            <div className="flex items-center gap-2 text-xs text-slate-500 bg-white border border-slate-200 px-3 py-1 rounded-full shadow-2xs whitespace-nowrap">
               <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
               <span>נדרש זיהוי עובד</span>
             </div>
