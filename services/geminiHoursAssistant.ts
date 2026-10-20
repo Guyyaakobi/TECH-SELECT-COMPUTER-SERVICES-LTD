@@ -82,18 +82,31 @@ export function extractAssignedEmployees(text: string, currentUserName: string):
   const found = new Set<string>();
 
   // Check if current user is implicitly included ("אני", "עבדנו", "היינו")
-  const hasSelf = /(?:אני\b|עבדנו\b|היינו\b|עשינו\b|ביקרנו\b|ישבנו\b|איתי\b|יחד\s*איתי|עבדתי\b)/.test(clean);
+  const hasSelf = /(?:^|[\s,.;:!?()\[\]"'״׳\-])(?:אני|עבדנו|היינו|עשינו|ביקרנו|ישבנו|איתי|יחד\s*איתי|עבדתי)(?=$|[\s,.;:!?()\[\]"'״׳\-])/.test(clean);
   if (hasSelf) {
     found.add(currentUserName);
   }
 
-  // Check against all known team members
+  // Check against all known team members using Unicode-safe Hebrew boundaries (JS \b fails on Hebrew chars!)
   for (const tm of KNOWN_TEAM_MEMBERS) {
-    const patterns = [
-      new RegExp(`(?:\\b|ו|עם\\s*|יחד\\s*עם\\s*|ביחד\\s*עם\\s*)${tm.name}\\b`, "i"),
-      new RegExp(`(?:\\b|ו|עם\\s*|יחד\\s*עם\\s*|ביחד\\s*עם\\s*)${tm.shortName}\\b`, "i"),
-    ];
-    if (patterns.some((p) => p.test(clean))) {
+    const namesToCheck = Array.from(
+      new Set([
+        tm.name,
+        tm.shortName,
+        ...(tm.shortName === "יוסף" ? ["יוסף איאסה", "יוסי"] : []),
+      ])
+    ).filter(Boolean);
+
+    const isMatched = namesToCheck.some((n) => {
+      const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const re = new RegExp(
+        `(?:^|[\\s,.;:!?()\\[\\]"'״׳\\-]|ו|עם\\s*|יחד\\s*עם\\s*|ביחד\\s*עם\\s*)${escaped}(?=$|[\\s,.;:!?()\\[\\]"'״׳\\-])`,
+        "i"
+      );
+      return re.test(clean);
+    });
+
+    if (isMatched) {
       found.add(tm.name);
     }
   }

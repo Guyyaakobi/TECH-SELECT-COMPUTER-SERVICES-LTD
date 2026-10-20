@@ -75,11 +75,13 @@ export function decodeSharePointColName(name: string): string {
 }
 
 /**
- * Normalizes Hebrew & English strings for column matching
+ * Normalizes Hebrew & English strings for column & choice matching
+ * Strips SharePoint hex encodings, punctuation, whitespace, and invisible RTL/LTR bidi marks
  */
 function normalizeColString(str: string): string {
   const decoded = decodeSharePointColName(str || "");
   return decoded
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\u00A0'"״׳]/g, "")
     .toLowerCase()
     .replace(/[_\s\-\.\/\\:;,\(\)\[\]]/g, "")
     .trim();
@@ -117,6 +119,7 @@ export const BILINGUAL_EMPLOYEE_DICTIONARY: Record<string, string[]> = {
     "guy",
     "גיא",
     "גיא יעקבי",
+    "גיא יעקובי",
     "g@tech-select.co.il",
     "guy@tech-select.co.il",
     "guyyaakobi@gmail.com",
@@ -140,12 +143,14 @@ export const BILINGUAL_EMPLOYEE_DICTIONARY: Record<string, string[]> = {
     "תבור",
     "תבור כהן",
     "tavor@tech-select.co.il",
+    "tavorc@tech-select.co.il",
   ],
   "אירית יעקובי": [
     "irit yaakobi",
     "irit",
     "אירית",
     "אירית יעקבי",
+    "אירית יעקובי",
     "irit@tech-select.co.il",
   ],
   "רועי": [
@@ -156,19 +161,38 @@ export const BILINGUAL_EMPLOYEE_DICTIONARY: Record<string, string[]> = {
     "roy@tech-select.co.il",
     "roei@tech-select.co.il",
   ],
-  "יוסי": [
-    "yossi",
-    "yosi",
+  "יוסף": [
+    "יוסף",
+    "יוסף איאסה",
+    "איאסה",
     "יוסי",
     "יוסי כהן",
+    "yosef",
+    "yosef aiasa",
+    "yosef ayasa",
+    "yosef a",
+    "yosefa",
+    "aiasa",
+    "ayasa",
+    "yossi",
+    "yosi",
+    "joseph",
+    "yosef@tech-select.co.il",
+    "yosefa@tech-select.co.il",
+    "yosef.a@tech-select.co.il",
     "yossi@tech-select.co.il",
     "yosi@tech-select.co.il",
+    "yosef@techselectltd.onmicrosoft.com",
   ],
   "ודים": [
     "vadim",
+    "vadim gavrilov",
     "ואדים",
     "ודים",
+    "ודים גברילוב",
+    "גברילוב",
     "vadim@tech-select.co.il",
+    "vadimg@tech-select.co.il",
   ],
   "עומר": [
     "omer",
@@ -182,28 +206,45 @@ export const BILINGUAL_EMPLOYEE_DICTIONARY: Record<string, string[]> = {
   ],
   "אריאל": [
     "ariel",
+    "ariel mori",
     "אריאל",
+    "אריאל מורי",
+    "מורי",
     "ariel@tech-select.co.il",
+    "arielm@tech-select.co.il",
   ],
   "אוריאל": [
     "uriel",
+    "uriel fahima",
+    "uriel pahima",
     "אוריאל",
+    "אוריאל פחימה",
+    "פחימה",
     "uriel@tech-select.co.il",
+    "urielf@tech-select.co.il",
   ],
   "ולד": [
     "vlad",
     "ולד",
+    "ולאד",
     "vlad@tech-select.co.il",
   ],
   "אמיר": [
     "amir",
+    "amir ben arouya",
+    "amir ben aroya",
     "אמיר",
+    "אמיר בן ארויה",
+    "בן ארויה",
     "amir@tech-select.co.il",
+    "amirb@tech-select.co.il",
   ],
   "שי": [
     "shai",
     "שי",
+    "shaia",
     "ShaiA@tech-select.co.il",
+    "shai@tech-select.co.il",
   ],
   "אירנה": [
     "irena",
@@ -216,19 +257,51 @@ export const BILINGUAL_EMPLOYEE_DICTIONARY: Record<string, string[]> = {
 };
 
 export function resolveEffectiveName(name?: string, email?: string): string {
-  const cleanName = (name || "").trim();
+  const cleanName = (name || "")
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\u00A0]/g, "")
+    .trim();
   const cleanEmail = (email || "").toLowerCase().trim();
+  const isGenericName =
+    !cleanName ||
+    cleanName.includes("@") ||
+    cleanName === "משתמש" ||
+    cleanName === "עובד" ||
+    cleanName === "עובד מערכת" ||
+    cleanName.toLowerCase() === "user";
 
-  // 1. Try matching cleanName against BILINGUAL_EMPLOYEE_DICTIONARY (so English SSO names like "Guy Yaakobi" resolve to "גיא יעקובי")
-  if (cleanName && !cleanName.includes("@") && cleanName !== "משתמש" && cleanName !== "עובד") {
+  // 1. Try matching cleanName against BILINGUAL_EMPLOYEE_DICTIONARY (exact, normalized, or first word)
+  if (!isGenericName) {
     const nLower = cleanName.toLowerCase();
+    const nNorm = normalizeColString(cleanName);
+    const nFirstWordNorm = normalizeColString(cleanName.split(/\s+/)[0]);
+
     for (const [canonicalName, aliases] of Object.entries(BILINGUAL_EMPLOYEE_DICTIONARY)) {
+      const canNorm = normalizeColString(canonicalName);
+      const canFwNorm = normalizeColString(canonicalName.split(/\s+/)[0]);
       if (
         canonicalName.toLowerCase() === nLower ||
-        aliases.some((a) => a.toLowerCase().trim() === nLower)
+        canNorm === nNorm ||
+        (nFirstWordNorm.length >= 2 && canFwNorm === nFirstWordNorm) ||
+        aliases.some((a) => {
+          if (a.includes("@")) return false;
+          const aLower = a.toLowerCase().trim();
+          const aNorm = normalizeColString(a);
+          const aFwNorm = normalizeColString(a.trim().split(/\s+/)[0]);
+          return (
+            aLower === nLower ||
+            aNorm === nNorm ||
+            (nFirstWordNorm.length >= 2 && aFwNorm === nFirstWordNorm)
+          );
+        })
       ) {
         return canonicalName;
       }
+    }
+
+    // If cleanName is already an explicit Hebrew name (e.g. a specific employee not in dictionary),
+    // never let a fallback email (like g@tech-select.co.il) overwrite it with a different person!
+    if (/[\u0590-\u05FF]/.test(cleanName)) {
+      return cleanName;
     }
   }
 
@@ -247,7 +320,7 @@ export function resolveEffectiveName(name?: string, email?: string): string {
     }
   }
 
-  if (cleanName && !cleanName.includes("@") && cleanName !== "משתמש") {
+  if (!isGenericName) {
     return cleanName;
   }
 
@@ -328,10 +401,11 @@ export const KNOWN_TEAM_MEMBERS: Array<{ name: string; email: string; shortName:
   { name: "תבור כהן", email: "tavor@tech-select.co.il", shortName: "תבור" },
   { name: "אירית יעקובי", email: "irit@tech-select.co.il", shortName: "אירית" },
   { name: "רועי", email: "roy@tech-select.co.il", shortName: "רועי" },
-  { name: "יוסי", email: "yossi@tech-select.co.il", shortName: "יוסי" },
+  { name: "יוסף", email: "yosef@tech-select.co.il", shortName: "יוסף" },
   { name: "עומר", email: "omer@tech-select.co.il", shortName: "עומר" },
   { name: "אולג", email: "oleg@tech-select.co.il", shortName: "אולג" },
   { name: "אריאל", email: "ariel@tech-select.co.il", shortName: "אריאל" },
+  { name: "אוריאל", email: "uriel@tech-select.co.il", shortName: "אוריאל" },
   { name: "ולד", email: "vlad@tech-select.co.il", shortName: "ולד" },
   { name: "אמיר", email: "amir@tech-select.co.il", shortName: "אמיר" },
   { name: "שי", email: "ShaiA@tech-select.co.il", shortName: "שי" },
@@ -341,10 +415,25 @@ export const KNOWN_TEAM_MEMBERS: Array<{ name: string; email: string; shortName:
 export function resolveEmployeeEmail(name?: string, fallbackEmail?: string): string {
   if (!name) return fallbackEmail || "g@tech-select.co.il";
   const cleanName = name.trim().toLowerCase();
+  const cleanNorm = normalizeColString(cleanName);
+  const firstWordNorm = normalizeColString(cleanName.split(/\s+/)[0]);
+
   for (const [canonicalName, aliases] of Object.entries(BILINGUAL_EMPLOYEE_DICTIONARY)) {
+    const canNorm = normalizeColString(canonicalName);
+    const canFwNorm = normalizeColString(canonicalName.split(/\s+/)[0]);
     const isMatch =
       cleanName === canonicalName.toLowerCase() ||
-      aliases.some((a) => cleanName === a.toLowerCase() || cleanName.includes(a.toLowerCase()));
+      cleanNorm === canNorm ||
+      (firstWordNorm.length >= 2 && firstWordNorm === canFwNorm) ||
+      aliases.some((a) => {
+        const aLower = a.toLowerCase().trim();
+        const aNorm = normalizeColString(a);
+        return (
+          cleanName === aLower ||
+          cleanNorm === aNorm ||
+          (!aLower.includes("@") && (cleanName.includes(aLower) || aLower.includes(cleanName)))
+        );
+      });
     if (isMatch) {
       const foundMail = aliases.find((a) => a.includes("@"));
       if (foundMail) return foundMail;
@@ -355,7 +444,7 @@ export function resolveEmployeeEmail(name?: string, fallbackEmail?: string): str
 
 /**
  * Robust choice matching against Microsoft Lists Choice column "עובד":
- * Dynamically resolves the creator's display name to the exact choice value in the list (e.g. "ניב", "גיא", "ודים").
+ * Dynamically resolves the creator's display name to the exact choice value in the list (e.g. "ניב", "גיא", "ודים", "יוסף").
  * NEVER falls back to hardcoded choices[0] or wrong employees!
  */
 export function matchEmployeeNameToChoice(
@@ -365,7 +454,9 @@ export function matchEmployeeNameToChoice(
 ): string | undefined {
   if (!choices || choices.length === 0) return undefined;
 
-  const cleanDisplay = (handlerUserDisplay || "").trim();
+  const cleanDisplay = (handlerUserDisplay || "")
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\u00A0]/g, "")
+    .trim();
   const cleanEmail = (handlerEmail || "").trim().toLowerCase();
   const emailPrefix = cleanEmail.split("@")[0].toLowerCase().trim();
 
@@ -375,7 +466,7 @@ export function matchEmployeeNameToChoice(
     if (exactMatch) return exactMatch;
   }
 
-  // 2. Direct normalized match (accents, whitespace, special chars)
+  // 2. Direct normalized match (strips invisible RTL/LTR marks, accents, whitespace, special chars)
   const dispNorm = normalizeColString(cleanDisplay);
   if (dispNorm) {
     const normMatch = choices.find((ch) => normalizeColString(ch) === dispNorm);
@@ -383,9 +474,6 @@ export function matchEmployeeNameToChoice(
   }
 
   // 3. First name / single word match (Hebrew or English directly)
-  // e.g. display is "ניב בורו", choice is "ניב" -> MATCH!
-  // or display is "גיא יעקובי", choice is "גיא" -> MATCH!
-  // or display is "ודים", choice is "ודים" -> MATCH!
   if (cleanDisplay) {
     const firstWordDisplay = cleanDisplay.split(/\s+/)[0].trim();
     if (firstWordDisplay.length >= 2) {
@@ -407,17 +495,21 @@ export function matchEmployeeNameToChoice(
   for (const [canonicalName, aliases] of Object.entries(BILINGUAL_EMPLOYEE_DICTIONARY)) {
     const canNorm = normalizeColString(canonicalName);
     const canFirstWordNorm = normalizeColString(canonicalName.split(/\s+/)[0]);
+    const dispFirstWordNorm = dispNorm ? normalizeColString(cleanDisplay.split(/\s+/)[0]) : "";
 
     const isMatch =
       dispNorm === canNorm ||
       dispNorm === canFirstWordNorm ||
+      (dispFirstWordNorm.length >= 2 && dispFirstWordNorm === canFirstWordNorm) ||
       cleanDisplay.toLowerCase() === canonicalName.toLowerCase() ||
       cleanDisplay.toLowerCase().startsWith(canonicalName.toLowerCase() + " ") ||
       aliases.some((a) => {
         const aLower = a.toLowerCase().trim();
         const aNorm = normalizeColString(a);
+        const aFwNorm = !aLower.includes("@") ? normalizeColString(aLower.split(/\s+/)[0]) : "";
         return (
           dispNorm === aNorm ||
+          (dispFirstWordNorm.length >= 2 && aFwNorm.length >= 2 && dispFirstWordNorm === aFwNorm) ||
           cleanDisplay.toLowerCase() === aLower ||
           cleanDisplay.toLowerCase().startsWith(aLower + " ") ||
           cleanDisplay.toLowerCase().split(/\s+/)[0] === aLower ||
@@ -441,14 +533,25 @@ export function matchEmployeeNameToChoice(
     const choiceMatch = choices.find((ch) => {
       const chNorm = normalizeColString(ch);
       const chFwNorm = normalizeColString(ch.trim().split(/\s+/)[0]);
+      if (!chNorm) return false;
 
       if (chNorm === canNorm || chFwNorm === canFwNorm || chNorm === canFwNorm || chFwNorm === canNorm) {
         return true;
       }
 
       return matchedAliases.some((a) => {
+        if (a.includes("@")) {
+          const prefNorm = normalizeColString(a.split("@")[0]);
+          return chNorm === prefNorm;
+        }
         const aNorm = normalizeColString(a);
-        return chNorm === aNorm || chFwNorm === aNorm;
+        const aFwNorm = normalizeColString(a.trim().split(/\s+/)[0]);
+        return (
+          chNorm === aNorm ||
+          chFwNorm === aNorm ||
+          (aFwNorm.length >= 2 && (chNorm === aFwNorm || chFwNorm === aFwNorm)) ||
+          (aNorm.length >= 2 && chNorm.length >= 2 && (chNorm.includes(aNorm) || aNorm.includes(chNorm)))
+        );
       });
     });
 
@@ -1440,6 +1543,8 @@ export async function writeEntryToSharePointList(
       }
     }
 
+    const shortWorkerName = (handlerUserDisplay || "עובד").trim().split(/\s+/)[0] || handlerUserDisplay;
+
     for (const hCol of candidateHandlerCols) {
       const hColDef = columns.find((c) => c.name === hCol);
       const isChoice = Boolean(hColDef?.type === "choice" || hColDef?.choice);
@@ -1456,12 +1561,8 @@ export async function writeEntryToSharePointList(
         if (matchedEmpChoice) {
           fields[hCol] = matchedEmpChoice;
         } else if (isWorkerCol) {
-          // Worker column choice
-          if (hColDef?.choice?.allowFillIn) {
-            fields[hCol] = handlerUserDisplay;
-          } else {
-            console.warn(`[SharePoint Lists] Worker column choice not matched for "${handlerUserDisplay}" (${handlerEmail}) in choices:`, choices);
-          }
+          // Ensure worker column is always populated and add choice to SharePoint column if missing
+          fields[hCol] = shortWorkerName;
         } else {
           // For משתמש column, send SSO email
           fields[hCol] = handlerEmail;
@@ -1470,7 +1571,7 @@ export async function writeEntryToSharePointList(
         const dNorm = normalizeColString(hColDef?.displayName || "");
         const decNorm = normalizeColString(decodeSharePointColName(hColDef?.name || ""));
         if (dNorm.includes("עובד") || decNorm.includes("עובד") || hColDef?.name === "_x05e2__x05d5__x05d1__x05d3_") {
-          fields[hCol] = handlerUserDisplay;
+          fields[hCol] = shortWorkerName;
         } else {
           // Send the creator's SSO email address under user / משתמש column!
           fields[hCol] = handlerEmail;
@@ -1496,8 +1597,29 @@ export async function writeEntryToSharePointList(
       const matched = matchEmployeeNameToChoice(handlerUserDisplay, handlerEmail, choices);
       if (matched) {
         fields[explicitWorkerCol.name] = matched;
-      } else if (explicitWorkerCol.choice?.allowFillIn || !explicitWorkerCol.choice) {
-        fields[explicitWorkerCol.name] = handlerUserDisplay;
+      } else {
+        // If employee is not yet in the SharePoint Choice column's choices array, add it via Graph PATCH
+        if (explicitWorkerCol.id && explicitWorkerCol.choice && Array.isArray(explicitWorkerCol.choice.choices) && shortWorkerName) {
+          const updatedChoices = [...explicitWorkerCol.choice.choices, shortWorkerName];
+          explicitWorkerCol.choice.choices = updatedChoices;
+          try {
+            await fetchGraph(
+              `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/columns/${explicitWorkerCol.id}`,
+              {
+                method: "PATCH",
+                body: JSON.stringify({
+                  choice: {
+                    choices: updatedChoices,
+                  },
+                }),
+              },
+              env
+            );
+          } catch (patchErr) {
+            console.warn(`[SharePoint Lists] Could not append "${shortWorkerName}" to Choice column choices:`, patchErr);
+          }
+        }
+        fields[explicitWorkerCol.name] = shortWorkerName;
       }
     }
 
