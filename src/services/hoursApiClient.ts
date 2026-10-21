@@ -416,9 +416,29 @@ export interface AssistantChatRequest {
     role: "user" | "model";
     text: string;
   }>;
-  action?: "confirm_entry" | "confirm_all" | "undo_entry" | "edit_draft";
+  action?: "confirm_entry" | "confirm_all" | "undo_entry" | "edit_draft" | "edit_entry";
   cardId?: string;
   draftData?: any;
+  editData?: {
+    id?: string;
+    listItemId?: string;
+    fileId?: string;
+    driveId?: string;
+    rowAddress?: string;
+    targetRow?: number | string;
+    sheetName?: string;
+    customerName?: string;
+    date?: string;
+    startTime?: string;
+    endTime?: string;
+    durationHours?: number;
+    durationMinutes?: number;
+    durationFormatted?: string;
+    description?: string;
+    workType?: string;
+    employeeName?: string;
+    oldDescription?: string;
+  };
   activeDrafts?: HoursAssistantEntryDraft[];
   undoData?: {
     driveId?: string;

@@ -15,6 +15,7 @@ import {
   findDuplicates,
   writeRows,
   undoRow,
+  updateWrittenExcelRow,
   CustomerFolder,
   calculateEndTime,
   calculateStartTime,
@@ -483,9 +484,10 @@ export interface AssistantChatParams {
     text: string;
     cards?: any[];
   }>;
-  action?: "confirm_entry" | "confirm_all" | "undo_entry" | "edit_draft";
+  action?: "confirm_entry" | "confirm_all" | "undo_entry" | "edit_draft" | "edit_entry";
   cardId?: string;
   draftData?: any;
+  editData?: any;
   activeDrafts?: HoursAssistantEntryDraft[];
   undoData?: {
     driveId?: string;
@@ -792,6 +794,111 @@ export async function processAssistantChat(
       console.error("[undo_entry action] Error:", undoErr);
       return {
         reply: undoErr?.message || "לא ניתן לבטל את השורה מקובץ ה-Excel.",
+        drafts: activeDrafts,
+        writtenEntries: params.writtenEntries || [],
+        undoneCardIds: [],
+        isConfirmed: false,
+      };
+    }
+  }
+
+  // 1.5 Direct Action: Edit already written entry (Microsoft Lists + SharePoint Excel)
+  if (action === "edit_entry" && (cardId || params.editData || params.draftData)) {
+    const rawEdit = params.editData || params.draftData || {};
+    const existing =
+      (params.writtenEntries || []).find(
+        (w) => w.id === cardId || w.entryId === cardId || (rawEdit.id && w.id === rawEdit.id)
+      ) || null;
+
+    const effectiveFileId = rawEdit.fileId || existing?.fileId || "";
+    const effectiveDriveId = rawEdit.driveId || existing?.driveId;
+    const effectiveRowAddress = rawEdit.rowAddress || existing?.rowAddress;
+    const effectiveTargetRow = rawEdit.targetRow ?? existing?.targetRow;
+    const effectiveSheetName = rawEdit.sheetName || existing?.sheetName;
+    const effectiveListItemId = rawEdit.listItemId || existing?.listItemId || (rawEdit.id && !String(rawEdit.id).startsWith("draft_") ? rawEdit.id : undefined);
+    const effectiveCustomer = rawEdit.customerName || existing?.customerName || "";
+    const effectiveDate = rawEdit.date || existing?.date || "";
+    const effectiveStartTime = rawEdit.startTime !== undefined ? rawEdit.startTime : existing?.startTime;
+    const effectiveEndTime = rawEdit.endTime !== undefined ? rawEdit.endTime : existing?.endTime;
+    const effectiveDescription = rawEdit.description !== undefined ? rawEdit.description : existing?.description || "";
+    const effectiveWorkType = rawEdit.workType || existing?.workType || "טיקטים";
+    const effectiveEmployeeName = rawEdit.employeeName || existing?.employeeName || user.name;
+    const oldDescription = rawEdit.oldDescription || existing?.description || "";
+
+    let durationHours =
+      typeof rawEdit.durationHours === "number"
+        ? rawEdit.durationHours
+        : typeof rawEdit.durationMinutes === "number"
+        ? +(rawEdit.durationMinutes / 60).toFixed(2)
+        : undefined;
+    let durationFormatted = rawEdit.durationFormatted || existing?.durationFormatted || "";
+
+    if (durationHours === undefined && durationFormatted) {
+      const rounded = roundToQuarterHour(durationFormatted);
+      durationHours = rounded.hours;
+      durationFormatted = rounded.formatted;
+    } else if (typeof durationHours === "number") {
+      const dh = Math.floor(durationHours);
+      const dm = Math.round((durationHours - dh) * 60);
+      if (!durationFormatted) {
+        durationFormatted = dh > 0 && dm > 0 ? `${dh}:${String(dm).padStart(2, "0")} שעות` : `${durationHours} שעות`;
+      }
+    }
+
+    try {
+      const updateRes = await updateWrittenExcelRow(
+        {
+          fileId: effectiveFileId,
+          driveId: effectiveDriveId,
+          rowAddress: effectiveRowAddress,
+          targetRow: effectiveTargetRow,
+          sheetName: effectiveSheetName,
+          listItemId: effectiveListItemId,
+          customerName: effectiveCustomer,
+          date: effectiveDate,
+          durationHours,
+          durationMinutes: durationHours ? Math.round(durationHours * 60) : undefined,
+          durationFormatted,
+          startTime: effectiveStartTime,
+          endTime: effectiveEndTime,
+          description: effectiveDescription,
+          workType: effectiveWorkType,
+          employeeName: effectiveEmployeeName,
+          employeeEmail: user.email,
+          oldDescription,
+        },
+        user,
+        activeEnv
+      );
+
+      const updatedWrittenList = (params.writtenEntries || []).map((w) => {
+        if (w.id === cardId || w.entryId === cardId || (rawEdit.id && w.id === rawEdit.id)) {
+          return {
+            ...w,
+            customerName: effectiveCustomer || w.customerName,
+            date: effectiveDate || w.date,
+            startTime: effectiveStartTime ?? w.startTime,
+            endTime: effectiveEndTime ?? w.endTime,
+            durationFormatted: durationFormatted || w.durationFormatted,
+            description: effectiveDescription || w.description,
+            workType: effectiveWorkType || w.workType,
+            listItemId: updateRes.listItemId || w.listItemId,
+          };
+        }
+        return w;
+      });
+
+      return {
+        reply: `התיעוד עבור ${effectiveCustomer || "הלקוח"} עודכן בהצלחה ✓ (${durationFormatted || `${durationHours || 1} שעות`}) ב-Microsoft Lists${updateRes.excelUpdated ? " ובקובץ ה-Excel" : ""}.`,
+        drafts: activeDrafts,
+        writtenEntries: updatedWrittenList,
+        undoneCardIds: [],
+        isConfirmed: true,
+      };
+    } catch (editErr: any) {
+      console.error("[edit_entry action] Error:", editErr);
+      return {
+        reply: editErr?.message || "אירעה שגיאה בעת עדכון התיעוד.",
         drafts: activeDrafts,
         writtenEntries: params.writtenEntries || [],
         undoneCardIds: [],

@@ -43,6 +43,7 @@ export async function onRequestPost(context: { request: Request; env: any }): Pr
         action: body.action,
         cardId: body.cardId,
         draftData: body.draftData,
+        editData: body.editData,
         activeDrafts: body.activeDrafts,
         undoData: body.undoData,
         writtenEntries: body.writtenEntries,

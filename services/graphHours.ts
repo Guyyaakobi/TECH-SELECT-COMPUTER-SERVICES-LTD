@@ -516,6 +516,7 @@ import {
 import {
   writeEntryToSharePointList,
   deleteSharePointListItem,
+  updateSharePointListItem,
   fetchSharePointListEntries,
   resolveEffectiveName,
   resolveEmployeeEmail,
@@ -4800,6 +4801,239 @@ export async function undoRow(
       }
     }
   }
+}
+
+export interface UpdateWrittenEntryParams {
+  fileId?: string;
+  itemId?: string;
+  driveId?: string;
+  rowAddress?: string;
+  targetRow?: number | string;
+  sheetName?: string;
+  listItemId?: string;
+  customerName?: string;
+  date?: string;
+  durationHours?: number;
+  durationMinutes?: number;
+  durationFormatted?: string;
+  startTime?: string;
+  endTime?: string;
+  description?: string;
+  workType?: string;
+  employeeName?: string;
+  employeeEmail?: string;
+  ticketNumber?: string;
+  oldDescription?: string;
+}
+
+/**
+ * 7.5 updateWrittenExcelRow – Updates an already written entry in both Microsoft Lists
+ * and the SharePoint Excel row (if fileId & rowAddress exist), plus in-memory & Central Log.
+ */
+export async function updateWrittenExcelRow(
+  params: UpdateWrittenEntryParams,
+  user?: { name?: string; email?: string; id?: string; oid?: string; username?: string; upn?: string },
+  env?: any
+): Promise<{
+  success: boolean;
+  message: string;
+  listUpdated: boolean;
+  excelUpdated: boolean;
+  listItemId?: string;
+}> {
+  const activeEnv = env;
+  const effectiveHours =
+    typeof params.durationHours === "number"
+      ? params.durationHours
+      : typeof params.durationMinutes === "number"
+      ? +(params.durationMinutes / 60).toFixed(2)
+      : undefined;
+
+  // 1. Update Microsoft Lists item
+  let listUpdated = false;
+  let updatedListId = params.listItemId;
+  try {
+    const listRes = await updateSharePointListItem(
+      params.listItemId,
+      {
+        customerName: params.customerName,
+        date: params.date,
+        durationHours: effectiveHours,
+        description: params.description,
+        workType: params.workType,
+        startTime: params.startTime,
+        endTime: params.endTime,
+        ticketNumber: params.ticketNumber,
+        employeeName: params.employeeName || user?.name,
+        employeeEmail: params.employeeEmail || user?.email,
+      },
+      activeEnv,
+      {
+        customerName: params.customerName,
+        date: params.date,
+        employeeName: params.employeeName || user?.name,
+        oldDescription: params.oldDescription || params.description,
+      }
+    );
+    if (listRes.success) {
+      listUpdated = true;
+      if (listRes.updatedId) updatedListId = listRes.updatedId;
+    }
+  } catch (listErr) {
+    console.warn("[updateWrittenExcelRow] Microsoft Lists update notice:", listErr);
+  }
+
+  // 2. Update SharePoint Excel row if fileId and rowAddress/targetRow are valid
+  let excelUpdated = false;
+  const fileId = params.fileId || params.itemId || "";
+  const isRealExcelFile =
+    fileId &&
+    fileId !== "lists" &&
+    !fileId.startsWith("audit_") &&
+    !fileId.startsWith("log_") &&
+    !fileId.startsWith("sp_scan_");
+
+  let targetAddress = (params.rowAddress || "").trim();
+  if (!targetAddress && params.targetRow && Number(params.targetRow) > 0) {
+    targetAddress = `${params.targetRow}:${params.targetRow}`;
+  }
+
+  if (isRealExcelFile && targetAddress) {
+    let sessionId: string | null = null;
+    let sessionHeaders: Record<string, string> = {};
+    let driveId = "";
+    try {
+      driveId = await resolveDriveForItem(fileId, params.driveId, activeEnv);
+      let targetSheet = params.sheetName ? params.sheetName.trim() : "";
+      if (targetAddress.includes("!")) {
+        const parts = targetAddress.split("!");
+        targetSheet = parts[0].replace(/'/g, "").trim();
+        targetAddress = parts[1].trim();
+      }
+
+      try {
+        const sessionUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/createSession`;
+        const sessionRes = await fetchGraph(
+          sessionUrl,
+          {
+            method: "POST",
+            body: JSON.stringify({ persistChanges: true }),
+          },
+          activeEnv
+        );
+        if (sessionRes.ok) {
+          const sessionData: any = await sessionRes.json();
+          sessionId = sessionData?.id || null;
+          if (sessionId) {
+            sessionHeaders = { "workbook-session-id": sessionId };
+          }
+        }
+      } catch {}
+
+      const structure = await readSheetStructure(fileId, activeEnv, driveId, targetSheet || params.workType);
+      const headers = structure.headers;
+      const sheetId = structure.sheetId;
+
+      const empName = params.employeeName || user?.name || "עובד";
+      const rowObj: Record<string, any> = {
+        תאריך: params.date || "",
+        date: params.date || "",
+        לקוח: params.customerName || "",
+        customer: params.customerName || "",
+        עובד: empName,
+        "שם עובד": empName,
+        employeeName: empName,
+        "שעת התחלה": params.startTime || "",
+        startTime: params.startTime || "",
+        "שעת סיום": params.endTime || "",
+        endTime: params.endTime || "",
+        שעות: effectiveHours ?? 1,
+        משך: effectiveHours ?? 1,
+        "סה״כ שעות": effectiveHours ?? 1,
+        hours: effectiveHours ?? 1,
+        durationHours: effectiveHours ?? 1,
+        durationMinutes: params.durationMinutes || Math.round((effectiveHours ?? 1) * 60),
+        תיאור: params.description || "",
+        "תיאור פעילות": params.description || "",
+        description: params.description || "",
+        "סוג עבודה": params.workType || "",
+        workType: params.workType || "",
+        טיקט: params.ticketNumber || "",
+        ticketNumber: params.ticketNumber || "",
+      };
+
+      const updatedRowValues = [
+        headers.map((headerName, colIdx) =>
+          resolveCellValueForHeader(headerName, colIdx, rowObj, structure, user)
+        ),
+      ];
+
+      const rowMatch = targetAddress.match(/(\d+)/);
+      const rowNum = rowMatch ? parseInt(rowMatch[1], 10) : Number(params.targetRow) || 0;
+
+      if (rowNum > 0 && sheetId) {
+        const startColLetter = structure.startColLetter || "A";
+        const startColIdx = columnLetterToIndex(startColLetter);
+        const endColLetter = indexToColumnLetter(startColIdx + Math.max(headers.length, 1) - 1);
+        const rangeAddr = `${startColLetter}${rowNum}:${endColLetter}${rowNum}`;
+        const patchUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${encodeURIComponent(rangeAddr)}')`;
+        const patchRes = await fetchGraph(
+          patchUrl,
+          {
+            method: "PATCH",
+            headers: sessionHeaders,
+            body: JSON.stringify({ values: updatedRowValues }),
+          },
+          activeEnv
+        );
+        if (patchRes.ok) {
+          excelUpdated = true;
+        }
+      }
+    } catch (excelErr) {
+      console.warn("[updateWrittenExcelRow] Excel row update notice:", excelErr);
+    } finally {
+      if (sessionId && driveId) {
+        try {
+          const closeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/closeSession`;
+          await fetchGraph(closeUrl, { method: "POST", headers: sessionHeaders }, activeEnv);
+        } catch {}
+      }
+    }
+  }
+
+  // 3. Update in-memory store & Central Log
+  try {
+    for (const entry of loggedHoursStore) {
+      if (
+        (params.listItemId && entry.id === params.listItemId) ||
+        (fileId && entry.fileId === fileId && entry.rowAddress === params.rowAddress) ||
+        (params.customerName &&
+          entry.customerName === params.customerName &&
+          params.oldDescription &&
+          entry.description === params.oldDescription)
+      ) {
+        if (typeof effectiveHours === "number") {
+          entry.durationHours = effectiveHours;
+          entry.durationMinutes = Math.round(effectiveHours * 60);
+          entry.durationFormatted = params.durationFormatted || `${effectiveHours} שעות`;
+        }
+        if (params.description !== undefined) entry.description = params.description;
+        if (params.startTime !== undefined) entry.startTime = params.startTime;
+        if (params.endTime !== undefined) entry.endTime = params.endTime;
+        if (params.date !== undefined) entry.date = params.date;
+        if (params.workType !== undefined) entry.workType = params.workType;
+      }
+    }
+  } catch {}
+
+  return {
+    success: listUpdated || excelUpdated,
+    message: "התיעוד עודכן בהצלחה ב-Microsoft Lists וב-Excel",
+    listUpdated,
+    excelUpdated,
+    listItemId: updatedListId,
+  };
 }
 
 /**

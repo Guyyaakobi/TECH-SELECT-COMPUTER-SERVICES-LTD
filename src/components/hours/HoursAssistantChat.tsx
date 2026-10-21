@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   Mic,
   MicOff,
@@ -26,6 +26,9 @@ import {
   Users,
   FileSpreadsheet,
   ListChecks,
+  Pencil,
+  Check,
+  Layers,
 } from "lucide-react";
 import {
   apiAssistantChat,
@@ -117,11 +120,9 @@ function getFriendlyHebrewErrorMessage(err: any): string {
   if (raw.includes("אישור מפורש")) {
     return "נדרש אישור מפורש לפני הזנת הנתונים לקובץ.";
   }
-  // If the error message already has Hebrew descriptive text (e.g. from server exceptions), display it directly
   if (/[\u0590-\u05FF]/.test(originalMsg) && originalMsg.length > 8) {
     return originalMsg;
   }
-  // Distinguish Gemini AI rate limits vs Microsoft Graph rate limits
   if (
     raw.includes("gemini") ||
     raw.includes("resource_exhausted") ||
@@ -147,18 +148,21 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
   );
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-
   const [inputText, setInputText] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [loadingStep, setLoadingStep] = useState<string>("מעבד בקשה...");
 
-  // Active Drafts currently pending confirmation in the session
+  // Per-session loading map so multiple sessions can run concurrently in the background
+  const [sessionLoadingMap, setSessionLoadingMap] = useState<
+    Record<string, { loading: boolean; step: string }>
+  >({});
+  const [savingEditCardId, setSavingEditCardId] = useState<string | null>(null);
+
+  // Active Drafts currently pending confirmation in the current session
   const [activeDrafts, setActiveDrafts] = useState<HoursAssistantEntryDraft[]>([]);
-  // Written entries in this session (with 10-minute undo window)
+  // Written entries in the current session
   const [writtenEntries, setWrittenEntries] = useState<WrittenEntryResult[]>([]);
 
-  // History & Collapsible Left Sidebar (Gemini Style - strictly 5 recent sessions)
-  const MAX_SAVED_SESSIONS = 5;
+  // History & Collapsible Left Sidebar (10 recent sessions)
+  const MAX_SAVED_SESSIONS = 10;
   const historyStorageKey = `tech_select_hours_history_v1_${currentUser?.email || "user"}`;
 
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
@@ -172,6 +176,10 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
   });
 
   const [currentSessionId, setCurrentSessionId] = useState<string>(() => `sess_${Date.now()}`);
+  const currentSessionIdRef = useRef<string>(currentSessionId);
+  useEffect(() => {
+    currentSessionIdRef.current = currentSessionId;
+  }, [currentSessionId]);
 
   const [savedSessions, setSavedSessions] = useState<SavedChatSession[]>(() => {
     try {
@@ -190,34 +198,187 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
     return [];
   });
 
-  // Automatically keep 5 recent sessions updated in localStorage
-  useEffect(() => {
-    if (messages.length === 0) return;
+  // Inline editing state for user messages in the chat feed
+  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
+  const [editingMsgText, setEditingMsgText] = useState<string>("");
 
-    const firstUserMsg = messages.find((m) => m.role === "user");
-    let title = "שיחת דיווח";
-    if (firstUserMsg?.text) {
-      const clean = firstUserMsg.text.replace(/[\r\n]+/g, " ").trim();
-      title = clean.length > 30 ? clean.slice(0, 30) + "..." : clean;
-    }
+  // Inline editing state for sidebar history items (10 recent documentations)
+  const [editingSidebarSessionId, setEditingSidebarSessionId] = useState<string | null>(null);
+  const [sidebarEditHours, setSidebarEditHours] = useState<number>(1);
+  const [sidebarEditText, setSidebarEditText] = useState<string>("");
+  const [isSavingSidebarEdit, setIsSavingSidebarEdit] = useState<boolean>(false);
+
+  // Derived loading state for the currently viewed session
+  const loading = Boolean(sessionLoadingMap[currentSessionId]?.loading);
+  const loadingStep = sessionLoadingMap[currentSessionId]?.step || "מעבד בקשה...";
+
+  // Count how many background sessions are currently processing
+  const backgroundRunningSessions = Object.entries(sessionLoadingMap).filter(
+    ([sessId, state]) => state?.loading && sessId !== currentSessionId
+  );
+
+  const setSessionLoading = useCallback((sessionId: string, isLoading: boolean, stepText?: string) => {
+    setSessionLoadingMap((prev) => {
+      if (!isLoading) {
+        const next = { ...prev };
+        delete next[sessionId];
+        return next;
+      }
+      return {
+        ...prev,
+        [sessionId]: {
+          loading: true,
+          step: stepText || prev[sessionId]?.step || "מעבד בקשה...",
+        },
+      };
+    });
+  }, []);
+
+  // Helper to build a SavedChatSession object from messages/drafts/writtenEntries
+  const buildSessionItem = useCallback(
+    (
+      sessionId: string,
+      msgs: ChatMessage[],
+      drafts: HoursAssistantEntryDraft[],
+      written: WrittenEntryResult[],
+      existingCreatedAt?: number
+    ): SavedChatSession => {
+      const firstUserMsg = msgs.find((m) => m.role === "user");
+      let title = "שיחת דיווח";
+      if (written && written.length > 0) {
+        const lastW = written[written.length - 1];
+        const cust = lastW.customerName || "לקוח";
+        const hrs = lastW.durationHours ?? "";
+        title = `${cust}${hrs ? ` (${hrs} ש׳)` : ""}`;
+      } else if (drafts && drafts.length > 0) {
+        const lastD = drafts[drafts.length - 1];
+        const cust = lastD.customerName || "טיוטה";
+        const hrs = lastD.durationHours ?? "";
+        title = `${cust}${hrs ? ` (${hrs} ש׳)` : ""}`;
+      } else if (firstUserMsg?.text) {
+        const clean = firstUserMsg.text.replace(/[\r\n]+/g, " ").trim();
+        title = clean.length > 32 ? clean.slice(0, 32) + "..." : clean;
+      }
+
+      return {
+        id: sessionId,
+        title,
+        preview: firstUserMsg?.text || "",
+        createdAt: existingCreatedAt || Date.now(),
+        updatedAt: Date.now(),
+        messages: msgs,
+        activeDrafts: drafts,
+        writtenEntries: written,
+      };
+    },
+    []
+  );
+
+  // Scoped session state updater: updates either the foreground state (if targetSessionId is active)
+  // AND/OR the background session in savedSessions so background requests never overwrite a newly opened '+' session
+  const updateSessionState = useCallback(
+    (
+      targetSessionId: string,
+      updater: (prev: {
+        messages: ChatMessage[];
+        activeDrafts: HoursAssistantEntryDraft[];
+        writtenEntries: WrittenEntryResult[];
+      }) => {
+        messages: ChatMessage[];
+        activeDrafts: HoursAssistantEntryDraft[];
+        writtenEntries: WrittenEntryResult[];
+      }
+    ) => {
+      setSavedSessions((prevSessions) => {
+        const existingIdx = prevSessions.findIndex((s) => s.id === targetSessionId);
+        const existingSession =
+          existingIdx >= 0
+            ? prevSessions[existingIdx]
+            : {
+                id: targetSessionId,
+                title: "שיחת דיווח",
+                createdAt: Date.now(),
+                updatedAt: Date.now(),
+                messages: [],
+                activeDrafts: [],
+                writtenEntries: [],
+              };
+
+        const nextState = updater({
+          messages: existingSession.messages || [],
+          activeDrafts: existingSession.activeDrafts || [],
+          writtenEntries: existingSession.writtenEntries || [],
+        });
+
+        // If this session is currently displayed in the foreground, sync foreground states too
+        if (currentSessionIdRef.current === targetSessionId) {
+          setMessages(nextState.messages);
+          setActiveDrafts(nextState.activeDrafts);
+          setWrittenEntries(nextState.writtenEntries);
+        }
+
+        if (
+          nextState.messages.length === 0 &&
+          nextState.activeDrafts.length === 0 &&
+          nextState.writtenEntries.length === 0
+        ) {
+          return prevSessions;
+        }
+
+        const updatedItem = buildSessionItem(
+          targetSessionId,
+          nextState.messages,
+          nextState.activeDrafts,
+          nextState.writtenEntries,
+          existingSession.createdAt
+        );
+
+        let updatedList: SavedChatSession[];
+        if (existingIdx >= 0) {
+          const copy = [...prevSessions];
+          copy[existingIdx] = updatedItem;
+          // Move updated foreground session to top, or keep order if background
+          if (currentSessionIdRef.current === targetSessionId) {
+            const remaining = prevSessions.filter((s) => s.id !== targetSessionId);
+            updatedList = [updatedItem, ...remaining].slice(0, MAX_SAVED_SESSIONS);
+          } else {
+            updatedList = copy.slice(0, MAX_SAVED_SESSIONS);
+          }
+        } else {
+          updatedList = [updatedItem, ...prevSessions].slice(0, MAX_SAVED_SESSIONS);
+        }
+
+        try {
+          localStorage.setItem(historyStorageKey, JSON.stringify(updatedList));
+        } catch (err) {
+          console.error("Failed to update localStorage history", err);
+        }
+
+        return updatedList;
+      });
+    },
+    [buildSessionItem, historyStorageKey]
+  );
+
+  // Keep current foreground session synced to localStorage (up to 10 recent sessions)
+  useEffect(() => {
+    if (messages.length === 0 && activeDrafts.length === 0 && writtenEntries.length === 0) return;
 
     setSavedSessions((prev) => {
       const existingIdx = prev.findIndex((s) => s.id === currentSessionId);
-      const updatedItem: SavedChatSession = {
-        id: currentSessionId,
-        title,
-        preview: firstUserMsg?.text || "",
-        createdAt: existingIdx >= 0 ? prev[existingIdx].createdAt : Date.now(),
-        updatedAt: Date.now(),
+      const updatedItem = buildSessionItem(
+        currentSessionId,
         messages,
         activeDrafts,
         writtenEntries,
-      };
+        existingIdx >= 0 ? prev[existingIdx].createdAt : Date.now()
+      );
 
       let updatedList: SavedChatSession[];
       if (existingIdx >= 0) {
-        const remaining = prev.filter((s) => s.id !== currentSessionId);
-        updatedList = [updatedItem, ...remaining].slice(0, MAX_SAVED_SESSIONS);
+        const copy = [...prev];
+        copy[existingIdx] = updatedItem;
+        updatedList = copy.slice(0, MAX_SAVED_SESSIONS);
       } else {
         updatedList = [updatedItem, ...prev].slice(0, MAX_SAVED_SESSIONS);
       }
@@ -230,7 +391,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
 
       return updatedList;
     });
-  }, [messages, activeDrafts, writtenEntries, currentSessionId, historyStorageKey]);
+  }, [messages, activeDrafts, writtenEntries, currentSessionId, historyStorageKey, buildSessionItem]);
 
   // Audio Recording State
   const [isRecording, setIsRecording] = useState(false);
@@ -324,7 +485,6 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
 
       audioChunksRef.current = [];
 
-      // Determine mimeType supported by browser
       let mimeType = "audio/webm";
       if (typeof MediaRecorder.isTypeSupported === "function") {
         if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
@@ -347,7 +507,6 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
 
       recorder.onstop = async () => {
         const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-        // Stop all audio tracks
         stream.getTracks().forEach((track) => track.stop());
         clearInterval(recordingTimerRef.current);
         setRecordingSeconds(0);
@@ -358,7 +517,6 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
           return;
         }
 
-        // Convert audioBlob to base64
         const reader = new FileReader();
         reader.onloadend = () => {
           const base64Data = (reader.result as string)?.split(",")?.[1];
@@ -369,7 +527,6 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
         reader.readAsDataURL(audioBlob);
       };
 
-      // Start recording cleanly without small timeslice chunk fragmentation
       recorder.start();
       setIsRecording(true);
       setRecordingSeconds(0);
@@ -377,7 +534,6 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
       recordingTimerRef.current = setInterval(() => {
         setRecordingSeconds((prev) => {
           if (prev >= 119) {
-            // Auto stop recording at 2 minutes (120 seconds max)
             if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
               try {
                 mediaRecorderRef.current.stop();
@@ -461,19 +617,131 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
     }
   };
 
-  // Format recording timer: 00:07 / 02:00
   const formatRecordingTime = (secs: number) => {
     const mins = Math.floor(secs / 60);
     const remainder = secs % 60;
     return `${mins < 10 ? "0" + mins : mins}:${remainder < 10 ? "0" + remainder : remainder} / 02:00`;
   };
 
-  // Send Audio payload to backend
+  // Scoped response handler that updates `targetSessionId` whether it is foreground or running in background
+  const handleChatResponseForSession = useCallback(
+    (
+      targetSessionId: string,
+      res: AssistantChatResponse,
+      fromVoice: boolean,
+      voiceMsgId?: string
+    ) => {
+      updateSessionState(targetSessionId, (prev) => {
+        let nextMessages = [...prev.messages];
+        let nextDrafts = [...prev.activeDrafts];
+        let nextWritten = [...prev.writtenEntries];
+
+        if (fromVoice) {
+          const transcriptText = res.transcript ? `🎙️ "${res.transcript}"` : "🎙️ הקלטה קולית";
+          if (voiceMsgId) {
+            nextMessages = nextMessages.map((m) =>
+              m.id === voiceMsgId ? { ...m, text: transcriptText } : m
+            );
+          } else {
+            nextMessages.push({
+              id: `user_trans_${Date.now()}`,
+              role: "user",
+              text: transcriptText,
+              isVoice: true,
+              timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
+            });
+          }
+        }
+
+        const existingWrittenIds = new Set<string>([
+          ...nextWritten.map((w) => w.id),
+          ...nextMessages.flatMap((m) => (m.writtenEntries || []).map((w) => w.id)),
+        ]);
+        const newlyWrittenThisTurn = (res.writtenEntries || []).filter(
+          (w) => !existingWrittenIds.has(w.id)
+        );
+
+        if (res.isConfirmed) {
+          nextDrafts = res.drafts || [];
+        } else if (res.drafts && res.drafts.length > 0) {
+          const incomingCustomers = new Set(
+            res.drafts.map((d) => (d.customerName || "").trim().toLowerCase())
+          );
+          const incomingIds = new Set(res.drafts.map((d) => d.id));
+          const keptPrev = nextDrafts.filter(
+            (p) =>
+              !incomingIds.has(p.id) &&
+              !incomingCustomers.has((p.customerName || "").trim().toLowerCase())
+          );
+          nextDrafts = [...keptPrev, ...res.drafts];
+        }
+
+        if (newlyWrittenThisTurn.length > 0) {
+          for (const item of newlyWrittenThisTurn) {
+            if (!nextWritten.some((m) => m.id === item.id)) {
+              nextWritten.push(item);
+            }
+          }
+        }
+
+        // Also sync updated written entries if an existing entry was edited
+        if (res.writtenEntries && res.writtenEntries.length > 0 && newlyWrittenThisTurn.length === 0) {
+          const updatedMap = new Map(res.writtenEntries.map((w) => [w.id, w]));
+          nextWritten = nextWritten.map((w) => updatedMap.get(w.id) || w);
+          nextMessages = nextMessages.map((msg) => {
+            if (!msg.writtenEntries) return msg;
+            return {
+              ...msg,
+              writtenEntries: msg.writtenEntries.map((w) => updatedMap.get(w.id) || w),
+            };
+          });
+        }
+
+        if (res.undoneCardIds && res.undoneCardIds.length > 0) {
+          nextWritten = nextWritten.filter((w) => !res.undoneCardIds.includes(w.id));
+          nextMessages = nextMessages.map((msg) => {
+            if (!msg.writtenEntries) return msg;
+            const remaining = msg.writtenEntries.filter((w) => !res.undoneCardIds.includes(w.id));
+            return {
+              ...msg,
+              writtenEntries: remaining.length > 0 ? remaining : undefined,
+            };
+          });
+        }
+
+        if (res.reply) {
+          const cleanedPrev = nextMessages.map((m) =>
+            m.drafts ? { ...m, drafts: undefined } : m
+          );
+          nextMessages = [
+            ...cleanedPrev,
+            {
+              id: `model_${Date.now()}`,
+              role: "model",
+              text: res.reply,
+              writtenEntries:
+                newlyWrittenThisTurn.length > 0 ? newlyWrittenThisTurn : undefined,
+              timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
+            },
+          ];
+        }
+
+        return {
+          messages: nextMessages,
+          activeDrafts: nextDrafts,
+          writtenEntries: nextWritten,
+        };
+      });
+    },
+    [updateSessionState]
+  );
+
+  // Send Audio payload to backend (scoped to targetSessionId so it can complete in background)
   const handleSendAudio = async (base64Audio: string, mimeType: string) => {
+    const targetSessionId = currentSessionIdRef.current;
     let stepTimer1: any = null;
     let stepTimer2: any = null;
 
-    // Immediately display user's voice message in UI so user has immediate feedback
     const voiceMsgId = `voice_${Date.now()}`;
     const userVoiceMessage: ChatMessage = {
       id: voiceMsgId,
@@ -482,28 +750,32 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
       isVoice: true,
       timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
     };
-    setMessages((prev) => [...prev, userVoiceMessage]);
+
+    const snapshotHistory = messages
+      .filter((m) => m.id !== "welcome" && m.id !== voiceMsgId)
+      .slice(-8)
+      .map((m) => ({
+        role: m.role,
+        text: m.text,
+      }));
+    const snapshotDrafts = [...activeDrafts];
+    const snapshotWritten = [...writtenEntries];
+
+    updateSessionState(targetSessionId, (prev) => ({
+      ...prev,
+      messages: [...prev.messages, userVoiceMessage],
+    }));
 
     try {
-      setLoading(true);
-      setLoadingStep("מתמלל ומפענח הקלטה קולית...");
+      setSessionLoading(targetSessionId, true, "מתמלל ומפענח הקלטה קולית...");
 
       stepTimer1 = setTimeout(() => {
-        setLoadingStep("מאתר לקוחות ותיקיות ב-SharePoint...");
+        setSessionLoading(targetSessionId, true, "מאתר לקוחות ותיקיות ב-SharePoint...");
       }, 3000);
 
       stepTimer2 = setTimeout(() => {
-        setLoadingStep("בודק כפילויות ומכין כרטיס דיווח...");
+        setSessionLoading(targetSessionId, true, "בודק כפילויות ומכין כרטיס דיווח...");
       }, 6500);
-
-      // Prepare conversation history (exclude welcome and current pending voice msg)
-      const history = messages
-        .filter((m) => m.id !== "welcome" && m.id !== voiceMsgId)
-        .slice(-8)
-        .map((m) => ({
-          role: m.role,
-          text: m.text,
-        }));
 
       const res = await apiAssistantChat({
         user: currentUser,
@@ -511,49 +783,52 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
           data: base64Audio,
           mimeType,
         },
-        history,
-        activeDrafts,
-        writtenEntries,
+        history: snapshotHistory,
+        activeDrafts: snapshotDrafts,
+        writtenEntries: snapshotWritten,
       });
 
-      handleChatResponse(res, true, voiceMsgId);
+      handleChatResponseForSession(targetSessionId, res, true, voiceMsgId);
     } catch (err: any) {
       console.error("[handleSendAudio] Error:", err);
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === voiceMsgId
-            ? { ...m, text: "🎙️ הקלטה קולית (אירעה שגיאה בעיבוד)" }
-            : m
-        )
-      );
       const friendlyMsg = getFriendlyHebrewErrorMessage(err);
-      setMessages((prev) => [
+      updateSessionState(targetSessionId, (prev) => ({
         ...prev,
-        {
-          id: `err_${Date.now()}`,
-          role: "model",
-          text: friendlyMsg,
-          timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
-        },
-      ]);
+        messages: [
+          ...prev.messages.map((m) =>
+            m.id === voiceMsgId
+              ? { ...m, text: "🎙️ הקלטה קולית (אירעה שגיאה בעיבוד)" }
+              : m
+          ),
+          {
+            id: `err_${Date.now()}`,
+            role: "model",
+            text: friendlyMsg,
+            timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
+          },
+        ],
+      }));
     } finally {
       if (stepTimer1) clearTimeout(stepTimer1);
       if (stepTimer2) clearTimeout(stepTimer2);
-      setLoading(false);
+      setSessionLoading(targetSessionId, false);
     }
   };
 
-  // Send Text payload to backend
-  const handleSendText = async (textToSend?: string) => {
-    const text = (textToSend || inputText).trim();
-    if (!text || loading) return;
+  // Send Text payload to backend (scoped to targetSessionId so parallel sessions run in background)
+  const handleSendText = async (textToSend?: string, overrideSessionId?: string) => {
+    const targetSessionId = overrideSessionId || currentSessionIdRef.current;
+    const isTargetLoading = Boolean(sessionLoadingMap[targetSessionId]?.loading);
+    const text = (textToSend !== undefined ? textToSend : inputText).trim();
+    if (!text || isTargetLoading) return;
 
-    setInputText("");
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
+    if (!overrideSessionId && textToSend === undefined) {
+      setInputText("");
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+      }
     }
 
-    // Add user message to UI immediately
     const userMsgId = `user_${Date.now()}`;
     const userMessage: ChatMessage = {
       id: userMsgId,
@@ -562,172 +837,89 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
       timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
     };
 
-    setMessages((prev) => [...prev, userMessage]);
+    const targetSessObj = savedSessions.find((s) => s.id === targetSessionId);
+    const baseMessages =
+      targetSessionId === currentSessionIdRef.current
+        ? messages
+        : targetSessObj?.messages || [];
+    const baseDrafts =
+      targetSessionId === currentSessionIdRef.current
+        ? activeDrafts
+        : targetSessObj?.activeDrafts || [];
+    const baseWritten =
+      targetSessionId === currentSessionIdRef.current
+        ? writtenEntries
+        : targetSessObj?.writtenEntries || [];
+
+    const history = baseMessages
+      .filter((m) => m.id !== "welcome")
+      .slice(-8)
+      .map((m) => ({
+        role: m.role,
+        text: m.text,
+      }));
+
+    updateSessionState(targetSessionId, (prev) => ({
+      ...prev,
+      messages: [...prev.messages, userMessage],
+    }));
 
     let stepTimer1: any = null;
     let stepTimer2: any = null;
     let stepTimer3: any = null;
 
     try {
-      setLoading(true);
-      setLoadingStep("מנתח הודעה ובודק נתונים...");
+      setSessionLoading(targetSessionId, true, "מנתח הודעה ובודק נתונים...");
 
       stepTimer1 = setTimeout(() => {
-        setLoadingStep("מאתר לקוחות ותיקיות ב-SharePoint...");
+        setSessionLoading(targetSessionId, true, "מאתר לקוחות ותיקיות ב-SharePoint...");
       }, 3000);
 
       stepTimer2 = setTimeout(() => {
-        setLoadingStep("בודק קובץ Excel וכפילויות...");
+        setSessionLoading(targetSessionId, true, "בודק קובץ Excel וכפילויות...");
       }, 7000);
 
       stepTimer3 = setTimeout(() => {
-        setLoadingStep("מכין כרטיס סיכום להזנה...");
+        setSessionLoading(targetSessionId, true, "מכין כרטיס סיכום להזנה...");
       }, 14000);
-
-      // Prepare conversation history (prior turns only, current turn is in 'message')
-      const history = messages
-        .filter((m) => m.id !== "welcome")
-        .slice(-8)
-        .map((m) => ({
-          role: m.role,
-          text: m.text,
-        }));
 
       const res = await apiAssistantChat({
         user: currentUser,
         message: text,
         history,
-        activeDrafts,
-        writtenEntries,
+        activeDrafts: baseDrafts,
+        writtenEntries: baseWritten,
       });
 
-      handleChatResponse(res, false);
+      handleChatResponseForSession(targetSessionId, res, false);
     } catch (err: any) {
       console.error("[handleSendText] Error:", err);
       const friendlyMsg = getFriendlyHebrewErrorMessage(err);
-      setMessages((prev) => [
+      updateSessionState(targetSessionId, (prev) => ({
         ...prev,
-        {
-          id: `err_${Date.now()}`,
-          role: "model",
-          text: friendlyMsg,
-          timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
-        },
-      ]);
+        messages: [
+          ...prev.messages,
+          {
+            id: `err_${Date.now()}`,
+            role: "model",
+            text: friendlyMsg,
+            timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
+          },
+        ],
+      }));
     } finally {
       if (stepTimer1) clearTimeout(stepTimer1);
       if (stepTimer2) clearTimeout(stepTimer2);
       if (stepTimer3) clearTimeout(stepTimer3);
-      setLoading(false);
+      setSessionLoading(targetSessionId, false);
     }
   };
 
-  // Common response handler
-  const handleChatResponse = (res: AssistantChatResponse, fromVoice: boolean, voiceMsgId?: string) => {
-    // If voice recording, update or add the user message with the decoded transcript
-    if (fromVoice) {
-      const transcriptText = res.transcript ? `🎙️ "${res.transcript}"` : "🎙️ הקלטה קולית";
-      if (voiceMsgId) {
-        setMessages((prev) =>
-          prev.map((m) => (m.id === voiceMsgId ? { ...m, text: transcriptText } : m))
-        );
-      } else {
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: `user_trans_${Date.now()}`,
-            role: "user",
-            text: transcriptText,
-            isVoice: true,
-            timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
-          },
-        ]);
-      }
-    }
-
-    // Determine only genuinely new written entries from this turn
-    const existingWrittenIds = new Set<string>([
-      ...writtenEntries.map((w) => w.id),
-      ...messages.flatMap((m) => (m.writtenEntries || []).map((w) => w.id)),
-    ]);
-    const newlyWrittenThisTurn = (res.writtenEntries || []).filter(
-      (w) => !existingWrittenIds.has(w.id)
-    );
-
-    // Update active drafts (always chronological top-to-bottom, with newest draft at the bottom)
-    if (res.isConfirmed) {
-      // A draft was confirmed -> set remaining drafts returned by server
-      setActiveDrafts(res.drafts || []);
-    } else if (res.drafts && res.drafts.length > 0) {
-      setActiveDrafts((prev) => {
-        // Keep unconfirmed drafts for other customers above, and place the new/updated draft(s) at the bottom
-        const incomingCustomers = new Set(
-          res.drafts.map((d) => (d.customerName || "").trim().toLowerCase())
-        );
-        const incomingIds = new Set(res.drafts.map((d) => d.id));
-        const keptPrev = prev.filter(
-          (p) =>
-            !incomingIds.has(p.id) &&
-            !incomingCustomers.has((p.customerName || "").trim().toLowerCase())
-        );
-        return [...keptPrev, ...res.drafts];
-      });
-    }
-
-    // Append newly written entries at the bottom (chronological order: oldest -> newest)
-    if (newlyWrittenThisTurn.length > 0) {
-      setWrittenEntries((prev) => {
-        const next = [...prev];
-        for (const item of newlyWrittenThisTurn) {
-          if (!next.some((m) => m.id === item.id)) {
-            next.push(item);
-          }
-        }
-        return next;
-      });
-    }
-
-    // Remove undone entries from both writtenEntries state and message cards
-    if (res.undoneCardIds && res.undoneCardIds.length > 0) {
-      setWrittenEntries((prev) => prev.filter((w) => !res.undoneCardIds.includes(w.id)));
-      setMessages((prev) =>
-        prev.map((msg) => {
-          if (!msg.writtenEntries) return msg;
-          const remaining = msg.writtenEntries.filter((w) => !res.undoneCardIds.includes(w.id));
-          return {
-            ...msg,
-            writtenEntries: remaining.length > 0 ? remaining : undefined,
-          };
-        })
-      );
-    }
-
-    // Add model response message at the bottom, and clear stale drafts from older messages
-    if (res.reply) {
-      setMessages((prev) => {
-        const cleanedPrev = prev.map((m) =>
-          m.drafts ? { ...m, drafts: undefined } : m
-        );
-        return [
-          ...cleanedPrev,
-          {
-            id: `model_${Date.now()}`,
-            role: "model",
-            text: res.reply,
-            writtenEntries:
-              newlyWrittenThisTurn.length > 0 ? newlyWrittenThisTurn : undefined,
-            timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
-          },
-        ];
-      });
-    }
-  };
-
-  // Direct Card Confirmation Handler
+  // Direct Card Confirmation Handler (scoped to targetSessionId)
   const handleConfirmEntry = async (cardId: string, directDraft?: HoursAssistantEntryDraft) => {
+    const targetSessionId = currentSessionIdRef.current;
     try {
-      setLoading(true);
-      setLoadingStep("רושם שורה בגיליון ה-Excel וב-Lists...");
+      setSessionLoading(targetSessionId, true, "רושם שורה בגיליון ה-Excel וב-Lists...");
 
       const targetDraft =
         directDraft ||
@@ -750,31 +942,33 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
         writtenEntries,
       });
 
-      handleChatResponse(res, false);
+      handleChatResponseForSession(targetSessionId, res, false);
     } catch (err: any) {
       console.error("[handleConfirmEntry] Error:", err);
       const friendlyMsg = getFriendlyHebrewErrorMessage(err);
-      setMessages((prev) => [
+      updateSessionState(targetSessionId, (prev) => ({
         ...prev,
-        {
-          id: `err_${Date.now()}`,
-          role: "model",
-          text: friendlyMsg,
-          timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
-        },
-      ]);
+        messages: [
+          ...prev.messages,
+          {
+            id: `err_${Date.now()}`,
+            role: "model",
+            text: friendlyMsg,
+            timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
+          },
+        ],
+      }));
     } finally {
-      setLoading(false);
+      setSessionLoading(targetSessionId, false);
     }
   };
 
-  // Direct Card Undo Handler
+  // Direct Card Undo Handler (scoped to targetSessionId)
   const handleUndoEntry = async (cardId: string, directEntry?: WrittenEntryResult) => {
+    const targetSessionId = currentSessionIdRef.current;
     try {
-      setLoading(true);
-      setLoadingStep("מבטל שורה מגיליון ה-Excel...");
+      setSessionLoading(targetSessionId, true, "מבטל שורה מגיליון ה-Excel...");
 
-      // 1. Resolve target entry from direct argument, writtenEntries state, or any message card
       const targetEntry =
         directEntry ||
         writtenEntries.find((w) => w.id === cardId || w.entryId === cardId || w.fileId === cardId) ||
@@ -811,36 +1005,230 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
         writtenEntries: mergedWritten,
       });
 
-      handleChatResponse(res, false);
+      handleChatResponseForSession(targetSessionId, res, false);
     } catch (err: any) {
       console.error("[handleUndoEntry] Error:", err);
       const friendlyMsg = getFriendlyHebrewErrorMessage(err);
-      setMessages((prev) => [
+      updateSessionState(targetSessionId, (prev) => ({
         ...prev,
-        {
-          id: `err_${Date.now()}`,
-          role: "model",
-          text: friendlyMsg,
-          timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
-        },
-      ]);
+        messages: [
+          ...prev.messages,
+          {
+            id: `err_${Date.now()}`,
+            role: "model",
+            text: friendlyMsg,
+            timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
+          },
+        ],
+      }));
     } finally {
-      setLoading(false);
+      setSessionLoading(targetSessionId, false);
+    }
+  };
+
+  // Direct Written Card Edit Handler (Updates Microsoft Lists + SharePoint Excel)
+  const handleEditWrittenEntry = async (
+    cardId: string,
+    updates: {
+      durationHours: number;
+      description: string;
+      startTime?: string;
+      endTime?: string;
+      workType?: string;
+    },
+    entry?: WrittenEntryResult,
+    targetSessionOverride?: string
+  ) => {
+    const targetSessionId = targetSessionOverride || currentSessionIdRef.current;
+    try {
+      setSavingEditCardId(cardId);
+      setSessionLoading(targetSessionId, true, "מעדכן שעות ותיעוד ב-Lists וב-Excel...");
+
+      const targetSessObj = savedSessions.find((s) => s.id === targetSessionId);
+      const sessWritten =
+        targetSessionId === currentSessionIdRef.current
+          ? writtenEntries
+          : targetSessObj?.writtenEntries || [];
+      const sessMessages =
+        targetSessionId === currentSessionIdRef.current
+          ? messages
+          : targetSessObj?.messages || [];
+
+      const targetEntry =
+        entry ||
+        sessWritten.find((w) => w.id === cardId || w.entryId === cardId) ||
+        sessMessages
+          .flatMap((m) => m.writtenEntries || [])
+          .find((w) => w.id === cardId || w.entryId === cardId);
+
+      const mergedWritten = [
+        ...(targetEntry ? [targetEntry] : []),
+        ...sessWritten,
+        ...sessMessages.flatMap((m) => m.writtenEntries || []),
+      ].filter((w, idx, arr) => arr.findIndex((x) => x.id === w.id) === idx);
+
+      const res = await apiAssistantChat({
+        user: currentUser,
+        action: "edit_entry",
+        cardId: targetEntry?.id || cardId,
+        editData: {
+          cardId: targetEntry?.id || cardId,
+          listItemId: targetEntry?.listItemId,
+          driveId: targetEntry?.driveId,
+          itemId: targetEntry?.itemId || targetEntry?.fileId,
+          fileId: targetEntry?.fileId,
+          sheetName: targetEntry?.sheetName,
+          rowAddress: targetEntry?.rowAddress,
+          targetRow: targetEntry?.targetRow,
+          customerName: targetEntry?.customerName,
+          date: targetEntry?.date,
+          employeeName: targetEntry?.employeeName || currentUser.name,
+          durationHours: updates.durationHours,
+          description: updates.description,
+          startTime: updates.startTime ?? targetEntry?.startTime,
+          endTime: updates.endTime ?? targetEntry?.endTime,
+          workType: updates.workType ?? targetEntry?.workType,
+        },
+        writtenEntries: mergedWritten,
+      });
+
+      handleChatResponseForSession(targetSessionId, res, false);
+    } catch (err: any) {
+      console.error("[handleEditWrittenEntry] Error:", err);
+      const friendlyMsg = getFriendlyHebrewErrorMessage(err);
+      updateSessionState(targetSessionId, (prev) => ({
+        ...prev,
+        messages: [
+          ...prev.messages,
+          {
+            id: `err_${Date.now()}`,
+            role: "model",
+            text: friendlyMsg,
+            timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
+          },
+        ],
+      }));
+    } finally {
+      setSavingEditCardId(null);
+      setSessionLoading(targetSessionId, false);
     }
   };
 
   // Update in-line draft
   const handleUpdateDraft = (updated: HoursAssistantEntryDraft) => {
-    setActiveDrafts((prev) => prev.map((d) => (d.id === updated.id ? updated : d)));
-    setMessages((prev) =>
-      prev.map((msg) => ({
+    updateSessionState(currentSessionIdRef.current, (prev) => ({
+      ...prev,
+      activeDrafts: prev.activeDrafts.map((d) => (d.id === updated.id ? updated : d)),
+      messages: prev.messages.map((msg) => ({
         ...msg,
         drafts: msg.drafts?.map((d) => (d.id === updated.id ? updated : d)),
-      }))
-    );
+      })),
+    }));
   };
 
-  // Helper for human time-of-day greeting (e.g. בוקר טוב, צהריים טובים, ערב טוב)
+  // Save edited user message in the chat feed and re-run assistant analysis
+  const handleSaveEditedUserMessage = async (msgId: string) => {
+    const trimmed = editingMsgText.trim();
+    if (!trimmed) return;
+    setEditingMsgId(null);
+
+    updateSessionState(currentSessionIdRef.current, (prev) => ({
+      ...prev,
+      messages: prev.messages.map((m) => (m.id === msgId ? { ...m, text: trimmed } : m)),
+    }));
+
+    // If this session already has a written entry, or if user wants to re-evaluate the message, send updated prompt
+    await handleSendText(`עדכון לדיווח: ${trimmed}`);
+  };
+
+  // Open inline editor for one of the 10 recent sessions in the sidebar
+  const handleOpenSidebarEdit = (e: React.MouseEvent, sess: SavedChatSession) => {
+    e.stopPropagation();
+    if (editingSidebarSessionId === sess.id) {
+      setEditingSidebarSessionId(null);
+      return;
+    }
+
+    const allWritten = [
+      ...(sess.writtenEntries || []),
+      ...(sess.messages || []).flatMap((m) => m.writtenEntries || []),
+    ];
+    const lastWritten = allWritten[allWritten.length - 1];
+    const lastDraft = (sess.activeDrafts || [])[(sess.activeDrafts || []).length - 1];
+    const firstUserMsg = (sess.messages || []).find((m) => m.role === "user");
+
+    setEditingSidebarSessionId(sess.id);
+    if (lastWritten) {
+      setSidebarEditHours(lastWritten.durationHours || 1);
+      setSidebarEditText(lastWritten.description || firstUserMsg?.text || "");
+    } else if (lastDraft) {
+      setSidebarEditHours(lastDraft.durationHours || 1);
+      setSidebarEditText(lastDraft.description || firstUserMsg?.text || "");
+    } else {
+      setSidebarEditHours(1);
+      setSidebarEditText(firstUserMsg?.text || sess.preview || "");
+    }
+  };
+
+  // Save inline edit from the sidebar (updates WrittenEntry in Lists/Excel, or Draft, or User Message)
+  const handleSaveSidebarSessionEdit = async (e: React.MouseEvent, sess: SavedChatSession) => {
+    e.stopPropagation();
+    const cleanText = sidebarEditText.trim();
+    if (!cleanText) return;
+
+    setIsSavingSidebarEdit(true);
+    try {
+      const allWritten = [
+        ...(sess.writtenEntries || []),
+        ...(sess.messages || []).flatMap((m) => m.writtenEntries || []),
+      ];
+      const lastWritten = allWritten[allWritten.length - 1];
+      const lastDraft = (sess.activeDrafts || [])[(sess.activeDrafts || []).length - 1];
+
+      if (lastWritten) {
+        await handleEditWrittenEntry(
+          lastWritten.id,
+          {
+            durationHours: Number(sidebarEditHours) || lastWritten.durationHours || 1,
+            description: cleanText,
+          },
+          lastWritten,
+          sess.id
+        );
+      } else if (lastDraft) {
+        const updatedDraft: HoursAssistantEntryDraft = {
+          ...lastDraft,
+          durationHours: Number(sidebarEditHours) || lastDraft.durationHours || 1,
+          description: cleanText,
+        };
+        updateSessionState(sess.id, (prev) => ({
+          ...prev,
+          activeDrafts: prev.activeDrafts.map((d) =>
+            d.id === updatedDraft.id ? updatedDraft : d
+          ),
+          messages: prev.messages.map((m, idx) =>
+            idx === 0 && m.role === "user" ? { ...m, text: cleanText } : m
+          ),
+        }));
+      } else {
+        // Edit user message and re-process in that session
+        updateSessionState(sess.id, (prev) => ({
+          ...prev,
+          messages: prev.messages.map((m, idx) =>
+            idx === 0 && m.role === "user" ? { ...m, text: cleanText } : m
+          ),
+        }));
+        handleSelectSession(sess);
+        setTimeout(() => {
+          handleSendText(cleanText, sess.id);
+        }, 50);
+      }
+      setEditingSidebarSessionId(null);
+    } finally {
+      setIsSavingSidebarEdit(false);
+    }
+  };
+
   const getTimeBasedGreeting = () => {
     const hour = new Date().getHours();
     if (hour >= 5 && hour < 12) {
@@ -854,24 +1242,29 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
     }
   };
 
+  // Opens a brand new parallel session while keeping any running session alive in the background
   const handleNewChat = () => {
-    const newId = `sess_${Date.now()}`;
+    const newId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    currentSessionIdRef.current = newId;
     setCurrentSessionId(newId);
     setMessages([]);
     setActiveDrafts([]);
     setWrittenEntries([]);
     setInputText("");
+    setEditingMsgId(null);
     if (typeof window !== "undefined" && window.innerWidth < 768) {
       setIsSidebarOpen(false);
     }
   };
 
   const handleSelectSession = (session: SavedChatSession) => {
+    currentSessionIdRef.current = session.id;
     setCurrentSessionId(session.id);
     setMessages(session.messages || []);
     setActiveDrafts(session.activeDrafts || []);
     setWrittenEntries(session.writtenEntries || []);
     setInputText("");
+    setEditingMsgId(null);
     if (typeof window !== "undefined" && window.innerWidth < 768) {
       setIsSidebarOpen(false);
     }
@@ -938,12 +1331,12 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
         />
       )}
 
-      {/* LEFT SIDEBAR: Gemini Conversation History (Save 5, Collapsible, Subtle Hovers) */}
+      {/* LEFT SIDEBAR: Gemini Conversation History (Save 10, Inline Edit, Parallel Status) */}
       <aside
         dir="rtl"
         className={`
           fixed md:relative inset-y-0 left-0 z-40
-          ${isSidebarOpen ? "w-72 border-r border-slate-200/90" : "w-0 border-r-0"}
+          ${isSidebarOpen ? "w-80 border-r border-slate-200/90" : "w-0 border-r-0"}
           bg-[#f0f4f9]
           transition-all duration-300 ease-in-out
           flex flex-col shrink-0 overflow-hidden
@@ -957,8 +1350,8 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
               <History className="w-3.5 h-3.5" />
             </div>
             <div>
-              <h2 className="text-xs font-bold text-slate-800 leading-tight">היסטוריית שיחות</h2>
-              <span className="text-[10px] text-slate-400">שמירה של 5 אחרונות</span>
+              <h2 className="text-xs font-bold text-slate-800 leading-tight">היסטוריית תיעודים</h2>
+              <span className="text-[10px] text-slate-500">10 תיעודים אחרונים · ניתן לעריכה</span>
             </div>
           </div>
 
@@ -971,81 +1364,256 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
           </button>
         </div>
 
-        {/* New Chat Button */}
+        {/* New Parallel Session Button */}
         <div className="p-3 shrink-0">
           <button
             onClick={handleNewChat}
-            className="btn-hover-subtle w-full py-2.5 px-3.5 rounded-2xl bg-white hover:bg-slate-50 border border-slate-200/90 text-slate-700 hover:text-blue-600 shadow-2xs flex items-center justify-between text-xs font-semibold cursor-pointer group"
+            className="btn-hover-subtle w-full py-2.5 px-3.5 rounded-2xl bg-white hover:bg-blue-50/60 border border-slate-200/90 hover:border-blue-300 text-slate-700 hover:text-blue-700 shadow-2xs flex items-center justify-between text-xs font-semibold cursor-pointer group"
+            title="פתח סשן תיעוד חדש במקביל (הסשן הקודם ימשיך לרוץ ברקע)"
           >
             <div className="flex items-center gap-2">
               <div className="w-6 h-6 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-colors">
                 <Plus className="w-3.5 h-3.5" />
               </div>
-              <span>שיחה חדשה</span>
+              <div className="text-right">
+                <span className="block">סשן תיעוד חדש (+)</span>
+                <span className="block text-[10px] font-normal text-slate-400 group-hover:text-blue-500">
+                  פתיחת תיעוד במקביל ברקע
+                </span>
+              </div>
             </div>
             <Sparkles className="w-3.5 h-3.5 text-purple-400 group-hover:text-purple-600 transition-colors" />
           </button>
         </div>
 
         {/* Recent Sessions List Header */}
-        <div className="px-4 py-1.5 flex items-center justify-between text-[11px] font-semibold text-slate-400 shrink-0">
-          <span>שיחות אחרונות</span>
-          <span className="px-1.5 py-0.2 rounded-full bg-slate-200/70 text-slate-600 text-[10px]">
-            {savedSessions.length}/5
+        <div className="px-4 py-1.5 flex items-center justify-between text-[11px] font-semibold text-slate-500 shrink-0">
+          <span>10 תיעודים אחרונים</span>
+          <span className="px-2 py-0.5 rounded-full bg-slate-200/80 text-slate-700 text-[10px] font-bold">
+            {savedSessions.length}/10
           </span>
         </div>
 
-        {/* Sessions List (Max 5) */}
+        {/* Sessions List (Max 10) */}
         <div className="flex-1 overflow-y-auto px-3 py-1 space-y-1.5">
           {savedSessions.length === 0 ? (
             <div className="py-8 px-3 text-center text-slate-400 flex flex-col items-center">
               <MessageSquare className="w-6 h-6 text-slate-300 mb-2 stroke-1" />
-              <p className="text-xs font-medium text-slate-500">אין עדיין שיחות שמורות</p>
-              <p className="text-[11px] text-slate-400 mt-1 max-w-[180px]">
-                שיחות שיתועדו יישמרו כאן אוטומטית (עד 5 אחרונות).
+              <p className="text-xs font-medium text-slate-500">אין עדיין תיעודים שמורים</p>
+              <p className="text-[11px] text-slate-400 mt-1 max-w-[190px]">
+                שיחות ותיעודים יישמרו כאן אוטומטית (עד 10 אחרונים) עם אפשרות עריכה.
               </p>
             </div>
           ) : (
             savedSessions.map((sess) => {
-              const isActive = currentSessionId === sess.id && messages.length > 0;
+              const isActive = currentSessionId === sess.id;
+              const isSessLoading = Boolean(sessionLoadingMap[sess.id]?.loading);
+              const hasDrafts = (sess.activeDrafts || []).length > 0;
+              const allWritten = [
+                ...(sess.writtenEntries || []),
+                ...(sess.messages || []).flatMap((m) => m.writtenEntries || []),
+              ];
+              const lastWritten = allWritten[allWritten.length - 1];
+              const lastDraft = (sess.activeDrafts || [])[(sess.activeDrafts || []).length - 1];
+              const displayHours = lastWritten?.durationHours ?? lastDraft?.durationHours;
+              const isEditingThis = editingSidebarSessionId === sess.id;
+
               return (
                 <div
                   key={sess.id}
                   onClick={() => handleSelectSession(sess)}
                   role="button"
                   className={`
-                    history-item-subtle w-full p-2.5 rounded-xl border text-right cursor-pointer flex items-center justify-between gap-2 group
+                    history-item-subtle w-full p-2.5 rounded-xl border text-right cursor-pointer flex flex-col gap-1.5 group transition-all
                     ${
                       isActive
-                        ? "bg-blue-50/90 border-blue-200/90 text-blue-900 shadow-2xs font-medium"
-                        : "bg-white/80 hover:bg-white border-slate-200/70 text-slate-700 hover:text-slate-900 shadow-2xs"
+                        ? "bg-blue-50/95 border-blue-300 text-blue-950 shadow-2xs font-medium"
+                        : "bg-white/85 hover:bg-white border-slate-200/80 text-slate-700 hover:text-slate-900 shadow-2xs"
                     }
                   `}
                 >
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <div
-                      className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
-                        isActive ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500 group-hover:text-blue-600"
-                      }`}
-                    >
-                      <MessageSquare className="w-3.5 h-3.5" />
+                  <div className="flex items-start justify-between gap-2 w-full">
+                    <div className="flex items-start gap-2 min-w-0 flex-1">
+                      <div
+                        className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 mt-0.5 ${
+                          isSessLoading
+                            ? "bg-amber-100 text-amber-700"
+                            : isActive
+                            ? "bg-blue-600 text-white"
+                            : lastWritten
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-slate-100 text-slate-500 group-hover:text-blue-600"
+                        }`}
+                      >
+                        {isSessLoading ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : lastWritten ? (
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                        ) : (
+                          <MessageSquare className="w-3.5 h-3.5" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="text-xs truncate font-semibold">
+                            {sess.title || "שיחת דיווח"}
+                          </p>
+                          {displayHours !== undefined && (
+                            <span className="px-1.5 py-0.2 rounded-md bg-blue-100/80 text-blue-800 text-[10px] font-bold shrink-0">
+                              {displayHours} ש׳
+                            </span>
+                          )}
+                        </div>
+
+                        {sess.preview && (
+                          <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                            {sess.preview}
+                          </p>
+                        )}
+
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          <span className="text-[10px] text-slate-400">
+                            {formatRelativeTime(sess.updatedAt || sess.createdAt)}
+                          </span>
+                          {isSessLoading && (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 font-semibold animate-pulse">
+                              רץ ברקע...
+                            </span>
+                          )}
+                          {!isSessLoading && hasDrafts && (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-blue-100 text-blue-700 font-semibold">
+                              ממתין לאישור
+                            </span>
+                          )}
+                          {!isSessLoading && !hasDrafts && lastWritten && (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-50 text-emerald-700 font-semibold">
+                              נרשם ב-Lists
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs truncate font-medium">{sess.title || "שיחת דיווח"}</p>
-                      <span className="text-[10px] text-slate-400 block mt-0.5">
-                        {formatRelativeTime(sess.updatedAt || sess.createdAt)}
-                      </span>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={(e) => handleOpenSidebarEdit(e, sess)}
+                        className="btn-icon-subtle p-1.5 rounded-lg text-slate-500 hover:text-blue-700 hover:bg-blue-100/70 transition-colors cursor-pointer"
+                        title="ערוך שעות או הודעה שתיעדת"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => handleDeleteSession(e, sess.id)}
+                        className="btn-icon-subtle p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                        title="מחק שיחה זו"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={(e) => handleDeleteSession(e, sess.id)}
-                    className="btn-icon-subtle p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer shrink-0"
-                    title="מחק שיחה זו"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
+                  {/* Inline Quick Edit Drawer inside Sidebar Item */}
+                  {isEditingThis && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="mt-1.5 pt-2 border-t border-slate-200/90 bg-white rounded-xl p-2.5 space-y-2 shadow-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-bold text-blue-900 flex items-center gap-1">
+                          <Pencil className="w-3 h-3 text-blue-600" />
+                          <span>
+                            {lastWritten
+                              ? "עריכת שעות / תיעוד (Lists + Excel)"
+                              : "עריכת שעות / הודעת תיעוד"}
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingSidebarSessionId(null);
+                          }}
+                          className="text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      {(lastWritten || lastDraft) && (
+                        <div>
+                          <label className="block text-[10px] font-semibold text-slate-600 mb-1">
+                            כמות שעות לחיוב:
+                          </label>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <input
+                              type="number"
+                              step="0.25"
+                              min="0.25"
+                              max="12"
+                              value={sidebarEditHours}
+                              onChange={(e) => setSidebarEditHours( parseFloat(e.target.value) || 0.25 )}
+                              className="w-20 px-2 py-1 text-xs font-bold border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500 text-center"
+                            />
+                            {[0.5, 1, 1.5, 2, 3].map((preset) => (
+                              <button
+                                key={preset}
+                                type="button"
+                                onClick={() => setSidebarEditHours(preset)}
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-bold border cursor-pointer ${
+                                  Number(sidebarEditHours) === preset
+                                    ? "bg-blue-600 text-white border-blue-600"
+                                    : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                                }`}
+                              >
+                                {preset} ש׳
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div>
+                        <label className="block text-[10px] font-semibold text-slate-600 mb-1">
+                          תיאור הפעילות / ההודעה שתועדה:
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={sidebarEditText}
+                          onChange={(e) => setSidebarEditText(e.target.value)}
+                          className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500 resize-none leading-relaxed"
+                          placeholder="עדכן את תיאור העבודה או ההודעה..."
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-end gap-1.5 pt-1">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingSidebarSessionId(null);
+                          }}
+                          className="px-2.5 py-1 rounded-lg border border-slate-200 text-[11px] font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                        >
+                          ביטול
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isSavingSidebarEdit}
+                          onClick={(e) => handleSaveSidebarSessionEdit(e, sess)}
+                          className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer shadow-2xs disabled:opacity-50"
+                        >
+                          {isSavingSidebarEdit ? (
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Check className="w-3 h-3" />
+                          )}
+                          <span>{lastWritten ? "שמור ועדכן ב-Lists" : "שמור שינויים"}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })
@@ -1053,10 +1621,10 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
         </div>
 
         {/* Sidebar Footer */}
-        <div className="p-3 border-t border-slate-200/70 bg-white/40 flex items-center justify-between text-[11px] text-slate-400 shrink-0">
+        <div className="p-3 border-t border-slate-200/70 bg-white/40 flex items-center justify-between text-[11px] text-slate-500 shrink-0">
           <div className="flex items-center gap-1.5 truncate">
-            <CheckCircle2 className="w-3 h-3 text-emerald-500 shrink-0" />
-            <span className="truncate">נשמרות 5 שיחות</span>
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+            <span className="truncate">נשמרות 10 שיחות אחרונות</span>
           </div>
 
           {savedSessions.length > 0 && (
@@ -1079,7 +1647,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
             <button
               onClick={toggleSidebar}
               className="btn-icon-subtle px-2 py-1.5 rounded-xl hover:bg-slate-100 text-slate-600 hover:text-slate-900 cursor-pointer flex items-center gap-1.5 border border-slate-200/80 shadow-2xs shrink-0"
-              title={isSidebarOpen ? "צמצם היסטוריה" : "פתח היסטוריית שיחות (5 אחרונות)"}
+              title={isSidebarOpen ? "צמצם היסטוריה" : "פתח היסטוריית שיחות (10 אחרונות)"}
             >
               {isSidebarOpen ? (
                 <PanelLeftClose className="w-4 h-4 text-blue-600 shrink-0" />
@@ -1087,7 +1655,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                 <PanelLeftOpen className="w-4 h-4 text-slate-600 shrink-0" />
               )}
               <span className="text-[11px] font-semibold text-slate-600 whitespace-nowrap">
-                {isSidebarOpen ? "צמצם" : "היסטוריה"}
+                {isSidebarOpen ? "צמצם" : `היסטוריה (${savedSessions.length}/10)`}
               </span>
             </button>
 
@@ -1105,19 +1673,27 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
               </span>
             )}
 
-            {/* Per-User "כמה תיעדתי היום" Quick Button (Hidden on xs since it's in the main top navbar, visible on sm+) */}
+            {/* Background Running Sessions Indicator Pill */}
+            {backgroundRunningSessions.length > 0 && (
+              <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-300 font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 animate-pulse">
+                <RefreshCw className="w-3 h-3 text-amber-600 animate-spin shrink-0" />
+                <span>{backgroundRunningSessions.length} סשנים רצים ברקע</span>
+              </span>
+            )}
+
+            {/* Per-User "כמה תיעדתי היום" Quick Button */}
             {onOpenMyLoggedHours && (
               <button
                 onClick={onOpenMyLoggedHours}
                 className="hidden sm:flex btn-hover-subtle text-xs px-2.5 py-1 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold items-center gap-1 cursor-pointer transition-colors shadow-2xs mr-1 whitespace-nowrap shrink-0"
-                title="בדוק כמה תיעדת היום ובכל יום לפי Microsoft Lists"
+                title="בדוק וערוך כמה תיעדת היום ובכל יום לפי Microsoft Lists"
               >
                 <ListChecks className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                 <span>כמה תיעדתי היום</span>
               </button>
             )}
 
-            {/* Manager Today Hours Summary Quick Button (Hidden on xs since it's in the main top navbar, visible on sm+) */}
+            {/* Manager Today Hours Summary Quick Button */}
             {isGuyOrAdmin && onOpenTodaySummary && (
               <button
                 onClick={onOpenTodaySummary}
@@ -1132,13 +1708,83 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
 
           <button
             onClick={handleNewChat}
-            className="btn-hover-subtle flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl sm:rounded-full bg-white hover:bg-slate-100 border border-slate-200 text-[11px] sm:text-xs text-slate-600 hover:text-slate-900 cursor-pointer shadow-2xs whitespace-nowrap shrink-0"
-            title="שיחה חדשה"
+            className="btn-hover-subtle flex items-center gap-1.5 px-2.5 sm:px-3.5 py-1.5 rounded-xl sm:rounded-full bg-blue-600 hover:bg-blue-700 text-[11px] sm:text-xs text-white font-semibold cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+            title="פתח סשן תיעוד חדש במקביל (הסשן הקודם ימשיך לרוץ ברקע)"
           >
-            <RotateCcw className="w-3 h-3 text-slate-400 shrink-0" />
-            <span>שיחה חדשה</span>
+            <Plus className="w-3.5 h-3.5 text-white shrink-0" />
+            <span>סשן חדש במקביל</span>
           </button>
         </div>
+
+        {/* Parallel Multi-Session Switcher Bar (Allows switching between active/background sessions easily) */}
+        {(savedSessions.length > 0 || backgroundRunningSessions.length > 0) && (
+          <div className="px-3 sm:px-6 py-1.5 bg-slate-100/80 border-b border-slate-200/60 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+            <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1 shrink-0 ml-1">
+              <Layers className="w-3 h-3 text-blue-600" />
+              <span>סשנים במקביל:</span>
+            </span>
+
+            {/* Current New/Unsaved Session Tab if empty */}
+            {!savedSessions.some((s) => s.id === currentSessionId) && (
+              <button
+                type="button"
+                className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-blue-600 text-white shadow-2xs flex items-center gap-1.5 shrink-0 cursor-pointer"
+              >
+                <Sparkles className="w-3 h-3" />
+                <span>סשן נוכחי (חדש)</span>
+              </button>
+            )}
+
+            {savedSessions.slice(0, 6).map((sess) => {
+              const isCurrent = sess.id === currentSessionId;
+              const isRunning = Boolean(sessionLoadingMap[sess.id]?.loading);
+              const pendingDraftsCount = (sess.activeDrafts || []).length;
+
+              return (
+                <button
+                  key={sess.id}
+                  type="button"
+                  onClick={() => handleSelectSession(sess)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold flex items-center gap-1.5 shrink-0 transition-all cursor-pointer border ${
+                    isCurrent
+                      ? "bg-blue-600 text-white border-blue-600 shadow-2xs"
+                      : isRunning
+                      ? "bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100"
+                      : "bg-white text-slate-700 border-slate-200/90 hover:bg-slate-50"
+                  }`}
+                >
+                  {isRunning && (
+                    <RefreshCw
+                      className={`w-3 h-3 animate-spin ${
+                        isCurrent ? "text-white" : "text-amber-600"
+                      }`}
+                    />
+                  )}
+                  <span className="max-w-[120px] truncate">{sess.title || "שיחת דיווח"}</span>
+                  {pendingDraftsCount > 0 && !isRunning && (
+                    <span
+                      className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
+                        isCurrent ? "bg-white/25 text-white" : "bg-blue-100 text-blue-800"
+                      }`}
+                    >
+                      {pendingDraftsCount} לאישור
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+
+            <button
+              type="button"
+              onClick={handleNewChat}
+              className="px-2 py-1 rounded-lg text-[11px] font-bold bg-white hover:bg-blue-50 text-blue-600 border border-dashed border-blue-300 flex items-center gap-1 shrink-0 cursor-pointer"
+              title="פתח סשן נוסף במקביל"
+            >
+              <Plus className="w-3 h-3" />
+              <span>+</span>
+            </button>
+          </div>
+        )}
 
         {/* Content Area: If empty -> Greeting, else -> Message Feed */}
         {messages.length === 0 && activeDrafts.length === 0 && !loading ? (
@@ -1170,7 +1816,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                     className="w-full sm:w-auto justify-center px-4 py-2.5 sm:py-1.5 rounded-2xl sm:rounded-full bg-emerald-50 hover:bg-emerald-100 border border-emerald-300/90 text-xs text-emerald-900 font-bold transition-all shadow-2xs cursor-pointer flex items-center gap-1.5"
                   >
                     <ListChecks className="w-4 h-4 sm:w-3.5 sm:h-3.5 text-emerald-600 shrink-0" />
-                    <span>כמה תיעדתי היום (לפי Lists)</span>
+                    <span>כמה תיעדתי היום (וצפייה/עריכה ב-Lists)</span>
                   </button>
                 )}
                 {isGuyOrAdmin ? (
@@ -1248,19 +1894,62 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                       key={msg.id}
                       className={`flex flex-col ${isUser ? "items-start" : "items-stretch"} space-y-2`}
                     >
-                      {/* User Message Bubble */}
+                      {/* User Message Bubble (with Inline Edit option) */}
                       {isUser ? (
-                        <div className="bg-[#f0f4f9] text-slate-900 rounded-2xl sm:rounded-3xl px-4 sm:px-5 py-3 sm:py-3.5 text-sm sm:text-base leading-relaxed max-w-[92%] sm:max-w-[85%] shadow-2xs">
+                        <div className="bg-[#f0f4f9] text-slate-900 rounded-2xl sm:rounded-3xl px-4 sm:px-5 py-3 sm:py-3.5 text-sm sm:text-base leading-relaxed max-w-[92%] sm:max-w-[85%] shadow-2xs group relative">
                           {msg.isVoice && (
                             <div className="flex items-center gap-1.5 text-xs text-blue-600 mb-1.5 font-semibold pb-1 border-b border-slate-200">
                               <Volume2 className="w-3.5 h-3.5" />
                               <span>תמלול קולי</span>
                             </div>
                           )}
-                          <p className="whitespace-pre-line break-words">{msg.text}</p>
-                          <div className="text-[10px] text-slate-400 mt-1 text-left">
-                            {msg.timestamp}
-                          </div>
+
+                          {editingMsgId === msg.id ? (
+                            <div className="space-y-2 min-w-[240px] sm:min-w-[340px]">
+                              <textarea
+                                rows={2}
+                                value={editingMsgText}
+                                onChange={(e) => setEditingMsgText(e.target.value)}
+                                className="w-full p-2 text-sm bg-white border border-blue-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 resize-none"
+                              />
+                              <div className="flex items-center justify-end gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingMsgId(null)}
+                                  className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-200/70 cursor-pointer"
+                                >
+                                  ביטול
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveEditedUserMessage(msg.id)}
+                                  className="px-3 py-1 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1 cursor-pointer shadow-2xs"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>עדכן ושלח</span>
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              <p className="whitespace-pre-line break-words">{msg.text}</p>
+                              <div className="flex items-center justify-between gap-3 mt-1.5 pt-1 border-t border-slate-200/60">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingMsgId(msg.id);
+                                    setEditingMsgText(msg.text.replace(/^🎙️\s*"?|"?$/g, ""));
+                                  }}
+                                  className="text-[11px] text-slate-500 hover:text-blue-600 font-medium flex items-center gap-1 cursor-pointer transition-colors"
+                                  title="ערוך את ההודעה שתיעדת"
+                                >
+                                  <Pencil className="w-3 h-3" />
+                                  <span>ערוך הודעה</span>
+                                </button>
+                                <span className="text-[10px] text-slate-400">{msg.timestamp}</span>
+                              </div>
+                            </>
+                          )}
                         </div>
                       ) : (
                         /* Model / Assistant Message: Gemini Canvas Style */
@@ -1278,7 +1967,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                               <p className="whitespace-pre-line break-words">{msg.text}</p>
                             </div>
 
-                            {/* Render Confirmed Written Entries for this turn (in chronological order) */}
+                            {/* Render Confirmed Written Entries for this turn (with Edit & Undo support) */}
                             {uniqueWrittenForMsg.length > 0 && (
                               <div className="w-full space-y-2 pt-1">
                                 {uniqueWrittenForMsg.map((w) => (
@@ -1287,6 +1976,10 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                                       written={w}
                                       currentUser={currentUser}
                                       onUndo={(id, entry) => handleUndoEntry(id, entry || w)}
+                                      onEditWritten={(cardId, updates, entry) =>
+                                        handleEditWrittenEntry(cardId, updates, entry || w)
+                                      }
+                                      isSavingWrittenEdit={savingEditCardId === w.id}
                                       isUndoing={loading}
                                     />
                                   </HoursErrorBoundary>
@@ -1305,7 +1998,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                 });
               })()}
 
-              {/* Pending Active Drafts ALWAYS pinned at the VERY BOTTOM of the feed (never pushed up!) */}
+              {/* Pending Active Drafts ALWAYS pinned at the VERY BOTTOM of the feed */}
               {activeDrafts.length > 0 && (
                 <div className="w-full space-y-3 pt-1 sm:pt-2 pr-0 sm:pr-11">
                   {activeDrafts.length > 1 && (
@@ -1329,9 +2022,20 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
 
               {/* Loading Indicator */}
               {loading && (
-                <div className="flex items-center gap-3 p-3.5 rounded-2xl bg-white border border-slate-200 max-w-full sm:max-w-[75%] shadow-xs animate-pulse">
-                  <div className="w-4 h-4 rounded-full border-2 border-blue-600 border-t-transparent animate-spin flex-shrink-0" />
-                  <span className="text-xs text-slate-700 font-medium">{loadingStep}</span>
+                <div className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-white border border-slate-200 max-w-full sm:max-w-[80%] shadow-xs animate-pulse">
+                  <div className="flex items-center gap-3">
+                    <div className="w-4 h-4 rounded-full border-2 border-blue-600 border-t-transparent animate-spin flex-shrink-0" />
+                    <span className="text-xs text-slate-700 font-medium">{loadingStep}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleNewChat}
+                    className="px-2.5 py-1 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[11px] font-bold flex items-center gap-1 shrink-0 cursor-pointer"
+                    title="פתח תיעוד נוסף במקביל בזמן שהבקשה הזו ממשיכה לרוץ ברקע"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>תעד עוד במקביל</span>
+                  </button>
                 </div>
               )}
 
@@ -1425,12 +2129,12 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
 
           {/* Floating Pill Input Bar (Gemini Style - Clean & Auto-expanding) */}
           <div className="w-full rounded-[28px] sm:rounded-[32px] bg-[#f0f4f9] hover:bg-[#e9eef6] focus-within:bg-white focus-within:shadow-xl focus-within:border-slate-300 border border-slate-200/90 transition-all p-2 sm:p-2.5 pl-3 sm:pl-3.5 flex items-end gap-2 sm:gap-2.5 shadow-2xs">
-            {/* Plus icon on right (start) */}
+            {/* Plus icon on right (start) - Always enabled so user can open a parallel session anytime */}
             <button
               type="button"
               onClick={handleNewChat}
-              className="btn-icon-subtle w-9 h-9 rounded-full bg-white hover:bg-slate-200 flex items-center justify-center text-slate-600 shrink-0 shadow-xs cursor-pointer self-end mb-0.5 transition-colors"
-              title="נקה ופתח שיחה חדשה"
+              className="btn-icon-subtle w-9 h-9 rounded-full bg-white hover:bg-blue-600 hover:text-white flex items-center justify-center text-blue-600 border border-blue-200 shrink-0 shadow-xs cursor-pointer self-end mb-0.5 transition-colors"
+              title="פתח סשן תיעוד חדש במקביל (+ הסשן הנוכחי ימשיך לרוץ ברקע)"
             >
               <Plus className="w-4 h-4" />
             </button>
@@ -1452,6 +2156,8 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
               placeholder={
                 isRecording
                   ? "מקליט כעת (עד 2 דקות)..."
+                  : loading
+                  ? "מעבד בסשן זה... לחץ על + מימין לפתיחת תיעוד נוסף במקביל"
                   : isGuyOrAdmin
                   ? "שאל על שעות, בדוק תיעודי עובדים, בקש ריכוז שבועי או הזן דיווח..."
                   : "הזן דיווח טכני מפורט או הקלט הודעה קולית..."
@@ -1490,7 +2196,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
           </div>
 
           <div className="text-center mt-1.5 sm:mt-2 text-[10px] sm:text-[11px] text-slate-400 truncate px-2">
-            שעות לחיוב לקוח &middot; סנכרון אוטומטי ל-Microsoft Lists ו-SharePoint Excel
+            שעות לחיוב לקוח &middot; לחיצה על + פותחת סשן במקביל &middot; סנכרון ל-Lists ו-Excel
           </div>
         </div>
       </div>

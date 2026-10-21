@@ -1944,6 +1944,217 @@ export async function deleteSharePointListItem(
 }
 
 /**
+ * Update an existing item in Microsoft Lists (used when editing logged hours or description)
+ */
+export async function updateSharePointListItem(
+  listItemId?: string,
+  updates?: {
+    customerName?: string;
+    date?: string;
+    durationHours?: number;
+    description?: string;
+    workType?: string;
+    startTime?: string;
+    endTime?: string;
+    ticketNumber?: string;
+    employeeName?: string;
+    employeeEmail?: string;
+  },
+  env?: any,
+  criteria?: {
+    customerName?: string;
+    date?: string;
+    employeeName?: string;
+    oldDescription?: string;
+  }
+): Promise<{ success: boolean; updatedId?: string; webUrl?: string; error?: string }> {
+  try {
+    if (!updates) return { success: false, error: "לא סופקו נתונים לעדכון" };
+
+    const listInfo = await resolveSharePointList(env);
+    const { siteId, listId, columnMap, columns, webUrl: listWebUrl } = listInfo;
+
+    let targetId = listItemId ? String(listItemId).trim() : "";
+    if (targetId.startsWith("audit_") || targetId.startsWith("log_") || targetId.startsWith("sp_scan_")) {
+      targetId = "";
+    }
+
+    // If no direct listItemId, find matching item by criteria
+    if (!targetId && criteria && (criteria.customerName || criteria.date || criteria.oldDescription)) {
+      const fetchUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=45&$orderby=lastModifiedDateTime desc`;
+      const itemsRes = await fetchGraph(fetchUrl, { method: "GET" }, env);
+      if (itemsRes.ok) {
+        const itemsData: any = await itemsRes.json();
+        const items = itemsData.value || [];
+
+        const cCust = normalizeColString(criteria.customerName || updates.customerName || "");
+        const cDate = String(criteria.date || updates.date || "").trim();
+        const cDesc = normalizeColString(criteria.oldDescription || "");
+
+        for (const item of items) {
+          const f = item.fields || {};
+          const title = normalizeColString(f.Title || "");
+          const custVal = normalizeColString(f[columnMap["customer"] || ""] || "");
+          const dateVal = String(f[columnMap["date"] || ""] || "").trim();
+          const descVal = normalizeColString(f[columnMap["description"] || ""] || "");
+
+          const custMatches = !cCust || title.includes(cCust) || custVal.includes(cCust) || cCust.includes(custVal);
+          const dateMatches =
+            !cDate ||
+            dateVal.includes(cDate) ||
+            (cDate.split("-").length === 3 && dateVal.includes(cDate.split("-")[2]));
+          const descMatches =
+            !cDesc ||
+            descVal.includes(cDesc.slice(0, 12)) ||
+            title.includes(cDesc.slice(0, 12)) ||
+            cDesc.includes(descVal.slice(0, 12));
+
+          if (custMatches && (dateMatches || descMatches)) {
+            targetId = String(item.id);
+            break;
+          }
+        }
+      }
+    }
+
+    if (!targetId) {
+      return { success: false, error: "לא נמצאה רשומה מתאימה לעדכון ב-Microsoft Lists" };
+    }
+
+    const fieldsToPatch: Record<string, any> = {};
+
+    const customer = (updates.customerName || criteria?.customerName || "").trim();
+    const desc = typeof updates.description === "string" ? updates.description.trim() : undefined;
+
+    if (desc !== undefined || customer) {
+      const effectiveCust = customer || "לקוח";
+      const effectiveDesc = desc || criteria?.oldDescription || "פעילות שירות";
+      if (updates.ticketNumber) {
+        const cleanTicket = String(updates.ticketNumber).replace(/^(טיקט|ticket)\s*/i, "").trim();
+        fieldsToPatch["Title"] = `טיקט ${cleanTicket} - ${effectiveCust}`;
+      } else {
+        const cleanDesc = effectiveDesc.length <= 40 ? effectiveDesc : effectiveDesc.substring(0, 35);
+        fieldsToPatch["Title"] = `${effectiveCust} - ${cleanDesc}`;
+      }
+      if (columnMap["title"] && columnMap["title"] !== "Title") {
+        fieldsToPatch[columnMap["title"]] = fieldsToPatch["Title"];
+      }
+    }
+
+    if (typeof updates.durationHours === "number" && !isNaN(updates.durationHours)) {
+      const durCol = columnMap["duration"];
+      if (durCol) {
+        fieldsToPatch[durCol] = Number(updates.durationHours.toFixed(2));
+      }
+    }
+
+    if (desc !== undefined) {
+      const descCol = columnMap["description"];
+      if (descCol && descCol !== columnMap["workType"]) {
+        fieldsToPatch[descCol] = desc;
+      }
+    }
+
+    // Prepare ISO date for DateTime columns if needed
+    const rawDate = updates.date || criteria?.date || new Date().toISOString().split("T")[0];
+    let isoDate = rawDate;
+    const matchIso = rawDate.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (matchIso) {
+      isoDate = `${matchIso[1]}-${matchIso[2].padStart(2, "0")}-${matchIso[3].padStart(2, "0")}`;
+    }
+
+    if (updates.date && columnMap["date"]) {
+      const dateColDef = columns.find((c) => c.name === columnMap["date"]);
+      fieldsToPatch[columnMap["date"]] =
+        dateColDef?.type === "dateTime" ? `${isoDate}T00:00:00Z` : isoDate;
+    }
+
+    if (updates.startTime && columnMap["startTime"]) {
+      const stColDef = columns.find((c) => c.name === columnMap["startTime"]);
+      const sVal = updates.startTime.trim();
+      fieldsToPatch[columnMap["startTime"]] =
+        stColDef?.type === "dateTime" && /^\d{1,2}:\d{2}$/.test(sVal)
+          ? `${isoDate}T${sVal.padStart(5, "0")}:00Z`
+          : sVal;
+    }
+
+    if (updates.endTime && columnMap["endTime"]) {
+      const etColDef = columns.find((c) => c.name === columnMap["endTime"]);
+      const eVal = updates.endTime.trim();
+      fieldsToPatch[columnMap["endTime"]] =
+        etColDef?.type === "dateTime" && /^\d{1,2}:\d{2}$/.test(eVal)
+          ? `${isoDate}T${eVal.padStart(5, "0")}:00Z`
+          : eVal;
+    }
+
+    if (updates.workType && columnMap["workType"]) {
+      const wtColDef = columns.find((c) => c.name === columnMap["workType"]);
+      const normWt = normalizeListWorkType(updates.workType);
+      const choices = wtColDef?.choice?.choices || [];
+      if (choices.length > 0) {
+        const matched =
+          choices.find((ch) => normalizeColString(ch) === normalizeColString(normWt)) ||
+          choices.find((ch) => normalizeColString(ch).includes(normalizeColString(normWt)));
+        if (matched) {
+          fieldsToPatch[columnMap["workType"]] = matched;
+        }
+      } else {
+        fieldsToPatch[columnMap["workType"]] = normWt;
+      }
+    }
+
+    const patchUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items/${encodeURIComponent(targetId)}/fields`;
+    let res = await fetchGraph(
+      patchUrl,
+      {
+        method: "PATCH",
+        body: JSON.stringify(fieldsToPatch),
+      },
+      env
+    );
+
+    if (!res.ok) {
+      // Fallback: minimal fields (Title, duration, description)
+      const minimalPatch: Record<string, any> = {};
+      if (fieldsToPatch["Title"]) minimalPatch["Title"] = fieldsToPatch["Title"];
+      if (columnMap["duration"] && fieldsToPatch[columnMap["duration"]] !== undefined) {
+        minimalPatch[columnMap["duration"]] = fieldsToPatch[columnMap["duration"]];
+      }
+      if (columnMap["description"] && fieldsToPatch[columnMap["description"]] !== undefined) {
+        minimalPatch[columnMap["description"]] = fieldsToPatch[columnMap["description"]];
+      }
+      res = await fetchGraph(
+        patchUrl,
+        {
+          method: "PATCH",
+          body: JSON.stringify(minimalPatch),
+        },
+        env
+      );
+    }
+
+    if (!res.ok) {
+      const errTxt = await res.text().catch(() => "");
+      return {
+        success: false,
+        error: `שגיאה בעדכון רשומה ב-Microsoft Lists (${res.status}): ${errTxt}`,
+      };
+    }
+
+    return {
+      success: true,
+      updatedId: targetId,
+      webUrl: `${listWebUrl}/DispForm.aspx?ID=${targetId}`,
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || String(err),
+    };
+  }
+}
+
+/**
  * Diagnostic inspector for Microsoft Lists:
  * Returns status, site info, list details, columns, and recent items
  */

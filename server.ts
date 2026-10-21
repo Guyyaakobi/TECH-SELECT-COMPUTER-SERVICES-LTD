@@ -4807,7 +4807,7 @@ ${!isAteraCustomer ? `
           upn: bodyUser.upn || bodyUser.username || reqUser.upn || reqUser.username || bodyUser.email || reqUser.email || "g@tech-select.co.il",
           isAdmin: typeof bodyUser.isAdmin === "boolean" ? bodyUser.isAdmin : (reqUser.isAdmin ?? true),
         };
-        const { message, audio, history, action, cardId, draftData, activeDrafts, undoData, writtenEntries } =
+        const { message, audio, history, action, cardId, draftData, editData, activeDrafts, undoData, writtenEntries } =
           req.body || {};
         const requestEnv = { ...process.env, userToken: (req as any).rawToken };
         const result = await processAssistantChat(
@@ -4819,6 +4819,7 @@ ${!isAteraCustomer ? `
             action,
             cardId,
             draftData,
+            editData,
             activeDrafts,
             undoData,
             writtenEntries,
