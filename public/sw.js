@@ -1,15 +1,14 @@
-// Service Worker for TECH-SELECT Hours PWA ("תיעוד שעות")
+// Service Worker for TECH-SELECT Hours PWA ("שעות לחיוב לקוח")
 // Versioned cache name - updates on each deploy
-const CACHE_VERSION = "techselect-hours-v2026-09-30-v2";
+const CACHE_VERSION = "techselect-hours-v2026-10-26-v6";
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 
-// Immutable or pre-cached static assets
+// Immutable icon/manifest assets only (never precache JS bundles)
 const PRECACHE_ASSETS = [
   "/manifest.json",
   "/favicon.svg",
   "/pwa-192x192.png",
-  "/pwa-512x512.png",
-  "/pwa-maskable-512x512.png"
+  "/pwa-192x192.png"
 ];
 
 // Helper: Check if a request is an API or auth request that MUST NEVER be cached
@@ -18,8 +17,15 @@ function isNetworkOnlyRequest(request) {
 
   const url = new URL(request.url);
 
-  // 1. Never cache /api/* endpoints
-  if (url.pathname.startsWith("/api/")) return true;
+  // 1. Never cache /api/* endpoints or Vite dev module paths
+  if (
+    url.pathname.startsWith("/api/") ||
+    url.pathname.startsWith("/src/") ||
+    url.pathname.startsWith("/node_modules/") ||
+    url.pathname.startsWith("/@")
+  ) {
+    return true;
+  }
 
   // 2. Never cache auth/login/token endpoints or external OAuth/Graph services
   if (
@@ -40,24 +46,6 @@ function isNetworkOnlyRequest(request) {
   }
 
   return false;
-}
-
-// Helper: Check if a request is for a static asset
-function isStaticAsset(request) {
-  const url = new URL(request.url);
-
-  // Only consider same-origin or static CDNs
-  if (url.origin !== self.location.origin) {
-    return false;
-  }
-
-  // File extension checks
-  const staticExtensions = [
-    ".js", ".css", ".svg", ".png", ".jpg", ".jpeg",
-    ".webp", ".woff", ".woff2", ".ttf", ".ico", ".json"
-  ];
-
-  return staticExtensions.some((ext) => url.pathname.endsWith(ext));
 }
 
 self.addEventListener("install", (event) => {
@@ -91,49 +79,36 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   const { request } = event;
 
-  // 1. NEVER cache /api/* or auth requests - purely network only
+  // 1. NEVER cache /api/*, dev modules, or auth requests - purely network only
   if (isNetworkOnlyRequest(request)) {
-    return; // Pass through to standard browser network request
-  }
-
-  // 2. Only cache GET requests for static assets
-  if (isStaticAsset(request)) {
-    event.respondWith(
-      caches.open(STATIC_CACHE).then(async (cache) => {
-        const cachedResponse = await cache.match(request);
-        if (cachedResponse) {
-          // Fetch updated version in background to keep cache fresh
-          fetch(request)
-            .then((networkResponse) => {
-              if (networkResponse && networkResponse.status === 200) {
-                cache.put(request, networkResponse.clone());
-              }
-            })
-            .catch(() => {});
-          return cachedResponse;
-        }
-
-        try {
-          const networkResponse = await fetch(request);
-          if (networkResponse && networkResponse.status === 200) {
-            cache.put(request, networkResponse.clone());
-          }
-          return networkResponse;
-        } catch (fetchErr) {
-          return cachedResponse || Response.error();
-        }
-      })
-    );
     return;
   }
 
-  // 3. For HTML navigation documents, use network-first with cache fallback
-  if (request.mode === "navigate") {
-    event.respondWith(
-      fetch(request).catch(() => {
-        return caches.match("/");
+  // 2. Network-First for all navigation, HTML, JS, and CSS so new deploys always show immediately
+  event.respondWith(
+    fetch(request)
+      .then((networkResponse) => {
+        if (
+          networkResponse &&
+          networkResponse.status === 200 &&
+          request.method === "GET" &&
+          new URL(request.url).origin === self.location.origin
+        ) {
+          const responseClone = networkResponse.clone();
+          caches.open(STATIC_CACHE).then((cache) => {
+            cache.put(request, responseClone).catch(() => {});
+          });
+        }
+        return networkResponse;
       })
-    );
-    return;
-  }
+      .catch(async () => {
+        const cached = await caches.match(request);
+        if (cached) return cached;
+        if (request.mode === "navigate") {
+          const fallback = await caches.match("/");
+          if (fallback) return fallback;
+        }
+        return Response.error();
+      })
+  );
 });

@@ -234,6 +234,7 @@ export async function authenticateHoursRequest(
       (verifiedPayload.preferred_username as string) ||
       (verifiedPayload.email as string) ||
       (verifiedPayload.upn as string) ||
+      (verifiedPayload.unique_name as string) ||
       ""
     ).toLowerCase();
 
