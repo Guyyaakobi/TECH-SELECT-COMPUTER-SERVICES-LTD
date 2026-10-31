@@ -293,20 +293,26 @@ export const MyLoggedHoursModal: React.FC<MyLoggedHoursModalProps> = ({
         {summary && (
           <div className="p-2.5 sm:p-4 sm:px-6 bg-slate-50/80 border-b border-slate-200/80 shrink-0">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
-              {/* Today Card - Highlighted */}
-              <div className="p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white shadow-sm">
-                <div className="flex items-center justify-between text-[11px] sm:text-xs text-emerald-100 mb-0.5 sm:mb-1">
+              {/* Today Card - Highlighted with 7-Hour Daily Quota Status */}
+              <div
+                className={`p-2.5 sm:p-3.5 rounded-xl sm:rounded-2xl text-white shadow-sm ${
+                  summary.todayHours >= 7
+                    ? "bg-gradient-to-br from-emerald-600 to-teal-700"
+                    : "bg-gradient-to-br from-amber-500 via-orange-500 to-amber-600"
+                }`}
+              >
+                <div className="flex items-center justify-between text-[11px] sm:text-xs text-white/90 mb-0.5 sm:mb-1">
                   <span className="font-semibold truncate">היום ({summary.todayDisplayDate})</span>
-                  <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-200 shrink-0" />
+                  <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white/80 shrink-0" />
                 </div>
                 <div className="text-lg sm:text-2xl font-black tracking-tight leading-tight">
                   {summary.todayHours}{" "}
-                  <span className="text-[11px] sm:text-xs font-normal text-emerald-100">שעות</span>
+                  <span className="text-[11px] sm:text-xs font-normal text-white/90">/ 7 שעות</span>
                 </div>
-                <div className="text-[10px] sm:text-[11px] text-emerald-100 font-medium mt-0.5 truncate">
-                  {summary.todayEntriesCount === 0
-                    ? "טרם נרשם תיעוד היום"
-                    : `${summary.todayEntriesCount} תיעודים היום`}
+                <div className="text-[10px] sm:text-[11px] text-white/95 font-semibold mt-0.5 truncate">
+                  {summary.todayHours >= 7
+                    ? `🏆 הגעת למכסה היומית! (${summary.todayEntriesCount} תיעודים)`
+                    : `⚡ חסרות ${Math.max(0, Math.round((7 - summary.todayHours) * 100) / 100)} ש׳ למכסה היומית`}
                 </div>
               </div>
 

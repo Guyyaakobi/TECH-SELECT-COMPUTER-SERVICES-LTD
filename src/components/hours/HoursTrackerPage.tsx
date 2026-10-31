@@ -24,6 +24,8 @@ import {
   initMsal,
   getApiToken,
   setCachedApiToken,
+  clearCachedApiToken,
+  isJwtTokenExpired,
   loginWithMicrosoft,
   logoutFromMicrosoft,
   purgeAllMsalAndHoursAuthStorage,
@@ -60,6 +62,10 @@ export const HoursTrackerPage: React.FC = () => {
   const [showDailySummaryModal, setShowDailySummaryModal] = useState<boolean>(false);
   const [showCentralLogModal, setShowCentralLogModal] = useState<boolean>(false);
   const [showMyLoggedHoursModal, setShowMyLoggedHoursModal] = useState<boolean>(false);
+  const [quotaRefreshTrigger, setQuotaRefreshTrigger] = useState<number>(0);
+
+  // Generation counter so clicking Logout at ANY stage immediately cancels any in-flight initAuth
+  const authGenRef = useRef<number>(0);
 
   // Modern Color Palette Switcher State ("cyan" = Deep Cyber, "amber" = Obsidian Amber)
   const [colorPalette, setColorPalette] = useState<"cyan" | "amber">(() => {
@@ -115,6 +121,7 @@ export const HoursTrackerPage: React.FC = () => {
   useEffect(() => {
     if (isInitializingRef.current) return;
     isInitializingRef.current = true;
+    const myGen = ++authGenRef.current;
 
     async function initAuth() {
       try {
@@ -122,17 +129,36 @@ export const HoursTrackerPage: React.FC = () => {
         setErrorMessage(null);
         setMissingConfig(null);
 
+        // Fast check: if user explicitly logged out and there is no OAuth callback in URL hash/search,
+        // show the clean Login screen immediately without waiting!
+        const hasAuthCallbackInUrl =
+          typeof window !== "undefined" &&
+          (window.location.hash.includes("code=") ||
+            window.location.hash.includes("id_token=") ||
+            window.location.hash.includes("access_token=") ||
+            window.location.search.includes("code="));
+
+        const urlParamsInitial = new URLSearchParams(window.location.search);
+        const wasLoggedOutInitially =
+          !hasAuthCallbackInUrl &&
+          (urlParamsInitial.get("logged_out") === "1" ||
+            sessionStorage.getItem("hours_logged_out_explicitly") === "true" ||
+            Boolean(localStorage.getItem("hours_logged_out_explicitly")));
+
         // Step 1: Load Azure configuration at RUNTIME from server endpoint
         setLoadingMessage("טוען הגדרות שרת מאובטחות (/api/hours/config)...");
         let config: AzureHoursConfig;
         try {
           config = await fetchHoursConfig();
         } catch (fetchErr: any) {
+          if (authGenRef.current !== myGen) return;
           console.error("[HoursTracker] Failed to load server config:", fetchErr);
           setLoading(false);
           setErrorMessage(fetchErr?.message || "נכשלה טעינת הגדרות שרת (/api/hours/config).");
           return;
         }
+
+        if (authGenRef.current !== myGen) return;
 
         // Validate required config attributes
         if (!config.tenantId) {
@@ -152,11 +178,26 @@ export const HoursTrackerPage: React.FC = () => {
         // Step 2: Initialize MSAL with server-provided runtime config
         setLoadingMessage("מאתחל מודול אימות Microsoft 365...");
         const pca = await initMsal(config);
+        if (authGenRef.current !== myGen) return;
         setPcaInstance(pca);
+
+        // If user explicitly logged out, immediately stop here and show login screen
+        if (wasLoggedOutInitially) {
+          purgeAllMsalAndHoursAuthStorage(pca);
+          if (urlParamsInitial.has("logged_out")) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+          setAccount(null);
+          setServerUser(null);
+          setShowFallbackButton(true);
+          setLoading(false);
+          return;
+        }
 
         // Step 3: Handle any incoming redirect response from Microsoft login
         setLoadingMessage("בודק אימות מול Microsoft 365...");
         const redirectResponse = await pca.handleRedirectPromise();
+        if (authGenRef.current !== myGen) return;
 
         // Check if the user explicitly clicked Logout (either via URL query param or storage flag)
         const urlParams = new URLSearchParams(window.location.search);
@@ -201,10 +242,10 @@ export const HoursTrackerPage: React.FC = () => {
             currentAccount = pca.getActiveAccount() || accounts[0];
             pca.setActiveAccount(currentAccount);
           } else {
-            // Check if user has an active persistent session from prior logins
+            // Check if user has a valid non-expired persistent token from prior login
             const persistentToken = localStorage.getItem("hours_persistent_auth_token_v3");
             const rawSavedUser = localStorage.getItem("hours_saved_server_user_v2");
-            if (persistentToken && rawSavedUser) {
+            if (persistentToken && rawSavedUser && !isJwtTokenExpired(persistentToken, 120)) {
               try {
                 const parsedUser = JSON.parse(rawSavedUser);
                 if (parsedUser && parsedUser.email) {
@@ -213,9 +254,13 @@ export const HoursTrackerPage: React.FC = () => {
                   return;
                 }
               } catch {}
+            } else if (persistentToken && isJwtTokenExpired(persistentToken, 120)) {
+              clearCachedApiToken();
             }
           }
         }
+
+        if (authGenRef.current !== myGen) return;
 
         // Step 4: When there is no signed-in user, redirect automatically to Microsoft 365 sign-in
         if (!currentAccount) {
@@ -224,6 +269,7 @@ export const HoursTrackerPage: React.FC = () => {
             await loginWithMicrosoft(pca, config.apiScope);
             return;
           } catch (redirectErr: any) {
+            if (authGenRef.current !== myGen) return;
             console.error("[HoursTracker] Auto-redirect failed:", redirectErr);
             setShowFallbackButton(true);
             setLoading(false);
@@ -239,9 +285,10 @@ export const HoursTrackerPage: React.FC = () => {
         setLoadingMessage("מאמת הרשאות וטוען פרטי עובד מהשרת...");
 
         try {
-          const token = await getApiToken(pca, config.apiScope);
-          setCachedApiToken(token);
-          const response = await fetch("/api/hours/me", {
+          let token = await getApiToken(pca, config.apiScope);
+          if (authGenRef.current !== myGen) return;
+
+          let response = await fetch("/api/hours/me", {
             method: "GET",
             headers: {
               Authorization: `Bearer ${token}`,
@@ -249,21 +296,54 @@ export const HoursTrackerPage: React.FC = () => {
             },
           });
 
+          // If cached token got 401, force refresh once via MSAL silent token acquisition
+          if (response.status === 401) {
+            clearCachedApiToken();
+            token = await getApiToken(pca, config.apiScope, true);
+            if (authGenRef.current !== myGen) return;
+            response = await fetch("/api/hours/me", {
+              method: "GET",
+              headers: {
+                Authorization: `Bearer ${token}`,
+                "Content-Type": "application/json",
+              },
+            });
+          }
+
+          if (authGenRef.current !== myGen) return;
+
           if (!response.ok) {
+            if (response.status === 401) {
+              clearCachedApiToken();
+              throw new Error("פג תוקף הרשאת החיבור מול Microsoft 365 (401). נא להתחבר מחדש.");
+            }
             const errData = await response.json().catch(() => ({}));
             throw new Error(
               errData.message || errData.error || `אימות שרת נכשל (קוד שגיאה: ${response.status})`
             );
           }
 
+          setCachedApiToken(token);
           const userData: ServerUserInfo = await response.json();
+          if (authGenRef.current !== myGen) return;
           setServerUser(userData);
           try {
             localStorage.setItem("hours_saved_server_user_v2", JSON.stringify(userData));
           } catch {}
         } catch (apiErr: any) {
+          if (authGenRef.current !== myGen) return;
           console.warn("[HoursTracker] /api/hours/me info note:", apiErr);
-          if (currentAccount) {
+          const isAuthExpired =
+            String(apiErr?.message || "").includes("401") ||
+            String(apiErr?.message || "").includes("פג תוקף");
+
+          if (isAuthExpired) {
+            clearCachedApiToken();
+            setAccount(null);
+            setServerUser(null);
+            setShowFallbackButton(true);
+            setErrorMessage("פג תוקף החיבור ל-Microsoft 365. אנא לחץ על כפתור ההתחברות כדי להתחבר מחדש.");
+          } else if (currentAccount) {
             const accOid = currentAccount.localAccountId || currentAccount.homeAccountId?.split(".")[0] || "";
             const fallbackUser: ServerUserInfo = {
               name: currentAccount.name || (currentAccount.username ? currentAccount.username.split("@")[0] : "עובד"),
@@ -283,13 +363,16 @@ export const HoursTrackerPage: React.FC = () => {
           }
         }
       } catch (err: any) {
+        if (authGenRef.current !== myGen) return;
         console.error("[HoursTracker] Auth initialization error:", err);
         setShowFallbackButton(true);
         setErrorMessage(
           err?.message || "אירעה שגיאה בעת ההתחברות ל-Microsoft 365. אנא ודא שהינך מחובר לחשבון הארגוני ונסה שוב."
         );
       } finally {
-        setLoading(false);
+        if (authGenRef.current === myGen) {
+          setLoading(false);
+        }
       }
     }
 
@@ -318,27 +401,35 @@ export const HoursTrackerPage: React.FC = () => {
     }
   };
 
-  const handleLogout = async () => {
+  // Instant, unstoppable Logout handler usable at ANY stage (loading, active chat, error, etc.)
+  const handleLogout = async (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    // Cancel any in-flight initAuth immediately
+    authGenRef.current += 1;
+
+    setShowMyLoggedHoursModal(false);
+    setShowDailySummaryModal(false);
+    setShowCentralLogModal(false);
+    setShowTestPanel(false);
+    setErrorMessage(null);
+    setAccount(null);
+    setServerUser(null);
+    setShowFallbackButton(true);
+    setLoading(false);
+
     try {
-      setLoading(true);
-      setErrorMessage(null);
-      setLoadingMessage("מנקה נתוני חיבור SSO 365 ומתנתק מהמערכת...");
-      setShowMyLoggedHoursModal(false);
-      setShowDailySummaryModal(false);
-      setShowCentralLogModal(false);
-      setShowTestPanel(false);
-      setAccount(null);
-      setServerUser(null);
       await logoutFromMicrosoft(pcaInstance || undefined);
-      setShowFallbackButton(true);
-      setLoading(false);
     } catch (err: any) {
       console.error("[HoursTracker] Logout error:", err);
+      clearCachedApiToken();
       purgeAllMsalAndHoursAuthStorage(pcaInstance || undefined);
-      setAccount(null);
-      setServerUser(null);
-      setShowFallbackButton(true);
-      setLoading(false);
+      try {
+        sessionStorage.setItem("hours_logged_out_explicitly", "true");
+        localStorage.setItem("hours_logged_out_explicitly", String(Date.now()));
+      } catch {}
     }
   };
 
@@ -384,13 +475,13 @@ export const HoursTrackerPage: React.FC = () => {
       dir="rtl"
       className="min-h-[100dvh] h-[100dvh] w-full bg-[#f8fafd] text-slate-800 flex flex-col font-sans selection:bg-blue-600 selection:text-white relative overflow-hidden"
     >
-      {/* Soft Ethereal Blue Glow in the Center (Exactly like the video) */}
+      {/* Soft Ethereal Blue Glow in the Center */}
       <div className="fixed inset-0 pointer-events-none z-0 flex items-center justify-center overflow-hidden">
         <div className="w-[36rem] sm:w-[46rem] h-[26rem] sm:h-[32rem] bg-gradient-to-tr from-sky-200/50 via-blue-100/45 to-indigo-100/30 rounded-full blur-3xl opacity-80" />
       </div>
 
-      {/* Top Header - Ultra-clean responsive navbar for mobile & desktop */}
-      <header className="relative z-20 h-14 border-b border-slate-200/80 bg-white/95 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between gap-2 shadow-2xs shrink-0">
+      {/* Top Header - Ultra-clean responsive navbar with ALWAYS-ACCESSIBLE Logout button */}
+      <header className="relative z-20 h-14 border-b border-slate-200/80 bg-white/95 backdrop-blur-md px-2.5 sm:px-6 flex items-center justify-between gap-2 shadow-2xs shrink-0">
         <div className="flex items-center gap-2 shrink-0 min-w-0">
           <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl sm:rounded-full bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] flex items-center justify-center text-white shadow-2xs shrink-0">
             <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
@@ -406,83 +497,105 @@ export const HoursTrackerPage: React.FC = () => {
           </div>
         </div>
 
-        {/* User Status & Actions - Single-line horizontal scroll on small phones */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5 overflow-x-auto no-scrollbar py-1 shrink-0 max-w-[72vw] sm:max-w-none">
+        {/* Right & Left Header Controls: Scrollable tools + Pinned Always-Visible Logout Button */}
+        <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-1 justify-end">
           {(account || serverUser) ? (
             <>
-              {/* "כמה תיעדתי היום" Button for EVERY User - Checks directly against Microsoft Lists */}
-              <button
-                onClick={() => setShowMyLoggedHoursModal(true)}
-                className="btn-hover-subtle text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl sm:rounded-full border border-emerald-300/90 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs transition-colors whitespace-nowrap shrink-0"
-                title="בדוק כמה שעות לחיוב לקוח תיעדת היום ובכל יום מתוך Microsoft Lists"
-              >
-                <ListChecks className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>כמה תיעדתי היום</span>
-              </button>
-
-              {/* Today's Hours Summary Button for Manager Guy & Admins */}
-              {isGuyOrAdmin && (
+              {/* Scrollable Action Pills */}
+              <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-1 min-w-0">
+                {/* "כמה תיעדתי היום" Button for EVERY User */}
                 <button
-                  onClick={() => setShowDailySummaryModal(true)}
-                  className="btn-hover-subtle text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl sm:rounded-full border border-blue-200 bg-blue-50/90 hover:bg-blue-100 text-blue-700 font-bold flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs transition-colors whitespace-nowrap shrink-0"
-                  title="דוח וריכוז שעות עבודה יומי לכל העובדים (מנהל)"
+                  type="button"
+                  onClick={() => setShowMyLoggedHoursModal(true)}
+                  className="btn-hover-subtle text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl sm:rounded-full border border-emerald-300/90 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs transition-colors whitespace-nowrap shrink-0"
+                  title="בדוק כמה שעות לחיוב לקוח תיעדת היום ובכל יום מתוך Microsoft Lists"
                 >
-                  <BarChart3 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                  <span className="sm:hidden">שעות היום</span>
-                  <span className="hidden sm:inline">שעות היום (מנהל)</span>
+                  <ListChecks className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>כמה תיעדתי היום</span>
                 </button>
-              )}
 
-              {/* Central LOG Button for Guy g@tech-select.co.il */}
-              {isGuy && (
-                <button
-                  onClick={() => setShowCentralLogModal(true)}
-                  className="btn-hover-subtle text-[11px] sm:text-xs px-2 sm:px-3 py-1.5 rounded-xl sm:rounded-full border border-indigo-200 bg-indigo-50/90 hover:bg-indigo-100 text-indigo-700 font-bold flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs transition-colors whitespace-nowrap shrink-0"
-                  title="יומן שעות מרכזי (LOG) לכל העובדים"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                  <span className="sm:hidden">LOG</span>
-                  <span className="hidden sm:inline">יומן מרכזי (LOG)</span>
-                </button>
-              )}
+                {/* Today's Hours Summary Button for Manager Guy & Admins */}
+                {isGuyOrAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setShowDailySummaryModal(true)}
+                    className="btn-hover-subtle text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl sm:rounded-full border border-blue-200 bg-blue-50/90 hover:bg-blue-100 text-blue-700 font-bold flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs transition-colors whitespace-nowrap shrink-0"
+                    title="דוח וריכוז שעות עבודה יומי לכל העובדים (מנהל)"
+                  >
+                    <BarChart3 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    <span className="sm:hidden">שעות היום</span>
+                    <span className="hidden sm:inline">שעות היום (מנהל)</span>
+                  </button>
+                )}
 
-              {serverUser?.isAdmin && (
-                <button
-                  onClick={() => setShowTestPanel(!showTestPanel)}
-                  className={`btn-hover-subtle text-xs p-1.5 sm:px-3 sm:py-1.5 rounded-xl sm:rounded-full border font-medium flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
-                    showTestPanel
-                      ? "bg-purple-600 text-white border-purple-600 shadow-2xs"
-                      : "bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300"
-                  }`}
-                  title="פאנל בדיקות טכני וסריקת מבנה קבצים"
-                >
-                  <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-                  <span className="hidden md:inline">מצב בדיקה טכני</span>
-                </button>
-              )}
+                {/* Central LOG Button for Guy g@tech-select.co.il */}
+                {isGuy && (
+                  <button
+                    type="button"
+                    onClick={() => setShowCentralLogModal(true)}
+                    className="btn-hover-subtle text-[11px] sm:text-xs px-2 sm:px-3 py-1.5 rounded-xl sm:rounded-full border border-indigo-200 bg-indigo-50/90 hover:bg-indigo-100 text-indigo-700 font-bold flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs transition-colors whitespace-nowrap shrink-0"
+                    title="יומן שעות מרכזי (LOG) לכל העובדים"
+                  >
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                    <span className="sm:hidden">LOG</span>
+                    <span className="hidden sm:inline">יומן מרכזי (LOG)</span>
+                  </button>
+                )}
 
-              <div className="flex items-center gap-1.5 sm:gap-2 text-right bg-slate-50 border border-slate-200/80 rounded-full p-1 sm:py-1 sm:px-3 shadow-2xs shrink-0">
-                <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
-                  {displayName.charAt(0)}
+                {serverUser?.isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setShowTestPanel(!showTestPanel)}
+                    className={`btn-hover-subtle text-xs p-1.5 sm:px-3 sm:py-1.5 rounded-xl sm:rounded-full border font-medium flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+                      showTestPanel
+                        ? "bg-purple-600 text-white border-purple-600 shadow-2xs"
+                        : "bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300"
+                    }`}
+                    title="פאנל בדיקות טכני וסריקת מבנה קבצים"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden md:inline">מצב בדיקה טכני</span>
+                  </button>
+                )}
+
+                <div className="hidden sm:flex items-center gap-1.5 sm:gap-2 text-right bg-slate-50 border border-slate-200/80 rounded-full p-1 sm:py-1 sm:px-3 shadow-2xs shrink-0">
+                  <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                    {displayName.charAt(0)}
+                  </div>
+                  <span className="text-xs font-medium text-slate-800 hidden md:inline whitespace-nowrap">
+                    {displayName}
+                  </span>
                 </div>
-                <span className="text-xs font-medium text-slate-800 hidden md:inline whitespace-nowrap">
-                  {displayName}
-                </span>
               </div>
 
+              {/* PINNED LOGOUT BUTTON: Outside scroll container, NEVER disabled, ALWAYS clickable */}
               <button
+                type="button"
                 onClick={handleLogout}
-                disabled={loading}
-                className="btn-icon-subtle p-1.5 rounded-full text-xs font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 border border-transparent hover:border-red-200 cursor-pointer shrink-0"
-                title="התנתק"
+                className="btn-hover-subtle px-2.5 sm:px-3 py-1.5 rounded-xl sm:rounded-full text-[11px] sm:text-xs font-bold text-red-600 hover:text-white bg-red-50/90 hover:bg-red-600 border border-red-200 hover:border-red-600 flex items-center gap-1.5 cursor-pointer shrink-0 shadow-2xs transition-all"
+                title="התנתק / יציאה מהחשבון והחלפת משתמש בכל שלב"
               >
-                <LogOut className="w-3.5 h-3.5" />
+                <LogOut className="w-3.5 h-3.5 shrink-0" />
+                <span>יציאה</span>
               </button>
             </>
           ) : (
-            <div className="flex items-center gap-2 text-xs text-slate-500 bg-white border border-slate-200 px-3 py-1 rounded-full shadow-2xs whitespace-nowrap">
-              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-              <span>נדרש זיהוי עובד</span>
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-2 text-xs text-slate-500 bg-white border border-slate-200 px-3 py-1 rounded-full shadow-2xs whitespace-nowrap">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                <span>נדרש זיהוי עובד</span>
+              </div>
+              {loading && (
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="px-2.5 py-1.5 rounded-xl sm:rounded-full text-[11px] font-bold text-red-600 hover:text-white bg-red-50 hover:bg-red-600 border border-red-200 flex items-center gap-1 cursor-pointer shrink-0 transition-all"
+                  title="עצור חיבור אוטומטי והתנתק"
+                >
+                  <LogOut className="w-3.5 h-3.5 shrink-0" />
+                  <span>יציאה / איפוס</span>
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -495,7 +608,10 @@ export const HoursTrackerPage: React.FC = () => {
           {showMyLoggedHoursModal && (
             <MyLoggedHoursModal
               isOpen={showMyLoggedHoursModal}
-              onClose={() => setShowMyLoggedHoursModal(false)}
+              onClose={() => {
+                setShowMyLoggedHoursModal(false);
+                setQuotaRefreshTrigger((prev) => prev + 1);
+              }}
               currentUser={currentUserObj}
             />
           )}
@@ -551,6 +667,8 @@ export const HoursTrackerPage: React.FC = () => {
               currentUser={currentUserObj}
               onOpenTodaySummary={() => setShowDailySummaryModal(true)}
               onOpenMyLoggedHours={() => setShowMyLoggedHoursModal(true)}
+              onLogout={handleLogout}
+              quotaRefreshTrigger={quotaRefreshTrigger}
             />
           </HoursErrorBoundary>
         </main>
@@ -578,10 +696,18 @@ export const HoursTrackerPage: React.FC = () => {
 
             {/* Loading State Spinner */}
             {!missingConfig && loading && (
-              <div className="p-8 sm:p-12 rounded-3xl bg-white/90 border border-slate-200/80 backdrop-blur-xl text-center shadow-lg">
+              <div className="p-8 sm:p-10 rounded-3xl bg-white/90 border border-slate-200/80 backdrop-blur-xl text-center shadow-lg">
                 <div className="w-12 h-12 rounded-full border-3 border-blue-100 border-t-blue-600 animate-spin mx-auto mb-4" />
                 <p className="text-base font-semibold text-slate-800 mb-1">{loadingMessage}</p>
-                <p className="text-xs text-slate-500">אימות ארגוני ישיר &middot; Single-Tenant Entra ID</p>
+                <p className="text-xs text-slate-500 mb-5">אימות ארגוני ישיר &middot; Single-Tenant Entra ID</p>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="mx-auto px-4 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>התנתק / החלף משתמש</span>
+                </button>
               </div>
             )}
 
@@ -595,12 +721,21 @@ export const HoursTrackerPage: React.FC = () => {
                 <p className="text-xs sm:text-sm text-red-800 leading-relaxed whitespace-pre-line mb-4">
                   {errorMessage}
                 </p>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2.5 flex-wrap">
                   <button
+                    type="button"
                     onClick={() => setErrorMessage(null)}
                     className="px-3.5 py-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-xs font-semibold text-red-800 transition-colors cursor-pointer"
                   >
                     סגור הודעה
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-red-600 text-red-700 hover:text-white border border-red-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>התנתק ונקה חיבור</span>
                   </button>
                 </div>
               </div>

@@ -203,36 +203,72 @@ export function setCachedApiToken(token: string, expiresInSec = 3600): void {
   } catch {}
 }
 
+/**
+ * Decodes a JWT payload and checks whether its `exp` claim is expired (or expiring within minRemainingSec).
+ * Returns false if the string is not a standard 3-part JWT with an `exp` claim.
+ */
+export function isJwtTokenExpired(token: string | null | undefined, minRemainingSec = 120): boolean {
+  if (!token || typeof token !== "string") return true;
+  const parts = token.split(".");
+  if (parts.length !== 3) return false;
+  try {
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), "=");
+    const jsonPayload = decodeURIComponent(
+      atob(padded)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
+    const payload = JSON.parse(jsonPayload);
+    if (typeof payload.exp === "number") {
+      const expiresAtMs = payload.exp * 1000;
+      return expiresAtMs - Date.now() <= minRemainingSec * 1000;
+    }
+  } catch {
+    // If decoding fails, do not treat as expired here
+  }
+  return false;
+}
+
 export function getCachedApiToken(minRemainingSec = 120): string | null {
   const minMs = minRemainingSec * 1000;
-
-  // 1. In-memory valid token
-  if (cachedUserToken && cachedUserToken.expiresAt - Date.now() > minMs) {
-    return cachedUserToken.token;
-  }
 
   try {
     // If user explicitly logged out, never return a cached token
     if (
-      sessionStorage.getItem("hours_logged_out_explicitly") === "true" ||
-      localStorage.getItem("hours_logged_out_explicitly")
+      typeof window !== "undefined" &&
+      (sessionStorage.getItem("hours_logged_out_explicitly") === "true" ||
+        Boolean(localStorage.getItem("hours_logged_out_explicitly")))
     ) {
+      cachedUserToken = null;
       return null;
     }
+  } catch {}
 
+  // 1. In-memory valid token
+  if (
+    cachedUserToken &&
+    cachedUserToken.expiresAt - Date.now() > minMs &&
+    !isJwtTokenExpired(cachedUserToken.token, minRemainingSec)
+  ) {
+    return cachedUserToken.token;
+  }
+
+  try {
     // 2. Check localStorage standard cache
     const stored = localStorage.getItem("hours_bearer_token") || sessionStorage.getItem("hours_bearer_token");
     const exp =
       Number(localStorage.getItem("hours_bearer_token_exp") || sessionStorage.getItem("hours_bearer_token_exp")) || 0;
-    if (stored && exp - Date.now() > minMs) {
+    if (stored && exp - Date.now() > minMs && !isJwtTokenExpired(stored, minRemainingSec)) {
       cachedUserToken = { token: stored, expiresAt: exp };
       return stored;
     }
 
-    // 3. Check 7-day persistent token cache
+    // 3. Check persistent token cache — only return if the underlying JWT itself has not expired!
     const persistent = localStorage.getItem("hours_persistent_auth_token_v3");
     const persistentExp = Number(localStorage.getItem("hours_persistent_token_exp_v3")) || 0;
-    if (persistent && persistentExp > Date.now()) {
+    if (persistent && persistentExp > Date.now() && !isJwtTokenExpired(persistent, minRemainingSec)) {
       cachedUserToken = { token: persistent, expiresAt: persistentExp };
       return persistent;
     }
@@ -267,7 +303,7 @@ export async function initMsal(config: AzureHoursConfig): Promise<PublicClientAp
       clientId: config.clientId || "00000000-0000-0000-0000-000000000000",
       authority: getAuthority(config.tenantId),
       redirectUri: typeof window !== "undefined" ? getRedirectUri() : "",
-      postLogoutRedirectUri: typeof window !== "undefined" ? `${getRedirectUri()}?logged_out=1` : "",
+      postLogoutRedirectUri: typeof window !== "undefined" ? getRedirectUri() : "",
     },
     cache: {
       cacheLocation: "localStorage",
@@ -294,7 +330,7 @@ export async function initMsal(config: AzureHoursConfig): Promise<PublicClientAp
  * Helper to acquire API Token:
  * Checks memory & localStorage persistent cache first.
  * Then attempts acquireTokenSilent with fallback to User.Read, MSAL localStorage cache,
- * and persistent 7-day token.
+ * and persistent token if valid.
  */
 function findMsalLocalStorageToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -314,7 +350,7 @@ function findMsalLocalStorageToken(): string | null {
           const parsed = JSON.parse(itemStr);
           const secret = parsed.secret || parsed.idToken || parsed.accessToken;
           const exp = Number(parsed.expiresOn || parsed.extendedExpiresOn || 0) * 1000;
-          if (secret && (!exp || exp + SEVEN_DAYS_MS > Date.now())) {
+          if (secret && (!exp || exp > Date.now() + 60000) && !isJwtTokenExpired(secret, 60)) {
             return secret;
           }
         }
@@ -329,6 +365,14 @@ export async function getApiToken(
   customScope?: string,
   forceRefresh = false
 ): Promise<string> {
+  if (
+    typeof window !== "undefined" &&
+    (sessionStorage.getItem("hours_logged_out_explicitly") === "true" ||
+      Boolean(localStorage.getItem("hours_logged_out_explicitly")))
+  ) {
+    throw new Error("המשתמש התנתק מהמערכת. יש להתחבר מחדש.");
+  }
+
   // 1. Return cached valid token if available and not forcing refresh
   if (!forceRefresh) {
     const cached = getCachedApiToken(180);
@@ -343,7 +387,7 @@ export async function getApiToken(
       findMsalLocalStorageToken() ||
       localStorage.getItem("hours_persistent_auth_token_v3") ||
       sessionStorage.getItem("hours_bearer_token");
-    if (lsToken) {
+    if (lsToken && !isJwtTokenExpired(lsToken, 30)) {
       setCachedApiToken(lsToken, 3600);
       return lsToken;
     }
@@ -358,7 +402,7 @@ export async function getApiToken(
       findMsalLocalStorageToken() ||
       localStorage.getItem("hours_persistent_auth_token_v3") ||
       sessionStorage.getItem("hours_bearer_token");
-    if (lsToken) {
+    if (lsToken && !isJwtTokenExpired(lsToken, 30)) {
       setCachedApiToken(lsToken, 3600);
       return lsToken;
     }
@@ -383,7 +427,7 @@ export async function getApiToken(
     const response = await Promise.race([
       instance.acquireTokenSilent(tokenRequest),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout during silent token refresh")), 8000)
+        setTimeout(() => reject(new Error("Timeout during silent token refresh")), 6000)
       ),
     ]);
 
@@ -394,15 +438,20 @@ export async function getApiToken(
     }
   } catch (err: any) {
     console.warn("[getApiToken] Silent token acquisition warning:", err?.message || err);
-    // If custom scope failed, fallback to User.Read
+    // If custom scope failed, fallback to User.Read with timeout
     if (targetScope !== "User.Read") {
       try {
-        const fallbackRes = await instance.acquireTokenSilent({
-          scopes: ["User.Read"],
-          account: activeAccount,
-          redirectUri: getRedirectUri(),
-          forceRefresh: Boolean(forceRefresh),
-        });
+        const fallbackRes = await Promise.race([
+          instance.acquireTokenSilent({
+            scopes: ["User.Read"],
+            account: activeAccount,
+            redirectUri: getRedirectUri(),
+            forceRefresh: Boolean(forceRefresh),
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("Timeout during fallback silent token refresh")), 5000)
+          ),
+        ]);
         const fallbackToken = fallbackRes?.idToken || fallbackRes?.accessToken;
         if (fallbackToken) {
           setCachedApiToken(fallbackToken, 3600);
@@ -414,35 +463,31 @@ export async function getApiToken(
     }
   }
 
-  // Fallback 1: activeAccount idToken if available
+  // Fallback 1: activeAccount idToken if available and not expired
   const accountIdToken = (activeAccount as any)?.idToken;
-  if (accountIdToken) {
+  if (accountIdToken && !isJwtTokenExpired(accountIdToken, 30)) {
     setCachedApiToken(accountIdToken, 3600);
     return accountIdToken;
   }
 
-  // Fallback 2: localStorage persistent token
-  const persistentToken =
-    localStorage.getItem("hours_persistent_auth_token_v3") || localStorage.getItem("hours_bearer_token");
-  if (persistentToken) {
-    setCachedApiToken(persistentToken, 3600);
-    return persistentToken;
-  }
-
-  // Fallback 3: localStorage MSAL cache
+  // Fallback 2: localStorage MSAL cache if not expired
   const lsToken = findMsalLocalStorageToken();
-  if (lsToken) {
+  if (lsToken && !isJwtTokenExpired(lsToken, 30)) {
     setCachedApiToken(lsToken, 3600);
     return lsToken;
   }
 
-  // Fallback 4: sessionStorage
-  const stored = sessionStorage.getItem("hours_bearer_token");
-  if (stored) {
-    return stored;
+  // Fallback 3: localStorage persistent token if not expired
+  const persistentToken =
+    localStorage.getItem("hours_persistent_auth_token_v3") || localStorage.getItem("hours_bearer_token");
+  if (persistentToken && !isJwtTokenExpired(persistentToken, 30)) {
+    setCachedApiToken(persistentToken, 3600);
+    return persistentToken;
   }
 
-  throw new Error("פג תוקף החיבור ל-Microsoft 365. אנא רענן את העמוד והתחבר שוב.");
+  // If all tokens are expired, clear them so the user is not stuck with a stale token
+  clearCachedApiToken();
+  throw new Error("פג תוקף החיבור ל-Microsoft 365. אנא התחבר מחדש.");
 }
 
 /**
@@ -469,48 +514,29 @@ export async function loginWithMicrosoft(
 }
 
 /**
- * Sign out completely:
- * 1. Marks explicit logout so the app does not auto-login upon return
- * 2. Purges all tokens, MSAL storage, persistent tokens, and cookies in browser
- * 3. Redirects through Microsoft 365 end_session endpoint to terminate SSO session
+ * Sign out completely and instantaneously at any stage:
+ * 1. Marks explicit logout in both sessionStorage and localStorage so the app never auto-logs in
+ * 2. Purges all tokens, MSAL storage, persistent tokens, cookies, and IndexedDB in browser
+ * 3. Returns immediately so the UI transitions straight to the clean Employee Login screen
+ *    (where clicking Login prompts "select_account" to choose any Microsoft 365 account).
  */
 export async function logoutFromMicrosoft(pca?: PublicClientApplication): Promise<void> {
   const instance = pca || msalInstance;
-  let account: AccountInfo | undefined = undefined;
-  try {
-    if (instance) {
-      account = instance.getActiveAccount() || instance.getAllAccounts()[0];
-    }
-  } catch {}
 
-  const postLogoutUrl = `${getRedirectUri()}?logged_out=1`;
+  // 1. Purge all custom & MSAL tokens/cache from localStorage, sessionStorage, cookies, IndexedDB
+  clearCachedApiToken();
+  purgeAllMsalAndHoursAuthStorage(instance || undefined);
 
+  // 2. Mark explicit logout AFTER purging so the marker is guaranteed to remain set
   try {
     sessionStorage.setItem("hours_logged_out_explicitly", "true");
     localStorage.setItem("hours_logged_out_explicitly", String(Date.now()));
   } catch {}
 
-  // Purge all custom & MSAL tokens/cache from localStorage, sessionStorage, cookies, IndexedDB
-  purgeAllMsalAndHoursAuthStorage(instance || undefined);
-
-  if (instance) {
-    try {
-      await instance.logoutRedirect({
-        account,
-        postLogoutRedirectUri: postLogoutUrl,
-      });
-      return;
-    } catch (err) {
-      console.warn("[logoutFromMicrosoft] MSAL logoutRedirect fallback:", err);
+  // 3. Also clear URL hash/search params if any MSAL code/state fragments are present
+  try {
+    if (typeof window !== "undefined" && (window.location.hash || window.location.search)) {
+      window.history.replaceState({}, document.title, window.location.pathname);
     }
-  }
-
-  // Fallback: direct redirect to Microsoft 365 OAuth2 logout endpoint or postLogoutUrl
-  if (typeof window !== "undefined") {
-    const tenantId = currentConfig?.tenantId || "common";
-    const msLogoutUrl = `https://login.microsoftonline.com/${encodeURIComponent(
-      tenantId
-    )}/oauth2/v2.0/logout?post_logout_redirect_uri=${encodeURIComponent(postLogoutUrl)}`;
-    window.location.href = msLogoutUrl;
-  }
+  } catch {}
 }

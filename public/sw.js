@@ -1,6 +1,6 @@
 // Service Worker for TECH-SELECT Hours PWA ("שעות לחיוב לקוח")
 // Versioned cache name - updates on each deploy
-const CACHE_VERSION = "techselect-hours-v2026-10-26-v6";
+const CACHE_VERSION = "techselect-hours-v2026-10-31-v7";
 const STATIC_CACHE = `static-${CACHE_VERSION}`;
 
 // Immutable icon/manifest assets only (never precache JS bundles)

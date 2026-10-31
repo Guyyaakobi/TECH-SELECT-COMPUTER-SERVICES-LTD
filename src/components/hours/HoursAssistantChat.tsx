@@ -29,9 +29,16 @@ import {
   Pencil,
   Check,
   Layers,
+  LogOut,
+  Trophy,
+  Flame,
+  Coffee,
+  Rocket,
+  Star,
 } from "lucide-react";
 import {
   apiAssistantChat,
+  apiGetMyListsDailySummary,
   HoursAssistantEntryDraft,
   WrittenEntryResult,
   AssistantChatResponse,
@@ -72,9 +79,12 @@ interface HoursAssistantChatProps {
   };
   onOpenTodaySummary?: () => void;
   onOpenMyLoggedHours?: () => void;
+  onLogout?: (e?: React.MouseEvent) => void;
+  quotaRefreshTrigger?: number;
 }
 
 const MAX_SAVED_SESSIONS = 10;
+const DAILY_QUOTA_HOURS = 7;
 
 function getNormalizedUserKey(user?: {
   email?: string;
@@ -353,11 +363,58 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
   currentUser,
   onOpenTodaySummary,
   onOpenMyLoggedHours,
+  onLogout,
+  quotaRefreshTrigger = 0,
 }) => {
   const isGuyOrAdmin = Boolean(
     currentUser.isAdmin ||
     currentUser.email?.toLowerCase() === "g@tech-select.co.il"
   );
+
+  // Daily 7-Hour Quota state fetched directly from Microsoft Lists for the current employee
+  const [todayQuota, setTodayQuota] = useState<{
+    todayHours: number;
+    todayEntriesCount: number;
+    todayDisplayDate: string;
+    loading: boolean;
+    loaded: boolean;
+  }>({
+    todayHours: 0,
+    todayEntriesCount: 0,
+    todayDisplayDate: "",
+    loading: true,
+    loaded: false,
+  });
+
+  const fetchTodayQuotaStatus = useCallback(
+    async (silent = false) => {
+      if (!currentUser?.name && !currentUser?.email) return;
+      try {
+        if (!silent) {
+          setTodayQuota((prev) => ({ ...prev, loading: true }));
+        }
+        const summary = await apiGetMyListsDailySummary({
+          employeeName: currentUser.name,
+          employeeEmail: currentUser.email,
+        });
+        setTodayQuota({
+          todayHours: Math.round((Number(summary.todayHours) || 0) * 100) / 100,
+          todayEntriesCount: Number(summary.todayEntriesCount) || 0,
+          todayDisplayDate: summary.todayDisplayDate || "",
+          loading: false,
+          loaded: true,
+        });
+      } catch (err) {
+        console.warn("[HoursAssistantChat] Could not fetch daily quota summary:", err);
+        setTodayQuota((prev) => ({ ...prev, loading: false, loaded: true }));
+      }
+    },
+    [currentUser.name, currentUser.email]
+  );
+
+  useEffect(() => {
+    fetchTodayQuotaStatus();
+  }, [fetchTodayQuotaStatus, quotaRefreshTrigger]);
 
   const normalizedUserKey = getNormalizedUserKey(currentUser);
   const normalizedUserKeyRef = useRef<string>(normalizedUserKey);
@@ -1133,6 +1190,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
       });
 
       handleChatResponseForSession(targetSessionId, res, false);
+      fetchTodayQuotaStatus(true);
     } catch (err: any) {
       console.error("[handleConfirmEntry] Error:", err);
       const friendlyMsg = getFriendlyHebrewErrorMessage(err);
@@ -1199,6 +1257,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
       });
 
       handleChatResponseForSession(targetSessionId, res, false);
+      fetchTodayQuotaStatus(true);
     } catch (err: any) {
       console.error("[handleUndoEntry] Error:", err);
       const friendlyMsg = getFriendlyHebrewErrorMessage(err);
@@ -1286,6 +1345,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
       });
 
       handleChatResponseForSession(targetSessionId, res, false);
+      fetchTodayQuotaStatus(true);
     } catch (err: any) {
       console.error("[handleEditWrittenEntry] Error:", err);
       const friendlyMsg = getFriendlyHebrewErrorMessage(err);
@@ -1522,6 +1582,66 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
 
   const firstName = (currentUser.name || "").split(" ")[0] || currentUser.name || "עובד";
   const greeting = getTimeBasedGreeting();
+
+  // Compute Friendly 7-Hour Daily Quota Metrics & Creative Hebrew Copy
+  const loggedHoursToday = Math.max(0, todayQuota.todayHours);
+  const remainingQuotaHours = Math.max(0, Math.round((DAILY_QUOTA_HOURS - loggedHoursToday) * 100) / 100);
+  const extraQuotaHours = Math.max(0, Math.round((loggedHoursToday - DAILY_QUOTA_HOURS) * 100) / 100);
+  const quotaPercent = Math.min(100, Math.round((loggedHoursToday / DAILY_QUOTA_HOURS) * 100));
+  const isQuotaReached = loggedHoursToday >= DAILY_QUOTA_HOURS;
+
+  const getQuotaCreativeStatus = () => {
+    if (isQuotaReached) {
+      return {
+        emoji: "🏆",
+        badgeText: "הגעת למכסה היומית! (7/7 שעות)",
+        headline: `אלוף ${firstName}! כבשת את היעד היומי 🎉`,
+        subtext:
+          extraQuotaHours > 0
+            ? `תיעדת היום כבר ${loggedHoursToday} שעות לחיוב לקוח (${extraQuotaHours}+ מעל מכסת 7 השעות היומית) — שאפו ענק על העבודה המצוינת!`
+            : `תיעדת היום ${loggedHoursToday} שעות לחיוב לקוח והשלמת במלואה את מכסת 7 השעות היומית — כל הכבוד!`,
+        theme: "emerald" as const,
+      };
+    }
+    if (loggedHoursToday === 0) {
+      return {
+        emoji: "☕",
+        badgeText: "טרם הגעת למכסה היומית · חסרות 7 ש׳",
+        headline: `היום עוד לפנינו, ${firstName}! עדיין לא הגעת למכסה היומית`,
+        subtext: `מד השעות היומי שלך עומד על 0 מתוך ${DAILY_QUOTA_HOURS} שעות. תעד את הפעילות הראשונה להיום ובוא נצא לדרך בחיוך! 🚀`,
+        theme: "amber" as const,
+      };
+    }
+    if (loggedHoursToday < 3.5) {
+      return {
+        emoji: "🌱",
+        badgeText: `טרם הגעת למכסה היומית · עוד ${remainingQuotaHours} ש׳ ליעד`,
+        headline: `התחלה נהדרת, ${firstName}! בדרך למכסה היומית (${loggedHoursToday} מתוך 7 ש׳)`,
+        subtext: `המנועים כבר חמים! תיעדת היום ${loggedHoursToday} שעות — חסרות עוד ${remainingQuotaHours} שעות כדי להגיע למכסה היומית של 7 שעות 💪`,
+        theme: "amber" as const,
+      };
+    }
+    if (loggedHoursToday < 5.5) {
+      return {
+        emoji: "🚀",
+        badgeText: `טרם הגעת למכסה היומית · עוד ${remainingQuotaHours} ש׳ ליעד`,
+        headline: `קצב אש, ${firstName}! עברת כבר חצי מהמכסה היומית (${loggedHoursToday}/7 ש׳)`,
+        subtext: `כבר ${loggedHoursToday} שעות מתועדות היום (${quotaPercent}%) — רק עוד ${remainingQuotaHours} שעות ואתה סוגר את מכסת 7 השעות היומית כמו אלוף! ⭐`,
+        theme: "blue" as const,
+      };
+    }
+    return {
+      emoji: "🏁",
+      badgeText: `כמעט במכסה היומית! רק עוד ${remainingQuotaHours} ש׳`,
+      headline: `ישורת אחרונה, ${firstName}! מרחק נגיעה מהמכסה היומית (${loggedHoursToday}/7 ש׳)`,
+      subtext: `תיעדת כבר ${loggedHoursToday} שעות היום — חסרות רק עוד ${
+        remainingQuotaHours === 1 ? "שעה אחת" : `${remainingQuotaHours} שעות`
+      } להשלמת מכסת 7 השעות היומית! 🎯`,
+      theme: "indigo" as const,
+    };
+  };
+
+  const quotaCreative = getQuotaCreativeStatus();
 
   return (
     <div className="w-full h-full flex flex-row overflow-hidden relative bg-[#f8fafd]" dir="ltr">
@@ -1838,21 +1958,34 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
           )}
         </div>
 
-        {/* Sidebar Footer */}
-        <div className="p-3 border-t border-slate-200/70 bg-white/60 flex items-center justify-between text-[11px] text-slate-500 shrink-0">
-          <div className="flex items-center gap-1.5 truncate">
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-            <span className="truncate">נשמרות 10 שיחות אחרונות</span>
+        {/* Sidebar Footer (Includes Clear History + Instant Logout / Switch Account) */}
+        <div className="p-3 border-t border-slate-200/70 bg-white/75 flex flex-col gap-2 text-[11px] text-slate-500 shrink-0">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 truncate">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+              <span className="truncate">נשמרות 10 שיחות אחרונות</span>
+            </div>
+
+            {savedSessions.length > 0 && (
+              <button
+                type="button"
+                onClick={handleClearAllHistory}
+                className="px-2.5 py-1 rounded-lg bg-white hover:bg-red-50 text-slate-600 hover:text-red-600 border border-slate-200 hover:border-red-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs shrink-0"
+              >
+                <Trash2 className="w-3 h-3" />
+                <span>נקה הכל</span>
+              </button>
+            )}
           </div>
 
-          {savedSessions.length > 0 && (
+          {onLogout && (
             <button
               type="button"
-              onClick={handleClearAllHistory}
-              className="px-2.5 py-1 rounded-lg bg-white hover:bg-red-50 text-slate-600 hover:text-red-600 border border-slate-200 hover:border-red-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+              onClick={onLogout}
+              className="w-full py-1.5 px-3 rounded-xl bg-red-50/90 hover:bg-red-600 text-red-700 hover:text-white border border-red-200 hover:border-red-600 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-2xs"
             >
-              <Trash2 className="w-3 h-3" />
-              <span>נקה הכל</span>
+              <LogOut className="w-3.5 h-3.5" />
+              <span>התנתק / יציאה מהחשבון</span>
             </button>
           )}
         </div>
@@ -1880,12 +2013,30 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
               </span>
             </button>
 
-            <div className="hidden sm:flex w-6 h-6 rounded-full bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] items-center justify-center text-white shadow-2xs shrink-0">
-              <Sparkles className="w-3 h-3" />
-            </div>
-            <span className="hidden sm:inline text-xs font-semibold text-slate-700 whitespace-nowrap">
-              שעות לחיוב לקוח
-            </span>
+            {/* Top Bar Live 7-Hour Quota Pill for Every Employee */}
+            <button
+              type="button"
+              onClick={onOpenMyLoggedHours}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all border shadow-2xs ${
+                isQuotaReached
+                  ? "bg-gradient-to-r from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 text-emerald-900 border-emerald-300"
+                  : "bg-gradient-to-r from-amber-50 via-orange-50/80 to-amber-50 hover:from-amber-100 hover:to-orange-100 text-amber-900 border-amber-300"
+              }`}
+              title={
+                isQuotaReached
+                  ? `הגעת למכסה היומית! תיעדת ${loggedHoursToday} מתוך 7 שעות היום`
+                  : `טרם הגעת למכסה היומית (7 שעות) — תיעדת ${loggedHoursToday} שעות היום, חסרות עוד ${remainingQuotaHours} שעות`
+              }
+            >
+              <span>{quotaCreative.emoji}</span>
+              <span>
+                {todayQuota.loading && !todayQuota.loaded
+                  ? "בודק מכסה יומית..."
+                  : isQuotaReached
+                  ? `יעד יומי הושלם! (${loggedHoursToday}/7 ש׳)`
+                  : `מכסה יומית: ${loggedHoursToday}/7 ש׳ (חסרות ${remainingQuotaHours} ש׳)`}
+              </span>
+            </button>
 
             {activeDrafts.length > 0 && (
               <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 font-semibold flex items-center gap-1 whitespace-nowrap shrink-0">
@@ -1900,19 +2051,6 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                 <RefreshCw className="w-3 h-3 text-amber-600 animate-spin shrink-0" />
                 <span>{backgroundRunningSessions.length} סשנים רצים ברקע</span>
               </span>
-            )}
-
-            {/* Per-User "כמה תיעדתי היום" Quick Button */}
-            {onOpenMyLoggedHours && (
-              <button
-                type="button"
-                onClick={onOpenMyLoggedHours}
-                className="hidden sm:flex btn-hover-subtle text-xs px-2.5 py-1 rounded-full bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold items-center gap-1 cursor-pointer transition-colors shadow-2xs mr-1 whitespace-nowrap shrink-0"
-                title="בדוק וערוך כמה תיעדת היום ובכל יום לפי Microsoft Lists"
-              >
-                <ListChecks className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <span>כמה תיעדתי היום</span>
-              </button>
             )}
 
             {/* Manager Today Hours Summary Quick Button */}
@@ -2012,25 +2150,150 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
 
         {/* Content Area: If empty -> Greeting, else -> Message Feed */}
         {messages.length === 0 && activeDrafts.length === 0 && !loading ? (
-          <div className="flex-1 flex flex-col items-center justify-center w-full max-w-3xl mx-auto my-auto px-4 py-4 overflow-y-auto relative">
+          <div className="flex-1 flex flex-col items-center justify-center w-full max-w-3xl mx-auto my-auto px-4 py-3 sm:py-4 overflow-y-auto relative">
             {/* Soft Ethereal Glow in the Center */}
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[20rem] sm:w-[34rem] h-[16rem] sm:h-[22rem] bg-gradient-to-tr from-sky-200/35 via-purple-100/30 to-indigo-100/20 rounded-full blur-3xl pointer-events-none -z-10" />
 
             {/* Sparkles Icon */}
-            <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] flex items-center justify-center text-white shadow-md shadow-indigo-500/20 mb-3.5 sm:mb-5 shrink-0">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] flex items-center justify-center text-white shadow-md shadow-indigo-500/20 mb-2.5 sm:mb-4 shrink-0">
               <Sparkles className="w-5 h-5 sm:w-6 sm:h-6 animate-pulse" />
             </div>
 
             {/* Big Gemini Headline */}
             <div className="text-center w-full max-w-xl">
-              <h1 className="text-2xl sm:text-5xl font-bold sm:font-medium tracking-tight mb-2 sm:mb-3">
+              <h1 className="text-2xl sm:text-4xl font-bold sm:font-medium tracking-tight mb-1.5 sm:mb-2">
                 <span className="bg-gradient-to-r from-[#1a73e8] via-[#7c3aed] to-[#d946ef] bg-clip-text text-transparent">
                   {greeting}, {firstName}
                 </span>
               </h1>
-              <p className="text-sm sm:text-xl font-normal text-slate-500 mb-5 sm:mb-6 px-2">
+              <p className="text-xs sm:text-lg font-normal text-slate-500 mb-3.5 sm:mb-5 px-2">
                 איך אוכל לעזור לך לתעד שעות לחיוב לקוח היום?
               </p>
+
+              {/* FRIENDLY, CREATIVE & BEAUTIFUL 7-HOUR DAILY QUOTA INDICATOR CARD */}
+              <div
+                onClick={onOpenMyLoggedHours}
+                role="button"
+                className={`w-full mb-4 sm:mb-5 p-3.5 sm:p-4 rounded-3xl border text-right transition-all cursor-pointer shadow-sm hover:shadow-md relative overflow-hidden ${
+                  isQuotaReached
+                    ? "bg-gradient-to-br from-emerald-50/95 via-teal-50/75 to-white border-emerald-300/90"
+                    : quotaCreative.theme === "indigo"
+                    ? "bg-gradient-to-br from-indigo-50/95 via-blue-50/75 to-white border-indigo-200/90"
+                    : quotaCreative.theme === "blue"
+                    ? "bg-gradient-to-br from-sky-50/95 via-blue-50/70 to-white border-sky-200/90"
+                    : "bg-gradient-to-br from-amber-50/95 via-orange-50/70 to-white border-amber-300/90"
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2.5 mb-2.5">
+                  <div className="flex items-start gap-2.5 min-w-0">
+                    <div
+                      className={`w-10 h-10 rounded-2xl flex items-center justify-center text-lg shrink-0 shadow-2xs border ${
+                        isQuotaReached
+                          ? "bg-emerald-500 text-white border-emerald-400"
+                          : "bg-white text-amber-600 border-amber-200"
+                      }`}
+                    >
+                      <span>{quotaCreative.emoji}</span>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                        <span
+                          className={`text-[10px] sm:text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
+                            isQuotaReached
+                              ? "bg-emerald-100 text-emerald-900 border-emerald-300"
+                              : "bg-amber-100/90 text-amber-950 border-amber-300"
+                          }`}
+                        >
+                          {quotaCreative.badgeText}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          יעד יומי: 7 שעות לחיוב
+                        </span>
+                      </div>
+                      <h3 className="text-xs sm:text-sm font-bold text-slate-900 leading-snug">
+                        {quotaCreative.headline}
+                      </h3>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1 shrink-0">
+                    <div className="text-left bg-white/90 border border-slate-200/80 rounded-2xl px-2.5 py-1 shadow-2xs">
+                      <span
+                        className={`text-sm sm:text-base font-extrabold ${
+                          isQuotaReached ? "text-emerald-700" : "text-slate-900"
+                        }`}
+                      >
+                        {loggedHoursToday}
+                      </span>
+                      <span className="text-[11px] font-semibold text-slate-400"> / 7 ש׳</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        fetchTodayQuotaStatus();
+                      }}
+                      className="p-1.5 rounded-xl bg-white/80 hover:bg-white text-slate-500 hover:text-blue-600 border border-slate-200/70 cursor-pointer transition-colors"
+                      title="רענן בדיקת מכסה יומית מול Microsoft Lists"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${todayQuota.loading ? "animate-spin text-blue-600" : ""}`} />
+                    </button>
+                  </div>
+                </div>
+
+                <p className="text-[11px] sm:text-xs text-slate-600 leading-relaxed mb-3">
+                  {quotaCreative.subtext}
+                </p>
+
+                {/* 7 Visual Hour Capsules Representing the 7 Daily Billable Hours */}
+                <div className="grid grid-cols-7 gap-1 sm:gap-1.5 mb-2" dir="rtl">
+                  {Array.from({ length: DAILY_QUOTA_HOURS }).map((_, idx) => {
+                    const fillRatio = Math.min(1, Math.max(0, loggedHoursToday - idx));
+                    const fillPct = Math.round(fillRatio * 100);
+                    return (
+                      <div key={idx} className="flex flex-col items-center gap-1">
+                        <div className="w-full h-2.5 sm:h-3 rounded-full bg-white/90 border border-slate-200/90 overflow-hidden p-0.5 shadow-2xs">
+                          <div
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              isQuotaReached
+                                ? "bg-gradient-to-r from-emerald-500 to-teal-400"
+                                : fillPct === 100
+                                ? "bg-gradient-to-r from-blue-600 to-indigo-500"
+                                : "bg-gradient-to-r from-amber-500 to-orange-400"
+                            }`}
+                            style={{ width: `${fillPct}%` }}
+                          />
+                        </div>
+                        <span
+                          className={`text-[9px] font-bold ${
+                            fillPct >= 100
+                              ? isQuotaReached
+                                ? "text-emerald-700"
+                                : "text-blue-700"
+                              : fillPct > 0
+                              ? "text-amber-700"
+                              : "text-slate-400"
+                          }`}
+                        >
+                          שעה {idx + 1}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-200/50">
+                  <span className="text-slate-500 font-medium">
+                    {todayQuota.todayEntriesCount > 0
+                      ? `תועדו היום ${todayQuota.todayEntriesCount} רשומות ב-Microsoft Lists`
+                      : "עדיין לא נרשמו תיעודים היום ב-Lists"}
+                  </span>
+                  <span className="font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1">
+                    <ListChecks className="w-3.5 h-3.5" />
+                    <span>לפירוט ועריכת שעות היום &larr;</span>
+                  </span>
+                </div>
+              </div>
 
               {/* Quick Starter Suggestion Buttons */}
               <div className="flex flex-wrap items-center justify-center gap-2 max-w-xl mx-auto">
@@ -2111,6 +2374,43 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
           /* Messages Feed: Full Viewport Width, Comfortable Centered Max-Width Reading Column */
           <div ref={feedContainerRef} className="flex-1 overflow-y-auto px-2.5 sm:px-4 py-4 sm:py-6 scroll-smooth">
             <div className="max-w-3xl mx-auto w-full space-y-4 sm:space-y-6">
+              {/* Compact Friendly Daily Quota Strip inside Active Chat */}
+              <div
+                onClick={onOpenMyLoggedHours}
+                role="button"
+                className={`w-full p-2.5 sm:p-3 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 cursor-pointer transition-all shadow-2xs ${
+                  isQuotaReached
+                    ? "bg-emerald-50/90 border-emerald-200 text-emerald-950"
+                    : "bg-gradient-to-r from-amber-50/90 via-orange-50/60 to-white border-amber-200/90 text-slate-800"
+                }`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-base shrink-0">{quotaCreative.emoji}</span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold truncate">
+                      {isQuotaReached
+                        ? `כל הכבוד ${firstName}! הגעת למכסה היומית (${loggedHoursToday}/7 שעות)`
+                        : `${firstName}, עדיין לא הגעת למכסה היומית (${loggedHoursToday} מתוך 7 שעות · חסרות ${remainingQuotaHours} ש׳)`}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
+                  <div className="w-24 sm:w-28 h-2 rounded-full bg-white border border-slate-200 overflow-hidden p-0.5">
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${
+                        isQuotaReached
+                          ? "bg-emerald-500"
+                          : "bg-gradient-to-r from-amber-500 to-blue-600"
+                      }`}
+                      style={{ width: `${quotaPercent}%` }}
+                    />
+                  </div>
+                  <span className="text-[11px] font-bold text-blue-700 whitespace-nowrap">
+                    פירוט שעות &larr;
+                  </span>
+                </div>
+              </div>
+
               {(() => {
                 const seenWrittenIds = new Set<string>();
                 return messages.map((msg) => {
@@ -2120,6 +2420,11 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                     seenWrittenIds.add(w.id);
                     return true;
                   });
+                  const isAuthErrorMsg =
+                    !isUser &&
+                    (msg.text.includes("הרשאת גישה") ||
+                      msg.text.includes("פג תוקף החיבור") ||
+                      msg.text.includes("401"));
 
                   return (
                     <div
@@ -2197,6 +2502,16 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                           <div className="flex-1 min-w-0 space-y-2.5 sm:space-y-3">
                             <div className="text-sm sm:text-base text-slate-800 leading-relaxed font-normal px-0.5 sm:px-0">
                               <p className="whitespace-pre-line break-words">{msg.text}</p>
+                              {isAuthErrorMsg && onLogout && (
+                                <button
+                                  type="button"
+                                  onClick={onLogout}
+                                  className="mt-2.5 px-3.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                                >
+                                  <LogOut className="w-3.5 h-3.5" />
+                                  <span>התנתק והתחבר מחדש כעת</span>
+                                </button>
+                              )}
                             </div>
 
                             {/* Render Confirmed Written Entries for this turn (with Edit & Undo support) */}
