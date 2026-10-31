@@ -1066,14 +1066,123 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             })}
           </div>
 
-          {/* Compact Billable Duration & Quick Adjustment (Zero Start/End Clock Times) */}
-          <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#DBEAFE]/80 mb-3 space-y-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+          {/* Compact Billable Duration & Direct Hours Editor */}
+          <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#DBEAFE] mb-3 space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2.5">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500">שעות לחיוב:</span>
-                <span className="text-sm font-bold text-[#2563EB] font-mono">
-                  {draft.durationFormatted || "לא צוין"}
-                </span>
+                <label className="text-xs font-bold text-[#172B4D]">עריכת שעות לחיוב:</label>
+
+                {/* Direct Stepper & Number Input */}
+                <div className="flex items-center bg-white border border-[#DBEAFE] rounded-xl p-1 shadow-2xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onUpdateDraft) {
+                        const currentH = draft.durationHours || 1;
+                        const nextH = Math.max(0.25, Math.round((currentH - 0.25) * 100) / 100);
+                        const mins = Math.round(nextH * 60);
+                        const baseStart = draft.startTime || "09:00";
+                        const newEnd = calcEndTimeFromDuration(baseStart, mins);
+                        const durationLbl = nextH === 1 ? "1 שעה" : `${nextH} שעות`;
+                        onUpdateDraft({
+                          ...draft,
+                          durationMinutes: mins,
+                          durationHours: nextH,
+                          durationFormatted: durationLbl,
+                          startTime: baseStart,
+                          endTime: newEnd,
+                          isTimeSuggested: false,
+                          mappedRow: {
+                            ...(draft.mappedRow || {}),
+                            "שעת התחלה": baseStart,
+                            "שעת סיום": newEnd,
+                            משך: nextH,
+                            שעות: nextH,
+                            "סה״כ שעות": nextH,
+                            "סה\"כ שעות": nextH,
+                          },
+                        });
+                      }
+                    }}
+                    className="w-7 h-7 rounded-lg bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#2563EB] font-black text-sm flex items-center justify-center cursor-pointer transition-colors"
+                    title="הפחת 15 דקות"
+                  >
+                    -
+                  </button>
+
+                  <input
+                    type="number"
+                    step="0.25"
+                    min="0.25"
+                    max="24"
+                    value={draft.durationHours ?? 1}
+                    onChange={(e) => {
+                      const val = parseFloat(e.target.value);
+                      if (!isNaN(val) && val > 0 && onUpdateDraft) {
+                        const mins = Math.round(val * 60);
+                        const baseStart = draft.startTime || "09:00";
+                        const newEnd = calcEndTimeFromDuration(baseStart, mins);
+                        const durationLbl = val === 1 ? "1 שעה" : `${val} שעות`;
+                        onUpdateDraft({
+                          ...draft,
+                          durationMinutes: mins,
+                          durationHours: val,
+                          durationFormatted: durationLbl,
+                          startTime: baseStart,
+                          endTime: newEnd,
+                          isTimeSuggested: false,
+                          mappedRow: {
+                            ...(draft.mappedRow || {}),
+                            "שעת התחלה": baseStart,
+                            "שעת סיום": newEnd,
+                            משך: val,
+                            שעות: val,
+                            "סה״כ שעות": val,
+                            "סה\"כ שעות": val,
+                          },
+                        });
+                      }
+                    }}
+                    className="w-14 sm:w-16 text-center text-xs font-bold text-[#2563EB] font-mono bg-transparent focus:outline-none"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onUpdateDraft) {
+                        const currentH = draft.durationHours || 1;
+                        const nextH = Math.round((currentH + 0.25) * 100) / 100;
+                        const mins = Math.round(nextH * 60);
+                        const baseStart = draft.startTime || "09:00";
+                        const newEnd = calcEndTimeFromDuration(baseStart, mins);
+                        const durationLbl = nextH === 1 ? "1 שעה" : `${nextH} שעות`;
+                        onUpdateDraft({
+                          ...draft,
+                          durationMinutes: mins,
+                          durationHours: nextH,
+                          durationFormatted: durationLbl,
+                          startTime: baseStart,
+                          endTime: newEnd,
+                          isTimeSuggested: false,
+                          mappedRow: {
+                            ...(draft.mappedRow || {}),
+                            "שעת התחלה": baseStart,
+                            "שעת סיום": newEnd,
+                            משך: nextH,
+                            שעות: nextH,
+                            "סה״כ שעות": nextH,
+                            "סה\"כ שעות": nextH,
+                          },
+                        });
+                      }
+                    }}
+                    className="w-7 h-7 rounded-lg bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#2563EB] font-black text-sm flex items-center justify-center cursor-pointer transition-colors"
+                    title="הוסף 15 דקות"
+                  >
+                    +
+                  </button>
+                </div>
+                <span className="text-xs text-slate-500 font-semibold">שעות</span>
               </div>
 
               <div className="flex items-center gap-1.5 text-xs text-slate-500">
