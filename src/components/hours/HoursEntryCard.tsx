@@ -384,18 +384,18 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   const getWorkTypeIcon = (wt: string) => {
     const s = (wt || "").toLowerCase();
     if (s.includes("ביקור") || s.includes("אתר") || s.includes("onsite") || s.includes("visit")) {
-      return <MapPin className="w-3.5 h-3.5 text-amber-500" />;
+      return <MapPin className="w-3.5 h-3.5 text-slate-600" />;
     }
     if (s.includes("פרויקט") || s.includes("פרוייקט") || s.includes("project")) {
-      return <FolderKanban className="w-3.5 h-3.5 text-purple-500" />;
+      return <FolderKanban className="w-3.5 h-3.5 text-slate-600" />;
     }
-    return <Ticket className="w-3.5 h-3.5 text-blue-500" />;
+    return <Ticket className="w-3.5 h-3.5 text-slate-600" />;
   };
 
   const getListsWorkTypeBadge = (wt?: string) => {
     const norm = String(wt || "").toLowerCase();
     if (norm.includes("פרויקט") || norm.includes("project")) {
-      return { label: "פרויקטים", bg: "bg-amber-100 text-amber-800 border-amber-300" };
+      return { label: "פרויקטים", bg: "bg-slate-100 text-slate-700 border-slate-200" };
     }
     if (
       norm.includes("ביקור") ||
@@ -404,9 +404,9 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       norm.includes("onsite") ||
       norm.includes("visit")
     ) {
-      return { label: "ביקור באתר", bg: "bg-emerald-100 text-emerald-800 border-emerald-300" };
+      return { label: "ביקור באתר", bg: "bg-slate-100 text-slate-700 border-slate-200" };
     }
-    return { label: "טיקטים", bg: "bg-blue-100 text-blue-800 border-blue-300" };
+    return { label: "טיקטים", bg: "bg-slate-100 text-slate-700 border-slate-200" };
   };
 
   // ==========================================
@@ -416,119 +416,104 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
     const canStillUndo = timeLeftMs > 0 && written.canUndo;
     const workTypeBadge = getListsWorkTypeBadge(written.workType);
     const handlerDisplay = written.employeeName || currentUser?.name || "עובד";
-    const titleDisplay = written.ticketNumber
-      ? `טיקט ${written.ticketNumber.replace(/^(טיקט|ticket)\s*/i, "")}`
-      : written.description && written.description.length <= 40
-      ? written.description
-      : `${written.customerName} - ${written.durationFormatted}`;
 
     return (
-      <div className="relative overflow-hidden rounded-2xl bg-emerald-50/90 border border-emerald-200/80 p-4 sm:p-5 shadow-sm text-right my-2 text-slate-800">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2.5 border-b border-emerald-200/60">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-600 text-white font-bold text-xs shadow-xs">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>נרשם בהצלחה ✓</span>
+      <div className="relative overflow-hidden rounded-2xl bg-white border border-slate-200/90 p-3.5 sm:p-5 shadow-xs text-right my-2 text-slate-900">
+        {/* Clean Minimalist Header */}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-3 border-b border-slate-100">
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 font-semibold text-xs">
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>נרשם</span>
             </span>
 
-            {/* 1. כותרת */}
-            <span className="text-xs font-bold text-slate-900 font-mono">
-              {titleDisplay}
+            <span className="text-sm font-bold text-slate-900 truncate">
+              {written.customerName}
             </span>
 
-            {/* 2. סוג (טיקטים, פרויקטים, ביקור) */}
-            <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold border shadow-2xs ${workTypeBadge.bg}`}>
+            <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium border ${workTypeBadge.bg}`}>
               {workTypeBadge.label}
             </span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex items-center gap-1.5">
             {onEditWritten && (
               <button
                 type="button"
                 onClick={() => setIsEditingWritten(!isEditingWritten)}
                 disabled={isSavingWrittenEdit}
-                className="btn-hover-subtle inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold cursor-pointer disabled:opacity-50 shadow-xs"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-slate-700 text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
                 title="ערוך שעות או תיאור פעילות שתועדו"
               >
                 <Edit3 className="w-3.5 h-3.5" />
-                <span>{isEditingWritten ? "סגור עריכה" : "ערוך שעות / תיעוד"}</span>
+                <span>{isEditingWritten ? "סגור" : "ערוך"}</span>
               </button>
             )}
 
-            {/* Undo Button with 10-Minute Countdown */}
             {canStillUndo ? (
               <button
                 onClick={() => onUndo && onUndo(written.id, written)}
                 disabled={isUndoing}
-                className="btn-hover-subtle inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white hover:bg-red-50 border border-red-200 text-red-600 text-xs font-semibold cursor-pointer disabled:opacity-50 shadow-xs"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-red-50 border border-slate-200 hover:border-red-200 text-slate-600 hover:text-red-600 text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
                 title="ביטול ומחיקת השורה תוך 10 דקות"
               >
                 <Undo2 className={`w-3.5 h-3.5 ${isUndoing ? "animate-spin" : ""}`} />
                 <span>בטל ({formatTimeLeft(timeLeftMs)})</span>
               </button>
-            ) : (
-              <span className="text-[11px] text-slate-500 font-mono">חלפו 10 דקות לביטול</span>
-            )}
+            ) : null}
           </div>
         </div>
 
         {isEditingWritten ? (
-          <div className="p-3.5 rounded-xl bg-white border border-blue-200 shadow-xs mb-3 space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <span className="text-xs font-bold text-blue-900 flex items-center gap-1.5">
-                <Edit3 className="w-3.5 h-3.5 text-blue-600" />
-                <span>עריכת שעות או תוכן התיעוד (יתעדכן ב-Lists וב-Excel)</span>
+          <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 mb-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-900">
+                עריכת דיווח (מתעדכן ב-Lists וב-Excel)
               </span>
             </div>
 
             {/* Quick Duration Chips */}
-            <div>
-              <label className="block text-[11px] text-slate-600 font-semibold mb-1.5">
-                בחירה מהירה של שעות לחיוב:
-              </label>
-              <div className="flex flex-wrap gap-1.5">
-                {[
-                  { label: "15 דק׳ (0.25)", mins: 15 },
-                  { label: "חצי שעה (0.5)", mins: 30 },
-                  { label: "45 דק׳ (0.75)", mins: 45 },
-                  { label: "שעה (1)", mins: 60 },
-                  { label: "שעה וחצי (1.5)", mins: 90 },
-                  { label: "שעתיים (2)", mins: 120 },
-                  { label: "3 שעות (3)", mins: 180 },
-                  { label: "4 שעות (4)", mins: 240 },
-                ].map((preset) => {
-                  const newEnd = calcEndTimeFromDuration(writtenEditStart || "09:00", preset.mins);
-                  const calcs = computeTimesAndDuration(writtenEditStart || "09:00", newEnd, preset.mins);
-                  const isActive = writtenEditDuration === calcs.durationFormatted;
-                  return (
-                    <button
-                      key={preset.mins}
-                      type="button"
-                      onClick={() => {
-                        const start = writtenEditStart || "09:00";
-                        const end = calcEndTimeFromDuration(start, preset.mins);
-                        const c = computeTimesAndDuration(start, end, preset.mins);
-                        setWrittenEditStart(c.startTime);
-                        setWrittenEditEnd(c.endTime);
-                        setWrittenEditDuration(c.durationFormatted);
-                      }}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer ${
-                        isActive
-                          ? "bg-blue-600 text-white border-blue-600 font-bold"
-                          : "bg-slate-50 hover:bg-blue-50 text-slate-700 border-slate-200"
-                      }`}
-                    >
-                      {preset.label}
-                    </button>
-                  );
-                })}
-              </div>
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                { label: "15 דק׳", mins: 15 },
+                { label: "30 דק׳", mins: 30 },
+                { label: "45 דק׳", mins: 45 },
+                { label: "שעה", mins: 60 },
+                { label: "1.5 ש׳", mins: 90 },
+                { label: "שעתיים", mins: 120 },
+                { label: "3 ש׳", mins: 180 },
+                { label: "4 ש׳", mins: 240 },
+              ].map((preset) => {
+                const newEnd = calcEndTimeFromDuration(writtenEditStart || "09:00", preset.mins);
+                const calcs = computeTimesAndDuration(writtenEditStart || "09:00", newEnd, preset.mins);
+                const isActive = writtenEditDuration === calcs.durationFormatted;
+                return (
+                  <button
+                    key={preset.mins}
+                    type="button"
+                    onClick={() => {
+                      const start = writtenEditStart || "09:00";
+                      const end = calcEndTimeFromDuration(start, preset.mins);
+                      const c = computeTimesAndDuration(start, end, preset.mins);
+                      setWrittenEditStart(c.startTime);
+                      setWrittenEditEnd(c.endTime);
+                      setWrittenEditDuration(c.durationFormatted);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
+                      isActive
+                        ? "bg-slate-900 text-white border-slate-900"
+                        : "bg-white hover:bg-slate-100 text-slate-700 border-slate-200"
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <div>
-                <label className="block text-[11px] text-slate-600 font-medium mb-1">שעת התחלה:</label>
+                <label className="block text-[11px] text-slate-500 font-medium mb-1">התחלה</label>
                 <input
                   type="time"
                   lang="en-GB"
@@ -542,12 +527,12 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                       setWrittenEditDuration(c.durationFormatted);
                     }
                   }}
-                  className="w-full px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-mono text-slate-800 focus:outline-none focus:border-blue-500"
+                  className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs font-mono text-slate-900 focus:outline-none focus:border-slate-400"
                   dir="ltr"
                 />
               </div>
               <div>
-                <label className="block text-[11px] text-slate-600 font-medium mb-1">שעת סיום:</label>
+                <label className="block text-[11px] text-slate-500 font-medium mb-1">סיום</label>
                 <input
                   type="time"
                   lang="en-GB"
@@ -561,30 +546,30 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                       setWrittenEditDuration(c.durationFormatted);
                     }
                   }}
-                  className="w-full px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-mono text-slate-800 focus:outline-none focus:border-blue-500"
+                  className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs font-mono text-slate-900 focus:outline-none focus:border-slate-400"
                   dir="ltr"
                 />
               </div>
               <div>
-                <label className="block text-[11px] text-slate-600 font-medium mb-1">משך זמן מחושב:</label>
+                <label className="block text-[11px] text-slate-500 font-medium mb-1">משך זמן</label>
                 <input
                   type="text"
                   value={writtenEditDuration}
                   onChange={(e) => setWrittenEditDuration(e.target.value)}
-                  className="w-full px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs font-bold text-emerald-700 focus:outline-none focus:border-blue-500"
+                  className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs font-semibold text-slate-900 focus:outline-none focus:border-slate-400"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-[11px] text-slate-700 font-bold mb-1">
-                תוכן התיעוד / מה נעשה:
+              <label className="block text-[11px] text-slate-500 font-medium mb-1">
+                תיאור הפעילות
               </label>
               <textarea
                 rows={3}
                 value={writtenEditDescription}
                 onChange={(e) => setWrittenEditDescription(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 resize-y"
+                className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs text-slate-900 focus:outline-none focus:border-slate-400 resize-y"
                 placeholder="עדכן את תיאור הפעילות..."
               />
             </div>
@@ -613,24 +598,24 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                   });
                   setIsEditingWritten(false);
                 }}
-                className="flex-1 py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                className="flex-1 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 {isSavingWrittenEdit ? (
                   <>
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>מעדכן ב-Lists וב-Excel...</span>
+                    <span>מעדכן...</span>
                   </>
                 ) : (
                   <>
                     <Save className="w-3.5 h-3.5" />
-                    <span>שמור עדכון שעות ותיעוד</span>
+                    <span>שמור שינויים</span>
                   </>
                 )}
               </button>
               <button
                 type="button"
                 onClick={() => setIsEditingWritten(false)}
-                className="py-2 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold cursor-pointer"
+                className="py-2 px-3 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-medium cursor-pointer"
               >
                 ביטול
               </button>
@@ -638,92 +623,59 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
           </div>
         ) : (
           <>
-            {/* 9-Columns Order Grid: לקוח, מטפל, שעת התחלה, שעת סיום, תאריך, כמה זמן הושקע */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 text-xs mb-3">
-              {/* 3. לקוח */}
-              <div className="p-2 rounded-xl bg-white border border-emerald-100 shadow-xs">
-                <span className="text-slate-500 block text-[10px]">לקוח</span>
-                <span className="font-bold text-slate-900 truncate block">{written.customerName}</span>
+            {/* Compact Metrics Row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs mb-3">
+              <div className="p-2.5 rounded-xl bg-[#f9fafb] border border-slate-100">
+                <span className="text-slate-400 block text-[10px]">זמן לחיוב</span>
+                <span className="font-bold text-slate-900 font-mono">{written.durationFormatted}</span>
               </div>
 
-              {/* 4. משתמש (SSO User) */}
-              <div className="p-2 rounded-xl bg-white border border-emerald-100 shadow-xs">
-                <span className="text-slate-500 block text-[10px]">משתמש (SSO)</span>
-                <span className="font-bold text-blue-700 flex items-center gap-1 truncate">
-                  <User className="w-3 h-3 text-blue-500 flex-shrink-0" />
-                  <span className="truncate">{handlerDisplay}</span>
+              <div className="p-2.5 rounded-xl bg-[#f9fafb] border border-slate-100">
+                <span className="text-slate-400 block text-[10px]">שעות</span>
+                <span className="font-mono font-medium text-slate-800" dir="ltr">
+                  {written.startTime || "09:00"} – {written.endTime || "10:00"}
                 </span>
               </div>
 
-              {/* 5. שעת התחלה */}
-              <div className="p-2 rounded-xl bg-white border border-emerald-100 shadow-xs">
-                <span className="text-slate-500 block text-[10px]">שעת התחלה</span>
-                <span className="font-mono font-semibold text-slate-800" dir="ltr">{written.startTime || "09:00"}</span>
+              <div className="p-2.5 rounded-xl bg-[#f9fafb] border border-slate-100">
+                <span className="text-slate-400 block text-[10px]">תאריך</span>
+                <span className="font-medium text-slate-800">{written.date}</span>
               </div>
 
-              {/* 6. שעת סיום */}
-              <div className="p-2 rounded-xl bg-white border border-emerald-100 shadow-xs">
-                <span className="text-slate-500 block text-[10px]">שעת סיום</span>
-                <span className="font-mono font-semibold text-slate-800" dir="ltr">{written.endTime || "10:00"}</span>
-              </div>
-
-              {/* 7. תאריך */}
-              <div className="p-2 rounded-xl bg-white border border-emerald-100 shadow-xs">
-                <span className="text-slate-500 block text-[10px]">תאריך</span>
-                <span className="font-semibold text-slate-800">{written.date}</span>
-              </div>
-
-              {/* 8. כמה זמן הושקע */}
-              <div className="p-2 rounded-xl bg-white border border-emerald-100 shadow-xs">
-                <span className="text-slate-500 block text-[10px]">כמה זמן הושקע</span>
-                <span className="font-bold text-emerald-700 font-mono">{written.durationFormatted}</span>
+              <div className="p-2.5 rounded-xl bg-[#f9fafb] border border-slate-100">
+                <span className="text-slate-400 block text-[10px]">עובד</span>
+                <span className="font-medium text-slate-800 truncate block">{handlerDisplay}</span>
               </div>
             </div>
 
-            {/* 9. מה נעשה (Description) */}
-            <div className="p-2.5 rounded-xl bg-white border border-emerald-100 text-xs text-slate-800 leading-relaxed mb-3 shadow-xs">
-              <span className="text-[10px] text-slate-600 font-bold block mb-1">מה נעשה:</span>
+            {/* Clean Description */}
+            <div className="p-3 rounded-xl bg-[#f9fafb] border border-slate-100 text-xs sm:text-[13px] text-slate-800 leading-relaxed mb-3">
               <p className="whitespace-pre-wrap">{written.description}</p>
             </div>
           </>
         )}
 
-        {/* Dual-write Confirmation Footer */}
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-2 border-t border-emerald-200/60">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-emerald-700 font-semibold text-[11px] inline-flex items-center gap-1">
+        {/* Minimal Footer */}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 pt-2.5 border-t border-slate-100">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="inline-flex items-center gap-1">
               <Check className="w-3 h-3 text-emerald-600" />
-              <span>נרשם ב-Excel (טאב: {written.sheetName || written.workType}, שורה {written.targetRow})</span>
-              {typeof written.skippedOccupiedRows === "number" && written.skippedOccupiedRows > 0 && (
-                <span
-                  className="bg-emerald-100 text-emerald-800 text-[10px] px-1.5 py-0.5 rounded font-medium mr-1"
-                  title={`זוהו ${written.skippedOccupiedRows} שורות קיימות והמערכת דילגה עליהן כדי לא לדרוס מידע קיים`}
-                >
-                  נמנעה דריסה ({written.skippedOccupiedRows})
-                </span>
-              )}
+              <span>Excel (שורה {written.targetRow})</span>
             </span>
             {written.listItemId ? (
-              <span className="text-purple-700 font-semibold text-[11px] inline-flex items-center gap-1">
-                <Check className="w-3 h-3 text-purple-600" />
-                <span>סונכרן ל-Microsoft Lists ✓ (סוג: {workTypeBadge.label})</span>
+              <span className="inline-flex items-center gap-1">
+                <Check className="w-3 h-3 text-emerald-600" />
+                <span>Microsoft Lists</span>
               </span>
             ) : written.listsSyncResult?.error ? (
               <span
-                className="text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 font-medium text-[11px] inline-flex items-center gap-1"
+                className="text-amber-700 inline-flex items-center gap-1"
                 title={written.listsSyncResult.error}
               >
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                <span>התרעת Lists: {written.listsSyncResult.error.length > 45 ? `${written.listsSyncResult.error.substring(0, 42)}...` : written.listsSyncResult.error}</span>
+                <AlertTriangle className="w-3 h-3 text-amber-500 shrink-0" />
+                <span>התרעת Lists</span>
               </span>
-            ) : (
-              <span
-                className="text-slate-600 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200 font-medium text-[11px] inline-flex items-center gap-1"
-              >
-                <AlertTriangle className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                <span>ממתין לסנכרון Lists</span>
-              </span>
-            )}
+            ) : null}
           </div>
 
           <div className="flex items-center gap-3">
@@ -732,20 +684,20 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                 href={written.webUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-semibold underline transition-colors"
+                className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-900 font-medium transition-colors"
               >
-                <span>פתח ב-Excel</span>
-                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Excel</span>
+                <ExternalLink className="w-3 h-3" />
               </a>
             )}
             <a
               href="https://techselectltd.sharepoint.com/sites/Customers/Lists/List/AllItems.aspx?env=WebViewList"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-purple-600 hover:text-purple-700 font-semibold underline transition-colors"
+              className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-900 font-medium transition-colors"
             >
-              <span>צפה ב-Lists</span>
-              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Lists</span>
+              <ExternalLink className="w-3 h-3" />
             </a>
           </div>
         </div>
@@ -759,130 +711,102 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   if (!draft) return null;
 
   const draftWorkTypeBadge = getListsWorkTypeBadge(draft?.targetTabName || draft?.workType);
-  const draftHandlerDisplay = currentUser?.name || "עובד";
-  const draftTitleDisplay = draft?.ticketNumber
-    ? `טיקט ${draft.ticketNumber.replace(/^(טיקט|ticket)\s*/i, "")}`
-    : draft?.projectName
-    ? `פרוייקט: ${draft.projectName}`
-    : draft?.description && draft.description.length <= 40
-    ? draft.description
-    : `${draft?.customerName || "לקוח"} - ${draft?.durationFormatted || "שעות"}`;
-
   const assignedList =
     Array.isArray(draft?.assignedEmployees) && draft.assignedEmployees.length > 0
       ? draft.assignedEmployees
       : [currentUser?.name || "עובד"];
 
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-white border border-slate-200/90 p-3 sm:p-5 shadow-sm text-right my-1.5 sm:my-2 text-slate-800">
-      {/* Top Banner: כותרת, סוג ולקוח */}
-      <div className="flex items-start justify-between gap-2 mb-2.5 sm:mb-3 pb-2.5 border-b border-slate-100">
-        <div className="flex items-start gap-2 min-w-0 flex-1">
-          <div className="w-8 h-8 rounded-xl bg-blue-50 border border-blue-200/80 flex items-center justify-center text-blue-600 shadow-xs shrink-0 mt-0.5">
+    <div className="relative overflow-hidden rounded-2xl bg-white border border-slate-200/90 p-3.5 sm:p-5 shadow-xs text-right my-2 text-slate-900">
+      {/* Minimalist Header: Customer, Work Type Badge & Edit Toggle */}
+      <div className="flex items-start justify-between gap-2 mb-3 pb-3 border-b border-slate-100">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+          <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center shrink-0">
             <Building2 className="w-4 h-4" />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              <h4 className="text-xs sm:text-sm font-bold text-slate-900 leading-tight break-words">
-                {draftTitleDisplay}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <h4 className="text-sm sm:text-[15px] font-bold text-slate-900 truncate">
+                {draft.customerName || "לקוח"}
               </h4>
-              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border shadow-2xs shrink-0 ${draftWorkTypeBadge.bg}`}>
+              <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium border shrink-0 ${draftWorkTypeBadge.bg}`}>
                 {draftWorkTypeBadge.label}
               </span>
-              {assignedList.length > 1 && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 shadow-2xs flex items-center gap-1 shrink-0">
-                  <Users className="w-3 h-3 text-purple-600" />
-                  <span>צוות: {assignedList.length} עובדים</span>
+              {draft.ticketNumber && (
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-mono text-slate-600 bg-slate-100 border border-slate-200 shrink-0">
+                  #{draft.ticketNumber.replace(/^(טיקט|ticket)\s*/i, "")}
                 </span>
               )}
             </div>
-            <div className="text-[10px] text-slate-500 flex flex-wrap items-center gap-1 mt-1">
-              <span>לקוח: <strong className="text-slate-800">{draft.customerName}</strong></span>
-              <span>•</span>
-              <span className="text-blue-700 font-semibold inline-flex flex-wrap items-center gap-1">
-                <Users className="w-3 h-3 text-blue-600 inline shrink-0" />
-                <span className="hidden sm:inline">עובדים בדיווח:</span>
-                {assignedList.map((emp) => (
-                  <span
-                    key={emp}
-                    className="inline-block bg-blue-50 text-blue-800 px-1.5 py-0.2 rounded border border-blue-200 font-bold"
-                  >
-                    {emp}
-                  </span>
-                ))}
-              </span>
+            <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-1.5 mt-0.5">
+              <span>{assignedList.join(", ")}</span>
+              {draft.contactPerson &&
+                !(draft.unmappedFields && draft.unmappedFields.includes("contact_person")) && (
+                  <>
+                    <span>•</span>
+                    <span>איש קשר: {draft.contactPerson}</span>
+                  </>
+                )}
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            onClick={() => setIsEditing(!isEditing)}
-            className="px-2 sm:px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 text-xs font-medium transition-colors flex items-center gap-1 cursor-pointer shadow-xs"
-            title="עריכה ידנית"
-          >
-            <Edit3 className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">ערוך</span>
-          </button>
-        </div>
+        <button
+          onClick={() => setIsEditing(!isEditing)}
+          className="px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/80 text-xs font-medium transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+          title="עריכה ידנית"
+        >
+          <Edit3 className="w-3.5 h-3.5" />
+          <span>{isEditing ? "סגור" : "ערוך"}</span>
+        </button>
       </div>
 
       {/* Duplicate Warning if any */}
       {draft.duplicateWarning && (
-        <div className="mb-3 p-2.5 rounded-xl bg-amber-50 border border-amber-200 flex items-start gap-2 text-xs text-amber-800">
+        <div className="mb-3 p-2.5 rounded-xl bg-amber-50/80 border border-amber-200/80 flex items-start gap-2 text-xs text-amber-800">
           <AlertTriangle className="w-4 h-4 flex-shrink-0 text-amber-600 mt-0.5" />
           <div>
-            <span className="font-bold">אזהרת כפילות:</span> {draft.duplicateWarning}
+            <span className="font-semibold">שים לב:</span> {draft.duplicateWarning}
           </div>
         </div>
       )}
 
       {/* Missing Fields Warning if any */}
       {draft.missingFields && draft.missingFields.length > 0 && (
-        <div className="mb-3 p-2.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-800">
-          <span className="font-bold">חסרים שדות חובה:</span> {draft.missingFields.join(", ")}
+        <div className="mb-3 p-2.5 rounded-xl bg-red-50/80 border border-red-200/80 text-xs text-red-800">
+          <span className="font-semibold">חסרים שדות:</span> {draft.missingFields.join(", ")}
         </div>
       )}
 
       {/* Main Fields / Inline Edit Form */}
       {isEditing ? (
-        <div className="space-y-3 mb-4 p-3.5 rounded-xl bg-slate-50 border border-slate-200">
-          <div>
-            <label className="block text-[11px] text-slate-600 font-medium mb-1">שם לקוח:</label>
-            <input
-              type="text"
-              value={editCustomer}
-              onChange={(e) => setEditCustomer(e.target.value)}
-              className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 shadow-xs"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-3 mb-4 p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <div>
-              <label className="block text-[11px] text-slate-600 font-medium mb-1">תאריך:</label>
+              <label className="block text-[11px] text-slate-500 font-medium mb-1">שם לקוח</label>
+              <input
+                type="text"
+                value={editCustomer}
+                onChange={(e) => setEditCustomer(e.target.value)}
+                className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs text-slate-900 focus:outline-none focus:border-slate-400"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] text-slate-500 font-medium mb-1">תאריך</label>
               <input
                 type="text"
                 value={editDate}
                 onChange={(e) => setEditDate(e.target.value)}
-                className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 shadow-xs"
+                className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs text-slate-900 focus:outline-none focus:border-slate-400"
                 placeholder="YYYY-MM-DD"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] text-slate-600 font-medium mb-1">משך זמן (מעוגל ל-15 דק׳):</label>
-              <input
-                type="text"
-                value={editDuration}
-                onChange={(e) => setEditDuration(e.target.value)}
-                className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 shadow-xs"
-                placeholder="0.25 שעה / 15 דקות"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-2">
             <div>
-              <label className="block text-[11px] text-slate-600 font-medium mb-1">שעת התחלה (24 שעות):</label>
+              <label className="block text-[11px] text-slate-500 font-medium mb-1">התחלה</label>
               <input
                 type="time"
                 lang="en-GB"
@@ -901,12 +825,12 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                     setEditDuration(timeCalcs.durationFormatted);
                   }
                 }}
-                className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-mono text-slate-800 focus:outline-none focus:border-blue-500 shadow-xs"
+                className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs font-mono text-slate-900 focus:outline-none focus:border-slate-400"
                 dir="ltr"
               />
             </div>
             <div>
-              <label className="block text-[11px] text-slate-600 font-medium mb-1">שעת סיום (24 שעות):</label>
+              <label className="block text-[11px] text-slate-500 font-medium mb-1">סיום</label>
               <input
                 type="time"
                 lang="en-GB"
@@ -924,22 +848,32 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                     setEditDuration(timeCalcs.durationFormatted);
                   }
                 }}
-                className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-mono text-slate-800 focus:outline-none focus:border-blue-500 shadow-xs"
+                className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs font-mono text-slate-900 focus:outline-none focus:border-slate-400"
                 dir="ltr"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-slate-500 font-medium mb-1">משך זמן</label>
+              <input
+                type="text"
+                value={editDuration}
+                onChange={(e) => setEditDuration(e.target.value)}
+                className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs font-semibold text-slate-900 focus:outline-none focus:border-slate-400"
+                placeholder="1 שעה"
               />
             </div>
           </div>
 
-          {/* Field: סוג הפעילות (לדיווח ו-Microsoft Lists) */}
+          {/* Field: סוג הפעילות */}
           <div>
-            <label className="block text-[11px] text-slate-700 font-bold mb-1">
-              סוג הפעילות (לדיווח ו-Microsoft Lists):
+            <label className="block text-[11px] text-slate-500 font-medium mb-1">
+              סוג הפעילות
             </label>
-            <div className="grid grid-cols-3 gap-1.5 mb-2">
+            <div className="grid grid-cols-3 gap-1.5">
               {[
-                { id: "טיקטים", label: "טיקטים / שירות", icon: <Ticket className="w-3.5 h-3.5" />, activeBg: "bg-blue-600 text-white border-blue-600" },
-                { id: "ביקור באתר", label: "ביקור באתר", icon: <MapPin className="w-3.5 h-3.5" />, activeBg: "bg-emerald-600 text-white border-emerald-600" },
-                { id: "פרויקטים", label: "פרויקטים", icon: <FolderKanban className="w-3.5 h-3.5" />, activeBg: "bg-amber-600 text-white border-amber-600" },
+                { id: "טיקטים", label: "טיקטים", icon: <Ticket className="w-3.5 h-3.5" /> },
+                { id: "ביקור באתר", label: "ביקור באתר", icon: <MapPin className="w-3.5 h-3.5" /> },
+                { id: "פרויקטים", label: "פרויקטים", icon: <FolderKanban className="w-3.5 h-3.5" /> },
               ].map((opt) => {
                 const isSelected =
                   (opt.id === "טיקטים" && (editActivityType.includes("טיקט") || editActivityType.includes("שירות") || editActivityType === "טיקטים")) ||
@@ -952,7 +886,6 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                     type="button"
                     onClick={() => {
                       setEditActivityType(opt.id);
-                      // Auto-sync excel tab if matching tab exists in file
                       const matchingTab = draft?.availableTabs?.find((t) => {
                         const tNorm = t.name.toLowerCase();
                         if (opt.id === "ביקור באתר") return tNorm.includes("ביקור") || tNorm.includes("onsite");
@@ -961,9 +894,9 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                       });
                       if (matchingTab) setEditWorkType(matchingTab.name);
                     }}
-                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold border flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-xs ${
+                    className={`py-1.5 px-2 rounded-lg text-xs font-medium border flex items-center justify-center gap-1 cursor-pointer transition-colors ${
                       isSelected
-                        ? `${opt.activeBg} font-bold`
+                        ? "bg-slate-900 text-white border-slate-900 font-semibold"
                         : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
                     }`}
                   >
@@ -975,86 +908,42 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             </div>
           </div>
 
-          <div>
-            <label className="block text-[11px] text-slate-600 font-medium mb-1">טאב באקסל (מתוך הקובץ):</label>
-            {draft.availableTabs && draft.availableTabs.length > 0 ? (
-              <div
-                className={`grid gap-1.5 ${
-                  draft.availableTabs.length <= 2
-                    ? "grid-cols-2"
-                    : draft.availableTabs.length === 3
-                    ? "grid-cols-3"
-                    : "grid-cols-2 sm:grid-cols-4"
-                }`}
-              >
+          {draft.availableTabs && draft.availableTabs.length > 1 && (
+            <div>
+              <label className="block text-[11px] text-slate-500 font-medium mb-1">טאב באקסל</label>
+              <div className="flex flex-wrap gap-1.5">
                 {draft.availableTabs.map((t) => (
                   <button
                     key={t.name}
                     type="button"
                     onClick={() => setEditWorkType(t.name)}
-                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold border flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-xs ${
+                    className={`py-1 px-2.5 rounded-lg text-xs font-medium border flex items-center gap-1 cursor-pointer transition-colors ${
                       editWorkType === t.name
-                        ? "bg-blue-600 text-white border-blue-600 font-bold"
+                        ? "bg-slate-900 text-white border-slate-900 font-semibold"
                         : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
                     }`}
                   >
-                    {getWorkTypeIcon(t.name)}
                     <span className="truncate">{t.name}</span>
                   </button>
                 ))}
               </div>
-            ) : (
-              <input
-                type="text"
-                value={editWorkType}
-                onChange={(e) => setEditWorkType(e.target.value)}
-                className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-500 shadow-xs"
-                placeholder="שם הטאב באקסל"
-              />
-            )}
-          </div>
+            </div>
+          )}
 
-          {/* Field: מי עבד על המשימה (ריבוי עובדים פותח שורה לכל עובד ב-Excel וב-Lists) */}
-          <div className="p-3 rounded-xl bg-blue-50/60 border border-blue-200/80">
+          {/* Field: מי עבד על המשימה */}
+          <div className="p-2.5 rounded-xl bg-white border border-slate-200/80">
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-[11px] text-blue-950 font-bold flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5 text-blue-600" />
-                מי עבד על הדיווח? ({editEmployees.length} עובדים)
+              <label className="text-[11px] text-slate-700 font-semibold flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-slate-500" />
+                עובדים בדיווח ({editEmployees.length})
               </label>
               {editEmployees.length > 1 && (
-                <span className="text-[10px] bg-blue-600 text-white font-bold px-2 py-0.5 rounded-full shadow-2xs">
-                  ייפתחו {editEmployees.length} שורות נפרדות
+                <span className="text-[10px] bg-slate-100 text-slate-700 font-medium px-2 py-0.5 rounded-full">
+                  {editEmployees.length} שורות נפרדות
                 </span>
               )}
             </div>
-            <p className="text-[10px] text-slate-500 mb-2 leading-relaxed">
-              אם כמה עבדו יחד ואחד תיעד - סמן את כל מי שהשתתף. המערכת תפתח שורה נפרדת לכל עובד עם אותו התיאור בדיוק גם ב-Excel וגם ב-Lists.
-            </p>
 
-            {/* Currently selected employees tags */}
-            <div className="flex flex-wrap gap-1.5 mb-2.5">
-              {editEmployees.map((emp) => (
-                <span
-                  key={emp}
-                  className="inline-flex items-center gap-1 bg-white border border-blue-300 text-blue-900 text-xs font-bold px-2 py-1 rounded-lg shadow-2xs"
-                >
-                  <User className="w-3 h-3 text-blue-600" />
-                  <span>{emp}</span>
-                  {editEmployees.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => setEditEmployees((prev) => prev.filter((e) => e !== emp))}
-                      className="text-slate-400 hover:text-red-600 cursor-pointer p-0.5 rounded"
-                      title="הסר עובד"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  )}
-                </span>
-              ))}
-            </div>
-
-            {/* Quick toggle chips from known team */}
             <div className="flex flex-wrap gap-1 mb-2">
               {PRESET_TEAM_MEMBERS.map((memberName) => {
                 const isSelected = editEmployees.includes(memberName);
@@ -1065,7 +954,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                     onClick={() => {
                       setEditEmployees((prev) => {
                         if (prev.includes(memberName)) {
-                          if (prev.length === 1) return prev; // Keep at least one
+                          if (prev.length === 1) return prev;
                           return prev.filter((e) => e !== memberName);
                         } else {
                           return [...prev, memberName];
@@ -1074,8 +963,8 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                     }}
                     className={`text-[11px] px-2 py-1 rounded-lg border transition-colors cursor-pointer flex items-center gap-1 ${
                       isSelected
-                        ? "bg-blue-600 text-white border-blue-600 font-bold shadow-2xs"
-                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                        ? "bg-slate-900 text-white border-slate-900 font-medium"
+                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
                     }`}
                   >
                     {isSelected ? <Check className="w-3 h-3 text-white" /> : <Plus className="w-3 h-3 text-slate-400" />}
@@ -1085,7 +974,6 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
               })}
             </div>
 
-            {/* Custom employee name input */}
             <div className="flex items-center gap-1.5">
               <input
                 type="text"
@@ -1101,8 +989,8 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                     setCustomEmployeeInput("");
                   }
                 }}
-                placeholder="הוסף שם עובד נוסף (לדוגמה: יונתן)..."
-                className="flex-1 bg-white border border-slate-200 text-xs px-2.5 py-1.5 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:border-blue-500 shadow-2xs"
+                placeholder="הוסף שם עובד נוסף..."
+                className="flex-1 bg-slate-50 border border-slate-200 text-[16px] sm:text-xs px-2.5 py-1 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-400"
               />
               <button
                 type="button"
@@ -1115,7 +1003,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                     setCustomEmployeeInput("");
                   }
                 }}
-                className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-2.5 py-1.5 rounded-lg flex items-center gap-1 cursor-pointer shadow-2xs"
+                className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1 cursor-pointer"
               >
                 <Plus className="w-3 h-3" />
                 <span>הוסף</span>
@@ -1124,377 +1012,259 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
           </div>
 
           <div>
-            <label className="block text-[11px] text-slate-700 font-bold mb-1">
-              תיאור פעילות / תיעוד טכני מלא (קריטי ללקוח ולקובץ האקסל):
+            <label className="block text-[11px] text-slate-500 font-medium mb-1">
+              תיאור פעילות
             </label>
             <textarea
-              rows={4}
+              rows={3}
               value={editDescription}
               onChange={(e) => setEditDescription(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-xs text-slate-800 focus:outline-none focus:border-blue-500 shadow-xs resize-y"
-              placeholder="פרט את כל הפעולות שבוצעו, שרתים, תקלות, בדיקות - אל תחסוך במילים"
+              className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs text-slate-900 focus:outline-none focus:border-slate-400 resize-y"
+              placeholder="פרט את הפעולות שבוצעו..."
             />
           </div>
 
           <div className="flex items-center gap-2 pt-1">
             <button
               onClick={handleSaveEdit}
-              className="flex-1 py-1.5 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+              className="flex-1 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Save className="w-3.5 h-3.5" />
               <span>שמור שינויים</span>
             </button>
             <button
               onClick={() => setIsEditing(false)}
-              className="py-1.5 px-3 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs cursor-pointer"
+              className="py-2 px-3 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-medium cursor-pointer"
             >
-              <X className="w-3.5 h-3.5" />
+              ביטול
             </button>
           </div>
         </div>
       ) : (
         <>
-          {/* Item: סוג הפעילות (לדיווח ו-Microsoft Lists) - Always prominent & 1-tap change */}
-          <div className="mb-3 p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 shadow-xs">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-slate-700 text-xs font-bold flex items-center gap-1.5">
-                <Ticket className="w-3.5 h-3.5 text-blue-600" />
-                סוג הפעילות (לדיווח ו-Lists):
-              </span>
-              <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold border shadow-2xs ${draftWorkTypeBadge.bg}`}>
-                {draftWorkTypeBadge.label}
-              </span>
+          {/* Sleek Segmented Work-Type Selector (Monochrome / Minimal) */}
+          <div className="mb-3 bg-slate-100/80 p-1 rounded-xl grid grid-cols-3 gap-1">
+            {[
+              { id: "טיקטים", label: "טיקטים", icon: <Ticket className="w-3.5 h-3.5 shrink-0" /> },
+              { id: "ביקור באתר", label: "ביקור באתר", icon: <MapPin className="w-3.5 h-3.5 shrink-0" /> },
+              { id: "פרויקטים", label: "פרויקטים", icon: <FolderKanban className="w-3.5 h-3.5 shrink-0" /> },
+            ].map((opt) => {
+              const isSelected =
+                (opt.id === "טיקטים" && draftWorkTypeBadge.label === "טיקטים") ||
+                (opt.id === "ביקור באתר" && (draftWorkTypeBadge.label === "ביקור באתר" || draftWorkTypeBadge.label === "ביקור")) ||
+                (opt.id === "פרויקטים" && draftWorkTypeBadge.label === "פרויקטים");
+
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    if (onUpdateDraft) {
+                      const matchingTab = draft.availableTabs?.find((t) => {
+                        const tNorm = t.name.toLowerCase();
+                        if (opt.id === "ביקור באתר") return tNorm.includes("ביקור") || tNorm.includes("onsite");
+                        if (opt.id === "פרויקטים") return tNorm.includes("פרויקט") || tNorm.includes("project");
+                        return tNorm.includes("טיקט") || tNorm.includes("קריא") || tNorm.includes("שירות");
+                      });
+
+                      onUpdateDraft({
+                        ...draft,
+                        workType: opt.id,
+                        activityType: opt.id,
+                        targetTabName: matchingTab ? matchingTab.name : draft.targetTabName,
+                        availableTabs: draft.availableTabs?.map((t) => ({
+                          ...t,
+                          isSelected: matchingTab ? t.name === matchingTab.name : t.isSelected,
+                        })),
+                      });
+                    }
+                  }}
+                  className={`py-1.5 px-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                    isSelected
+                      ? "bg-white text-slate-900 font-semibold shadow-2xs"
+                      : "text-slate-500 hover:text-slate-800"
+                  }`}
+                >
+                  {opt.icon}
+                  <span className="truncate">{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Compact Metrics & Quick Time Adjustment */}
+          <div className="p-3 rounded-xl bg-[#f9fafb] border border-slate-100 mb-3 space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500">זמן לחיוב:</span>
+                <span className="text-sm font-bold text-slate-900 font-mono">
+                  {draft.durationFormatted || "לא צוין"}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                <Calendar className="w-3.5 h-3.5 text-slate-400" />
+                <span className="font-medium text-slate-700">{draft.date}</span>
+              </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-1 sm:gap-1.5">
+            {/* Quick Duration Pills */}
+            <div className="flex flex-wrap gap-1">
               {[
-                { id: "טיקטים", label: "טיקטים", desktopLabel: "טיקטים / שירות", icon: <Ticket className="w-3.5 h-3.5 shrink-0" />, activeBg: "bg-blue-600 text-white border-blue-600" },
-                { id: "ביקור באתר", label: "ביקור באתר", desktopLabel: "ביקור באתר", icon: <MapPin className="w-3.5 h-3.5 shrink-0" />, activeBg: "bg-emerald-600 text-white border-emerald-600" },
-                { id: "פרויקטים", label: "פרויקטים", desktopLabel: "פרויקטים", icon: <FolderKanban className="w-3.5 h-3.5 shrink-0" />, activeBg: "bg-amber-600 text-white border-amber-600" },
-              ].map((opt) => {
-                const isSelected =
-                  (opt.id === "טיקטים" && draftWorkTypeBadge.label === "טיקטים") ||
-                  (opt.id === "ביקור באתר" && (draftWorkTypeBadge.label === "ביקור באתר" || draftWorkTypeBadge.label === "ביקור")) ||
-                  (opt.id === "פרויקטים" && draftWorkTypeBadge.label === "פרויקטים");
-
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => {
-                      if (onUpdateDraft) {
-                        // Find matching tab if available in this workbook
-                        const matchingTab = draft.availableTabs?.find((t) => {
-                          const tNorm = t.name.toLowerCase();
-                          if (opt.id === "ביקור באתר") return tNorm.includes("ביקור") || tNorm.includes("onsite");
-                          if (opt.id === "פרויקטים") return tNorm.includes("פרויקט") || tNorm.includes("project");
-                          return tNorm.includes("טיקט") || tNorm.includes("קריא") || tNorm.includes("שירות");
-                        });
-
-                        onUpdateDraft({
-                          ...draft,
-                          workType: opt.id,
-                          activityType: opt.id,
-                          targetTabName: matchingTab ? matchingTab.name : draft.targetTabName,
-                          availableTabs: draft.availableTabs?.map((t) => ({
-                            ...t,
-                            isSelected: matchingTab ? t.name === matchingTab.name : t.isSelected,
-                          })),
-                        });
-                      }
-                    }}
-                    className={`py-1.5 px-1.5 sm:px-2 rounded-lg text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-all ${
-                      isSelected
-                        ? `${opt.activeBg} font-bold shadow-xs border`
-                        : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
-                    }`}
-                  >
-                    {opt.icon}
-                    <span className="truncate sm:hidden">{opt.label}</span>
-                    <span className="truncate hidden sm:inline">{opt.desktopLabel}</span>
-                  </button>
-                );
-              })}
+                { mins: 15, h: 0.25, lbl: "15 דק׳" },
+                { mins: 30, h: 0.5, lbl: "30 דק׳" },
+                { mins: 45, h: 0.75, lbl: "45 דק׳" },
+                { mins: 60, h: 1, lbl: "שעה" },
+                { mins: 90, h: 1.5, lbl: "1.5 ש׳" },
+                { mins: 120, h: 2, lbl: "שעתיים" },
+              ].map((d) => (
+                <button
+                  key={d.mins}
+                  type="button"
+                  onClick={() => {
+                    if (onUpdateDraft) {
+                      const newEnd = draft.startTime
+                        ? calcEndTimeFromDuration(draft.startTime, d.mins)
+                        : draft.endTime;
+                      const durationLbl = d.h === 1 ? "1 שעה" : `${d.h} שעות`;
+                      onUpdateDraft({
+                        ...draft,
+                        durationMinutes: d.mins,
+                        durationHours: d.h,
+                        durationFormatted: durationLbl,
+                        endTime: newEnd,
+                        isTimeSuggested: false,
+                        mappedRow: {
+                          ...(draft.mappedRow || {}),
+                          "שעת התחלה": draft.startTime,
+                          "שעת סיום": newEnd,
+                          משך: d.h,
+                          שעות: d.h,
+                          "סה״כ שעות": d.h,
+                          "סה\"כ שעות": d.h,
+                        },
+                      });
+                    }
+                  }}
+                  className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
+                    draft.durationMinutes === d.mins
+                      ? "bg-slate-900 text-white border-slate-900 font-semibold"
+                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                  }`}
+                >
+                  {d.lbl}
+                </button>
+              ))}
             </div>
-            <span className="text-[9px] text-slate-400 mt-1.5 block text-center">
-              * סוג הפעילות נשמר בדיווח השעות ומסונכרן אוטומטית לעמודת "סוג הפעילות" ב-Microsoft Lists
-            </span>
+
+            {/* Inline Start / End 24h Time Inputs */}
+            <div className="grid grid-cols-2 gap-2 pt-1">
+              <div className="bg-white px-2.5 py-1.5 rounded-lg border border-slate-200/80 flex items-center justify-between gap-1">
+                <span className="text-[11px] text-slate-400">התחלה</span>
+                <input
+                  type="time"
+                  lang="en-GB"
+                  step="60"
+                  value={draft.startTime || ""}
+                  onChange={(e) => {
+                    const newStart = e.target.value;
+                    const timeCalcs = computeTimesAndDuration(
+                      newStart,
+                      draft.endTime || "",
+                      draft.durationMinutes || 30
+                    );
+                    if (onUpdateDraft) {
+                      onUpdateDraft({
+                        ...draft,
+                        startTime: newStart,
+                        endTime: timeCalcs.endTime,
+                        durationMinutes: timeCalcs.durationMinutes,
+                        durationHours: timeCalcs.durationHours,
+                        durationFormatted: timeCalcs.durationFormatted,
+                        isTimeSuggested: false,
+                        mappedRow: {
+                          ...(draft.mappedRow || {}),
+                          "שעת התחלה": newStart,
+                          "שעת סיום": timeCalcs.endTime,
+                          משך: timeCalcs.durationHours,
+                          שעות: timeCalcs.durationHours,
+                          "סה״כ שעות": timeCalcs.durationHours,
+                          "סה\"כ שעות": timeCalcs.durationHours,
+                        },
+                      });
+                    }
+                  }}
+                  className="text-[16px] sm:text-xs font-mono font-semibold text-slate-900 bg-transparent focus:outline-none cursor-pointer"
+                  dir="ltr"
+                />
+              </div>
+
+              <div className="bg-white px-2.5 py-1.5 rounded-lg border border-slate-200/80 flex items-center justify-between gap-1">
+                <span className="text-[11px] text-slate-400">סיום</span>
+                <input
+                  type="time"
+                  lang="en-GB"
+                  step="60"
+                  value={draft.endTime || ""}
+                  onChange={(e) => {
+                    const newEnd = e.target.value;
+                    const timeCalcs = computeTimesAndDuration(
+                      draft.startTime || "",
+                      newEnd,
+                      draft.durationMinutes || 30
+                    );
+                    if (onUpdateDraft) {
+                      onUpdateDraft({
+                        ...draft,
+                        startTime: timeCalcs.startTime,
+                        endTime: newEnd,
+                        durationMinutes: timeCalcs.durationMinutes,
+                        durationHours: timeCalcs.durationHours,
+                        durationFormatted: timeCalcs.durationFormatted,
+                        isTimeSuggested: false,
+                        mappedRow: {
+                          ...(draft.mappedRow || {}),
+                          "שעת התחלה": timeCalcs.startTime,
+                          "שעת סיום": newEnd,
+                          משך: timeCalcs.durationHours,
+                          שעות: timeCalcs.durationHours,
+                          "סה״כ שעות": timeCalcs.durationHours,
+                          "סה\"כ שעות": timeCalcs.durationHours,
+                        },
+                      });
+                    }
+                  }}
+                  className="text-[16px] sm:text-xs font-mono font-semibold text-slate-900 bg-transparent focus:outline-none cursor-pointer"
+                  dir="ltr"
+                />
+              </div>
+            </div>
           </div>
 
-          {/* Item 2: TAB IN THE SUMMARY - Shown if multiple tabs or to indicate Excel sheet */}
-          {draft.availableTabs && draft.availableTabs.length > 1 && (
-            <div className="mb-3 p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 shadow-xs">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-slate-600 text-[11px] font-semibold flex items-center gap-1.5">
-                  <FolderKanban className="w-3.5 h-3.5 text-blue-600" />
-                  טאב יעד בקובץ האקסל:
+          {/* Description Box */}
+          <div className="p-3 rounded-xl bg-[#f9fafb] border border-slate-100 text-xs sm:text-[13px] text-slate-800 leading-relaxed mb-3">
+            <span className="text-[10px] text-slate-400 font-medium block mb-1">
+              תיאור פעילות
+            </span>
+            <p className="font-medium text-slate-900 whitespace-pre-wrap">
+              {draft.description || "טרם הוזן תיאור"}
+            </p>
+          </div>
+
+          {/* Minimal 1-Line SharePoint Target File Indicator */}
+          <div className="mb-3.5">
+            <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#f9fafb] border border-slate-100 text-xs">
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                <FileSpreadsheet className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span className="font-mono text-slate-600 text-[11px] truncate" dir="ltr">
+                  {draft.fileName || "לא זוהה קובץ יעד"}
                 </span>
-                <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-md border border-blue-200/60 inline-flex items-center gap-1">
-                  {getWorkTypeIcon(draft.targetTabName || draft.workType)}
-                  {draft.targetTabName || draft.workType}
-                </span>
-              </div>
-
-              <div
-                className={`grid gap-1.5 ${
-                  draft.availableTabs.length <= 2
-                    ? "grid-cols-2"
-                    : draft.availableTabs.length === 3
-                    ? "grid-cols-3"
-                    : "grid-cols-2 sm:grid-cols-4"
-                }`}
-              >
-                {draft.availableTabs.map((tab) => {
-                  const currentName = draft.targetTabName || draft.workType;
-                  const isSelected = currentName === tab.name;
-                  return (
-                    <button
-                      key={tab.name}
-                      type="button"
-                      onClick={() => {
-                        if (onUpdateDraft) {
-                          onUpdateDraft({
-                            ...draft,
-                            targetTabName: tab.name,
-                            availableTabs: draft.availableTabs?.map((t) => ({
-                              ...t,
-                              isSelected: t.name === tab.name,
-                            })),
-                          });
-                        }
-                      }}
-                      className={`py-1.5 px-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer transition-all ${
-                        isSelected
-                          ? "bg-blue-600 text-white shadow-xs border border-blue-600 font-bold"
-                          : "bg-white text-slate-700 border border-slate-200 hover:bg-slate-100"
-                      }`}
-                      title={`העבר לטאב ${tab.name}`}
-                    >
-                      {getWorkTypeIcon(tab.name)}
-                      <span className="truncate">{tab.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Read-only Grid of Details */}
-          <div className="grid grid-cols-2 gap-2 text-xs mb-3">
-            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 shadow-xs">
-              <span className="text-slate-500 block text-[10px] flex items-center gap-1">
-                <Calendar className="w-3 h-3 text-blue-500" />
-                תאריך
-              </span>
-              <span className="font-semibold text-slate-800 mt-0.5 block">{draft.date}</span>
-            </div>
-
-            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 shadow-xs">
-              <span className="text-slate-500 block text-[10px] flex items-center gap-1">
-                <Clock className="w-3 h-3 text-blue-500" />
-                משך זמן
-              </span>
-              <span className="font-bold text-blue-600 mt-0.5 block truncate">
-                {draft.durationFormatted || "לא צוין"}
-              </span>
-              <div className="flex flex-wrap gap-1 mt-1.5">
-                {[
-                  { mins: 15, h: 0.25, lbl: "15ד'" },
-                  { mins: 30, h: 0.5, lbl: "30ד'" },
-                  { mins: 45, h: 0.75, lbl: "45ד'" },
-                  { mins: 60, h: 1, lbl: "1ש'" },
-                  { mins: 90, h: 1.5, lbl: "1.5ש'" },
-                  { mins: 120, h: 2, lbl: "2ש'" },
-                ].map((d) => (
-                  <button
-                    key={d.mins}
-                    type="button"
-                    onClick={() => {
-                      if (onUpdateDraft) {
-                        const newEnd = draft.startTime
-                          ? calcEndTimeFromDuration(draft.startTime, d.mins)
-                          : draft.endTime;
-                        const durationLbl = d.h === 1 ? "1 שעה" : `${d.h} שעות`;
-                        onUpdateDraft({
-                          ...draft,
-                          durationMinutes: d.mins,
-                          durationHours: d.h,
-                          durationFormatted: durationLbl,
-                          endTime: newEnd,
-                          isTimeSuggested: false,
-                          mappedRow: {
-                            ...(draft.mappedRow || {}),
-                            "שעת התחלה": draft.startTime,
-                            "שעת סיום": newEnd,
-                            משך: d.h,
-                            שעות: d.h,
-                            "סה״כ שעות": d.h,
-                            "סה\"כ שעות": d.h,
-                          },
-                        });
-                      }
-                    }}
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border transition-all cursor-pointer ${
-                      draft.durationMinutes === d.mins
-                        ? "bg-blue-600 text-white border-blue-600 font-bold"
-                        : "bg-white text-slate-600 border-slate-200 hover:bg-blue-50 hover:text-blue-600"
-                    }`}
-                  >
-                    {d.lbl}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Item 1: 24-HOUR START/END TIMES (Modern, clean, editable, with Firefox 24h support) */}
-            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 shadow-xs col-span-2">
-              <div className="flex items-center justify-between gap-1 mb-1.5">
-                <span className="text-slate-600 text-[11px] font-semibold flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-blue-500" />
-                  שעות פעילות (24 שעות):
-                </span>
-                {draft.isTimeSuggested && (
-                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 shadow-2xs flex items-center gap-0.5">
-                    <Sparkles className="w-2.5 h-2.5 text-amber-600" />
-                    משוער
+                {draft.targetRow ? (
+                  <span className="text-[10px] text-slate-400 font-mono shrink-0">
+                    (שורה {draft.targetRow})
                   </span>
-                )}
+                ) : null}
               </div>
-
-              {/* Editable Start/End Time Inputs (24h native format across Chrome & Firefox) */}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="bg-white p-1.5 rounded-lg border border-slate-200 flex items-center justify-between gap-1 shadow-2xs">
-                  <span className="text-[10px] text-slate-500 font-medium">התחלה:</span>
-                  <input
-                    type="time"
-                    lang="en-GB"
-                    step="60"
-                    value={draft.startTime || ""}
-                    onChange={(e) => {
-                      const newStart = e.target.value;
-                      const timeCalcs = computeTimesAndDuration(
-                        newStart,
-                        draft.endTime || "",
-                        draft.durationMinutes || 30
-                      );
-                      if (onUpdateDraft) {
-                        onUpdateDraft({
-                          ...draft,
-                          startTime: newStart,
-                          endTime: timeCalcs.endTime,
-                          durationMinutes: timeCalcs.durationMinutes,
-                          durationHours: timeCalcs.durationHours,
-                          durationFormatted: timeCalcs.durationFormatted,
-                          isTimeSuggested: false,
-                          mappedRow: {
-                            ...(draft.mappedRow || {}),
-                            "שעת התחלה": newStart,
-                            "שעת סיום": timeCalcs.endTime,
-                            משך: timeCalcs.durationHours,
-                            שעות: timeCalcs.durationHours,
-                            "סה״כ שעות": timeCalcs.durationHours,
-                            "סה\"כ שעות": timeCalcs.durationHours,
-                          },
-                        });
-                      }
-                    }}
-                    className="text-xs font-mono font-bold text-slate-800 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 rounded px-1 cursor-pointer"
-                    dir="ltr"
-                    title="הקש לשינוי שעת התחלה (שעון 24 שעות)"
-                  />
-                </div>
-
-                <div className="bg-white p-1.5 rounded-lg border border-slate-200 flex items-center justify-between gap-1 shadow-2xs">
-                  <span className="text-[10px] text-slate-500 font-medium">סיום:</span>
-                  <input
-                    type="time"
-                    lang="en-GB"
-                    step="60"
-                    value={draft.endTime || ""}
-                    onChange={(e) => {
-                      const newEnd = e.target.value;
-                      const timeCalcs = computeTimesAndDuration(
-                        draft.startTime || "",
-                        newEnd,
-                        draft.durationMinutes || 30
-                      );
-                      if (onUpdateDraft) {
-                        onUpdateDraft({
-                          ...draft,
-                          startTime: timeCalcs.startTime,
-                          endTime: newEnd,
-                          durationMinutes: timeCalcs.durationMinutes,
-                          durationHours: timeCalcs.durationHours,
-                          durationFormatted: timeCalcs.durationFormatted,
-                          isTimeSuggested: false,
-                          mappedRow: {
-                            ...(draft.mappedRow || {}),
-                            "שעת התחלה": timeCalcs.startTime,
-                            "שעת סיום": newEnd,
-                            משך: timeCalcs.durationHours,
-                            שעות: timeCalcs.durationHours,
-                            "סה״כ שעות": timeCalcs.durationHours,
-                            "סה\"כ שעות": timeCalcs.durationHours,
-                          },
-                        });
-                      }
-                    }}
-                    className="text-xs font-mono font-bold text-slate-800 bg-transparent focus:outline-none focus:ring-1 focus:ring-blue-500 rounded px-1 cursor-pointer"
-                    dir="ltr"
-                    title="הקש לשינוי שעת סיום (שעון 24 שעות)"
-                  />
-                </div>
-              </div>
-              <span className="text-[9px] text-slate-400 mt-1 block">
-                * ניתן לשנות בלחיצה או בקולך (לדוגמה: "התחלתי ב-10")
-              </span>
-            </div>
-
-            {/* Contact Person & Ticket Number with "לא קיים בקובץ" support */}
-            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 shadow-xs">
-              <span className="text-slate-500 block text-[10px] flex items-center gap-1">
-                <User className="w-3 h-3 text-blue-500" />
-                איש קשר
-              </span>
-              <span className="text-xs font-semibold mt-0.5 block">
-                {draft.unmappedFields && draft.unmappedFields.includes("contact_person") ? (
-                  <span className="text-slate-400 font-normal italic text-[11px]">לא קיים בקובץ</span>
-                ) : (
-                  <span className="text-slate-800">{draft.contactPerson || "לא צוין"}</span>
-                )}
-              </span>
-            </div>
-
-            <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 shadow-xs">
-              <span className="text-slate-500 block text-[10px] flex items-center gap-1">
-                <Ticket className="w-3 h-3 text-blue-500" />
-                מספר קריאה / טיקט
-              </span>
-              <span className="text-xs font-semibold mt-0.5 block">
-                {draft.unmappedFields && draft.unmappedFields.includes("ticket_number") ? (
-                  <span className="text-slate-400 font-normal italic text-[11px]">לא קיים בקובץ</span>
-                ) : (
-                  <span className="text-slate-800 font-mono">{draft.ticketNumber || "ללא טיקט"}</span>
-                )}
-              </span>
-            </div>
-          </div>
-
-          {/* Description */}
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-800 leading-relaxed mb-3 shadow-xs">
-            <span className="text-[10px] text-slate-600 font-bold block mb-1">
-              תיאור פעילות / תיעוד טכני מלא:
-            </span>
-            <p className="font-medium text-slate-900 whitespace-pre-wrap">{draft.description || "טרם הוזן תיאור"}</p>
-          </div>
-
-          {/* File Path & Target Row Info with Manual File Selector */}
-          <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-700 mb-4 shadow-xs">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] text-slate-600 font-semibold flex items-center gap-1.5">
-                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-                קובץ יעד ב-SharePoint:
-              </span>
 
               <button
                 type="button"
@@ -1505,51 +1275,35 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                     loadCustomerFiles();
                   }
                 }}
-                className="text-[11px] px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 text-blue-600 border border-slate-200 flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+                className="text-[11px] text-slate-600 hover:text-slate-900 font-medium flex items-center gap-1 cursor-pointer shrink-0"
               >
-                <FolderOpen className="w-3 h-3" />
-                <span>{draft.fileName ? "החלף קובץ" : "בחר קובץ ידנית"}</span>
+                <span>{draft.fileName ? "החלף" : "בחר קובץ"}</span>
                 {isSelectingFile ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
               </button>
             </div>
 
-            {/* Currently selected file display */}
-            <div className="mt-1.5 flex items-center justify-between gap-2 bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 shadow-xs">
-              <span className="font-mono text-slate-900 font-semibold text-[11px] sm:text-xs truncate min-w-0 flex-1" dir="ltr">
-                {draft.fileName || (
-                  <span className="text-amber-600 font-sans text-xs">⚠️ לא זוהה קובץ אוטומטית - בחר מהרשימה מטה</span>
-                )}
-              </span>
-              {draft.targetRow ? (
-                <span className="font-mono text-emerald-700 text-[11px] font-bold shrink-0" dir="ltr">
-                  שורה {draft.targetRow}
-                </span>
-              ) : null}
-            </div>
-
-            {/* Interactive File Selector Dropdown / List */}
             {isSelectingFile && (
-              <div className="mt-2.5 pt-2.5 border-t border-slate-200 space-y-1.5">
-                <div className="flex items-center justify-between text-[11px] text-slate-500 mb-1">
-                  <span>קבצי Excel בתיקיית שעות עבודה ({draft.customerName}):</span>
+              <div className="mt-1.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] text-slate-500">
+                  <span>קבצי Excel ({draft.customerName}):</span>
                   <button
                     type="button"
                     onClick={loadCustomerFiles}
                     disabled={isLoadingFiles}
-                    className="inline-flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-700 cursor-pointer"
+                    className="inline-flex items-center gap-1 text-[10px] text-slate-700 hover:text-slate-900 cursor-pointer"
                   >
                     <RefreshCw className={`w-3 h-3 ${isLoadingFiles ? "animate-spin" : ""}`} />
-                    <span>רענן רשימה</span>
+                    <span>רענן</span>
                   </button>
                 </div>
 
                 {isLoadingFiles ? (
-                  <div className="py-3 text-center text-slate-500 text-xs flex items-center justify-center gap-2">
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-600" />
-                    <span>טוען קבצים מ-SharePoint...</span>
+                  <div className="py-2.5 text-center text-slate-500 text-xs flex items-center justify-center gap-2">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-slate-600" />
+                    <span>טוען קבצים...</span>
                   </div>
                 ) : fileList.length > 0 ? (
-                  <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+                  <div className="max-h-36 overflow-y-auto space-y-1">
                     {fileList.map((f) => {
                       const isSelected = draft.fileId === f.fileId || draft.fileName === f.fileName;
                       return (
@@ -1559,26 +1313,25 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                           onClick={() => handleSelectFile(f)}
                           className={`w-full text-right px-2.5 py-1.5 rounded-lg text-xs font-mono flex items-center justify-between transition-colors cursor-pointer border ${
                             isSelected
-                              ? "bg-blue-50 border-blue-400 text-blue-900 font-bold"
-                              : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50"
+                              ? "bg-slate-900 border-slate-900 text-white font-semibold"
+                              : "bg-white border-slate-200 text-slate-700 hover:bg-slate-100"
                           }`}
                           dir="ltr"
                         >
                           <span className="truncate">{f.fileName}</span>
-                          {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 shrink-0 ml-1.5" />}
+                          {isSelected && <Check className="w-3.5 h-3.5 text-white shrink-0 ml-1.5" />}
                         </button>
                       );
                     })}
                   </div>
                 ) : (
                   <div className="py-2 text-center text-slate-500 text-xs">
-                    <p>לא נמצאו קבצי Excel ברשימה המקומית.</p>
                     <button
                       type="button"
                       onClick={loadCustomerFiles}
-                      className="mt-1 text-blue-600 underline text-[11px] cursor-pointer"
+                      className="text-slate-800 underline text-[11px] cursor-pointer"
                     >
-                      לחץ כאן לסריקת קבצים מ-SharePoint
+                      סרוק קבצים מ-SharePoint
                     </button>
                   </div>
                 )}
@@ -1588,8 +1341,8 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
         </>
       )}
 
-      {/* Action Buttons: "אשר והזן" / "ערוך" */}
-      <div className="flex flex-row items-center gap-2 pt-2 border-t border-slate-100">
+      {/* Primary CTA Button */}
+      <div className="flex flex-row items-center gap-2">
         <button
           onClick={() => {
             if (!draft.fileId && !draft.fileName) {
@@ -1602,33 +1355,20 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             if (onConfirm) onConfirm(draft.id, draft);
           }}
           disabled={isConfirming || !draft.isReadyForConfirmation}
-          className="btn-primary-subtle flex-1 py-2.5 px-3 sm:px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 sm:gap-2 shadow-sm shadow-blue-500/20 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+          className="flex-1 py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <CheckCircle2 className={`w-4 h-4 shrink-0 ${isConfirming ? "animate-spin" : ""}`} />
           <span className="truncate">
             {isConfirming
               ? assignedList.length > 1
                 ? `מזין ${assignedList.length} שורות...`
-                : "מזין שורה לקובץ..."
+                : "מזין דיווח..."
               : assignedList.length > 1
-              ? `אשר והזן ${assignedList.length} שורות`
+              ? `אשר והזן (${assignedList.length} עובדים)`
               : "אשר והזן"}
           </span>
         </button>
-
-        <button
-          onClick={() => setIsEditing(!isEditing)}
-          className="btn-hover-subtle shrink-0 py-2.5 px-3 sm:px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-semibold text-slate-700 hover:text-slate-900 cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
-        >
-          <Edit3 className="w-3.5 h-3.5" />
-          <span>{isEditing ? "בטל עריכה" : "ערוך"}</span>
-        </button>
       </div>
-
-      <p className="text-[10px] text-slate-400 text-center mt-2.5">
-        ניתן לאשר גם בקולך: אמור <span className="text-blue-600 font-semibold">"כן"</span> או{" "}
-        <span className="text-blue-600 font-semibold">"מאשר"</span>
-      </p>
     </div>
   );
 };

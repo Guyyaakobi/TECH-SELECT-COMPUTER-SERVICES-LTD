@@ -436,8 +436,8 @@ export const HoursTrackerPage: React.FC = () => {
   useEffect(() => {
     const originalBodyBg = document.body.style.backgroundColor;
     const originalHtmlBg = document.documentElement.style.backgroundColor;
-    document.body.style.backgroundColor = "#f8fafd";
-    document.documentElement.style.backgroundColor = "#f8fafd";
+    document.body.style.backgroundColor = "#ffffff";
+    document.documentElement.style.backgroundColor = "#ffffff";
     return () => {
       document.body.style.backgroundColor = originalBodyBg;
       document.documentElement.style.backgroundColor = originalHtmlBg;
@@ -473,44 +473,38 @@ export const HoursTrackerPage: React.FC = () => {
   return (
     <div
       dir="rtl"
-      className="min-h-[100dvh] h-[100dvh] w-full bg-[#f8fafd] text-slate-800 flex flex-col font-sans selection:bg-blue-600 selection:text-white relative overflow-hidden"
+      className="min-h-[100dvh] h-[100dvh] w-full bg-white text-slate-900 flex flex-col font-sans selection:bg-slate-900 selection:text-white relative overflow-hidden pt-[env(safe-area-inset-top)]"
     >
-      {/* Soft Ethereal Blue Glow in the Center */}
-      <div className="fixed inset-0 pointer-events-none z-0 flex items-center justify-center overflow-hidden">
-        <div className="w-[36rem] sm:w-[46rem] h-[26rem] sm:h-[32rem] bg-gradient-to-tr from-sky-200/50 via-blue-100/45 to-indigo-100/30 rounded-full blur-3xl opacity-80" />
-      </div>
-
-      {/* Top Header - Ultra-clean responsive navbar with ALWAYS-ACCESSIBLE Logout button */}
-      <header className="relative z-20 h-14 border-b border-slate-200/80 bg-white/95 backdrop-blur-md px-2.5 sm:px-6 flex items-center justify-between gap-2 shadow-2xs shrink-0">
-        <div className="flex items-center gap-2 shrink-0 min-w-0">
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl sm:rounded-full bg-gradient-to-tr from-[#1a73e8] via-[#7c3aed] to-[#d946ef] flex items-center justify-center text-white shadow-2xs shrink-0">
+      {/* Top Header - Minimalist Luxury Navbar (ChatGPT / Gemini Style) */}
+      <header className="relative z-20 h-13 sm:h-14 border-b border-slate-200/70 bg-white/95 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between gap-2 shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0 min-w-0">
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-900 flex items-center justify-center text-white shrink-0">
             <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </div>
-          <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-            <span className="hidden sm:inline text-sm font-bold text-slate-900 tracking-tight whitespace-nowrap">
-              TECH-SELECT
-            </span>
-            <span className="hidden sm:inline text-slate-300 font-light">|</span>
-            <span className="text-xs sm:text-xs font-bold sm:font-semibold text-slate-800 sm:text-slate-700 sm:bg-slate-100/90 sm:px-2.5 sm:py-0.5 sm:rounded-full sm:border sm:border-slate-200 whitespace-nowrap truncate">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-sm font-semibold text-slate-900 tracking-tight whitespace-nowrap">
               שעות לחיוב לקוח
+            </span>
+            <span className="hidden sm:inline text-slate-300 font-light">·</span>
+            <span className="hidden sm:inline text-xs font-medium text-slate-400 tracking-wide whitespace-nowrap">
+              TECH-SELECT
             </span>
           </div>
         </div>
 
-        {/* Right & Left Header Controls: Scrollable tools + Pinned Always-Visible Logout Button */}
-        <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0 flex-1 justify-end">
+        {/* Right & Left Header Controls: Clean Minimalist Pills + Always-Accessible Logout */}
+        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 justify-end">
           {(account || serverUser) ? (
             <>
-              {/* Scrollable Action Pills */}
-              <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar py-1 min-w-0">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1 min-w-0">
                 {/* "כמה תיעדתי היום" Button for EVERY User */}
                 <button
                   type="button"
                   onClick={() => setShowMyLoggedHoursModal(true)}
-                  className="btn-hover-subtle text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl sm:rounded-full border border-emerald-300/90 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs transition-colors whitespace-nowrap shrink-0"
+                  className="text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-full border border-slate-200/90 bg-slate-50 hover:bg-slate-100 text-slate-800 font-medium flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap shrink-0"
                   title="בדוק כמה שעות לחיוב לקוח תיעדת היום ובכל יום מתוך Microsoft Lists"
                 >
-                  <ListChecks className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <ListChecks className="w-3.5 h-3.5 text-slate-600 shrink-0" />
                   <span>כמה תיעדתי היום</span>
                 </button>
 
@@ -519,11 +513,11 @@ export const HoursTrackerPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setShowDailySummaryModal(true)}
-                    className="btn-hover-subtle text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-xl sm:rounded-full border border-blue-200 bg-blue-50/90 hover:bg-blue-100 text-blue-700 font-bold flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs transition-colors whitespace-nowrap shrink-0"
+                    className="text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-full border border-slate-200/90 bg-white hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap shrink-0"
                     title="דוח וריכוז שעות עבודה יומי לכל העובדים (מנהל)"
                   >
-                    <BarChart3 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    <span className="sm:hidden">שעות היום</span>
+                    <BarChart3 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                    <span className="sm:hidden">דוח יומי</span>
                     <span className="hidden sm:inline">שעות היום (מנהל)</span>
                   </button>
                 )}
@@ -533,12 +527,12 @@ export const HoursTrackerPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setShowCentralLogModal(true)}
-                    className="btn-hover-subtle text-[11px] sm:text-xs px-2 sm:px-3 py-1.5 rounded-xl sm:rounded-full border border-indigo-200 bg-indigo-50/90 hover:bg-indigo-100 text-indigo-700 font-bold flex items-center gap-1 sm:gap-1.5 cursor-pointer shadow-2xs transition-colors whitespace-nowrap shrink-0"
+                    className="text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-full border border-slate-200/90 bg-white hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap shrink-0"
                     title="יומן שעות מרכזי (LOG) לכל העובדים"
                   >
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                     <span className="sm:hidden">LOG</span>
-                    <span className="hidden sm:inline">יומן מרכזי (LOG)</span>
+                    <span className="hidden sm:inline">יומן מרכזי</span>
                   </button>
                 )}
 
@@ -546,33 +540,33 @@ export const HoursTrackerPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setShowTestPanel(!showTestPanel)}
-                    className={`btn-hover-subtle text-xs p-1.5 sm:px-3 sm:py-1.5 rounded-xl sm:rounded-full border font-medium flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+                    className={`text-xs p-1.5 sm:px-3 sm:py-1.5 rounded-full border font-medium flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition-colors ${
                       showTestPanel
-                        ? "bg-purple-600 text-white border-purple-600 shadow-2xs"
-                        : "bg-white hover:bg-slate-50 text-slate-700 border-slate-200 hover:border-slate-300"
+                        ? "bg-slate-900 text-white border-slate-900"
+                        : "bg-white hover:bg-slate-50 text-slate-600 border-slate-200/90"
                     }`}
                     title="פאנל בדיקות טכני וסריקת מבנה קבצים"
                   >
                     <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-                    <span className="hidden md:inline">מצב בדיקה טכני</span>
+                    <span className="hidden lg:inline">בדיקה טכנית</span>
                   </button>
                 )}
 
-                <div className="hidden sm:flex items-center gap-1.5 sm:gap-2 text-right bg-slate-50 border border-slate-200/80 rounded-full p-1 sm:py-1 sm:px-3 shadow-2xs shrink-0">
-                  <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                <div className="hidden md:flex items-center gap-2 text-right bg-slate-50 border border-slate-200/80 rounded-full py-1 px-2.5 shrink-0">
+                  <div className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center text-[11px] font-semibold shrink-0">
                     {displayName.charAt(0)}
                   </div>
-                  <span className="text-xs font-medium text-slate-800 hidden md:inline whitespace-nowrap">
+                  <span className="text-xs font-medium text-slate-700 whitespace-nowrap">
                     {displayName}
                   </span>
                 </div>
               </div>
 
-              {/* PINNED LOGOUT BUTTON: Outside scroll container, NEVER disabled, ALWAYS clickable */}
+              {/* PINNED LOGOUT BUTTON: Always visible, clean, accessible at any stage */}
               <button
                 type="button"
                 onClick={handleLogout}
-                className="btn-hover-subtle px-2.5 sm:px-3 py-1.5 rounded-xl sm:rounded-full text-[11px] sm:text-xs font-bold text-red-600 hover:text-white bg-red-50/90 hover:bg-red-600 border border-red-200 hover:border-red-600 flex items-center gap-1.5 cursor-pointer shrink-0 shadow-2xs transition-all"
+                className="px-2.5 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200/90 flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
                 title="התנתק / יציאה מהחשבון והחלפת משתמש בכל שלב"
               >
                 <LogOut className="w-3.5 h-3.5 shrink-0" />
@@ -581,19 +575,19 @@ export const HoursTrackerPage: React.FC = () => {
             </>
           ) : (
             <div className="flex items-center gap-2 shrink-0">
-              <div className="flex items-center gap-2 text-xs text-slate-500 bg-white border border-slate-200 px-3 py-1 rounded-full shadow-2xs whitespace-nowrap">
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                <span>נדרש זיהוי עובד</span>
+              <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 border border-slate-200/80 px-3 py-1 rounded-full whitespace-nowrap">
+                <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse" />
+                <span>הזדהות</span>
               </div>
               {loading && (
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="px-2.5 py-1.5 rounded-xl sm:rounded-full text-[11px] font-bold text-red-600 hover:text-white bg-red-50 hover:bg-red-600 border border-red-200 flex items-center gap-1 cursor-pointer shrink-0 transition-all"
+                  className="px-2.5 py-1.5 rounded-full text-[11px] font-medium text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
                   title="עצור חיבור אוטומטי והתנתק"
                 >
                   <LogOut className="w-3.5 h-3.5 shrink-0" />
-                  <span>יציאה / איפוס</span>
+                  <span>איפוס</span>
                 </button>
               )}
             </div>
@@ -601,9 +595,9 @@ export const HoursTrackerPage: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Content Area: Full Viewport Gemini Window when authenticated */}
+      {/* Main Content Area */}
       {(account || serverUser) ? (
-        <main className="relative z-10 flex-1 w-full h-[calc(100dvh-3.5rem)] overflow-hidden flex flex-col bg-[#f8fafd]">
+        <main className="relative z-10 flex-1 w-full h-[calc(100dvh-3.25rem)] sm:h-[calc(100dvh-3.5rem)] overflow-hidden flex flex-col bg-white">
           {/* Per-User "כמה תיעדתי היום" Modal (Directly queries Microsoft Lists) */}
           {showMyLoggedHoursModal && (
             <MyLoggedHoursModal
@@ -639,8 +633,8 @@ export const HoursTrackerPage: React.FC = () => {
               <div className="w-full max-w-4xl max-h-[90vh] bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col text-right">
                 <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
                   <div className="flex items-center gap-2 text-slate-800 font-bold text-sm">
-                    <ShieldCheck className="w-4 h-4 text-purple-600" />
-                    <span>פאנל בדיקה טכני ומבנה קבצים (Stage 2)</span>
+                    <ShieldCheck className="w-4 h-4 text-slate-700" />
+                    <span>פאנל בדיקה טכני ומבנה קבצים</span>
                   </div>
                   <button
                     onClick={() => setShowTestPanel(false)}
@@ -658,7 +652,7 @@ export const HoursTrackerPage: React.FC = () => {
             </div>
           )}
 
-          {/* Full-Window Gemini Hours Assistant */}
+          {/* Full-Window Hours Assistant */}
           <HoursErrorBoundary
             fallbackTitle="אירעה שגיאה בטעינת מערכת שעות לחיוב לקוח"
             fallbackMessage="המערכת נתקלה בשגיאה זמנית. ניתן ללחוץ על 'נסה להציג שוב' או לרענן את העמוד."
@@ -673,22 +667,21 @@ export const HoursTrackerPage: React.FC = () => {
           </HoursErrorBoundary>
         </main>
       ) : (
-        <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 sm:px-8 py-6 sm:py-10">
-          <div className="w-full max-w-md transition-all">
+        <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 sm:px-8 py-6 sm:py-10 bg-white">
+          <div className="w-full max-w-sm transition-all">
             {/* Missing System Configuration Screen */}
             {missingConfig && (
-              <div className="p-6 sm:p-8 rounded-3xl bg-amber-50 border border-amber-200 text-right shadow-sm mb-6">
-                <div className="flex items-center gap-3 text-amber-700 mb-3">
-                  <AlertCircle className="w-6 h-6 flex-shrink-0" />
-                  <h3 className="text-base font-bold text-amber-900">
+              <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 text-right mb-6">
+                <div className="flex items-center gap-2.5 text-slate-900 mb-2">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
+                  <h3 className="text-sm font-semibold">
                     חסרה הגדרת מערכת: {missingConfig}
                   </h3>
                 </div>
-                <p className="text-xs sm:text-sm text-amber-800 leading-relaxed mb-4">
+                <p className="text-xs text-slate-600 leading-relaxed mb-3">
                   השרת אינו מוגדר עם המשתנה הנדרש עבור אימות Microsoft 365.
-                  יש להגדיר את <span className="font-mono text-amber-900 font-semibold" dir="ltr">{missingConfig}</span> בסביבת השרת (Cloudflare Environment Bindings / .env).
                 </p>
-                <div className="p-3 rounded-xl bg-amber-100/70 border border-amber-200 text-xs text-amber-900 font-mono" dir="ltr">
+                <div className="p-2.5 rounded-xl bg-white border border-slate-200 text-xs text-slate-700 font-mono" dir="ltr">
                   GET /api/hours/config &rarr; {missingConfig} is empty
                 </div>
               </div>
@@ -696,14 +689,14 @@ export const HoursTrackerPage: React.FC = () => {
 
             {/* Loading State Spinner */}
             {!missingConfig && loading && (
-              <div className="p-8 sm:p-10 rounded-3xl bg-white/90 border border-slate-200/80 backdrop-blur-xl text-center shadow-lg">
-                <div className="w-12 h-12 rounded-full border-3 border-blue-100 border-t-blue-600 animate-spin mx-auto mb-4" />
-                <p className="text-base font-semibold text-slate-800 mb-1">{loadingMessage}</p>
-                <p className="text-xs text-slate-500 mb-5">אימות ארגוני ישיר &middot; Single-Tenant Entra ID</p>
+              <div className="p-8 rounded-3xl bg-white border border-slate-200/90 text-center shadow-xs">
+                <div className="w-9 h-9 rounded-full border-2 border-slate-200 border-t-slate-900 animate-spin mx-auto mb-4" />
+                <p className="text-sm font-medium text-slate-900 mb-1">{loadingMessage}</p>
+                <p className="text-xs text-slate-400 mb-5">Microsoft 365 Single Sign-On</p>
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="mx-auto px-4 py-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                  className="mx-auto px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                 >
                   <LogOut className="w-3.5 h-3.5" />
                   <span>התנתק / החלף משתמש</span>
@@ -713,87 +706,68 @@ export const HoursTrackerPage: React.FC = () => {
 
             {/* Error Message Screen */}
             {!missingConfig && !loading && errorMessage && (
-              <div className="p-6 rounded-2xl bg-red-50 border border-red-200 text-right shadow-sm mb-6">
-                <div className="flex items-center gap-3 text-red-600 mb-2">
-                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
-                  <h3 className="text-sm font-bold text-red-900">הודעת מערכת</h3>
+              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-right mb-5">
+                <div className="flex items-center gap-2 text-slate-900 mb-1.5">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 text-slate-700" />
+                  <h3 className="text-xs font-semibold">הודעת מערכת</h3>
                 </div>
-                <p className="text-xs sm:text-sm text-red-800 leading-relaxed whitespace-pre-line mb-4">
+                <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line mb-4">
                   {errorMessage}
                 </p>
-                <div className="flex items-center gap-2.5 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
                     type="button"
                     onClick={() => setErrorMessage(null)}
-                    className="px-3.5 py-1.5 rounded-lg bg-red-100 hover:bg-red-200 text-xs font-semibold text-red-800 transition-colors cursor-pointer"
+                    className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-xs font-medium text-slate-700 transition-colors cursor-pointer"
                   >
-                    סגור הודעה
+                    סגור
                   </button>
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="px-3.5 py-1.5 rounded-lg bg-white hover:bg-red-600 text-red-700 hover:text-white border border-red-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <LogOut className="w-3.5 h-3.5" />
-                    <span>התנתק ונקה חיבור</span>
+                    <span>נקה חיבור</span>
                   </button>
                 </div>
               </div>
             )}
 
-            {/* Fallback Screen (Only visible if automatic redirect failed or encountered error) */}
+            {/* Minimalist Sign-in Card */}
             {!missingConfig && !loading && !account && !serverUser && (showFallbackButton || errorMessage) && (
-              <div className="p-6 sm:p-10 rounded-3xl bg-white/95 border border-slate-200 shadow-xl text-center relative overflow-hidden">
-                <div className="w-16 h-16 rounded-2xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center mx-auto mb-6 shadow-sm">
-                  <ShieldCheck className="w-8 h-8 text-blue-600" />
+              <div className="p-7 sm:p-8 rounded-3xl bg-white border border-slate-200/90 shadow-xs text-center">
+                <div className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center mx-auto mb-5">
+                  <Sparkles className="w-5 h-5" />
                 </div>
 
-                <h2 className="text-xl sm:text-2xl font-bold text-slate-900 mb-2 tracking-tight">
-                  מסך זיהוי עובד
+                <h2 className="text-xl font-semibold text-slate-900 mb-1.5 tracking-tight">
+                  שעות לחיוב לקוח
                 </h2>
-                <p className="text-xs sm:text-sm text-slate-500 font-medium mb-6">
-                  מערכת שעות לחיוב לקוח &middot; TECH-SELECT LTD
+                <p className="text-xs text-slate-400 font-normal mb-6">
+                  TECH-SELECT · כניסת עובדים מורשים
                 </p>
 
-                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-right mb-6">
-                  <div className="flex items-start gap-2.5">
-                    <Lock className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
-                    <p className="text-xs text-slate-600 leading-relaxed">
-                      גישה מורשית לעובדי החברה בלבד. יש להזדהות באמצעות חשבון Microsoft 365 הארגוני המשויך לדומיין{" "}
-                      <span className="text-blue-600 font-mono font-semibold" dir="ltr">@tech-select.co.il</span>.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Login button */}
                 <button
                   onClick={handleManualLogin}
-                  className="w-full py-3.5 px-6 rounded-2xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm sm:text-base flex items-center justify-center gap-3 transition-all duration-200 shadow-lg shadow-blue-500/20 cursor-pointer active:scale-98 mb-4"
+                  className="w-full py-3 px-5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-medium text-sm flex items-center justify-center gap-3 transition-all cursor-pointer active:scale-[0.99] mb-4"
                 >
-                  <div className="grid grid-cols-2 gap-0.5 w-4 h-4 flex-shrink-0">
-                    <div className="w-1.5 h-1.5 bg-[#f25022] rounded-xs" />
-                    <div className="w-1.5 h-1.5 bg-[#7fba00] rounded-xs" />
-                    <div className="w-1.5 h-1.5 bg-[#00a4ef] rounded-xs" />
-                    <div className="w-1.5 h-1.5 bg-[#ffb900] rounded-xs" />
+                  <div className="grid grid-cols-2 gap-0.5 w-3.5 h-3.5 flex-shrink-0">
+                    <div className="w-1.5 h-1.5 bg-[#f25022]" />
+                    <div className="w-1.5 h-1.5 bg-[#7fba00]" />
+                    <div className="w-1.5 h-1.5 bg-[#00a4ef]" />
+                    <div className="w-1.5 h-1.5 bg-[#ffb900]" />
                   </div>
-                  <span>התחברות באמצעות Microsoft 365</span>
+                  <span>התחברות עם Microsoft 365</span>
                 </button>
 
-                <div className="flex items-center justify-center gap-1.5 text-xs text-slate-500">
-                  <Building2 className="w-3.5 h-3.5 text-blue-600" />
-                  <span>אימות ארגוני ישיר (Single-Tenant Entra ID)</span>
-                </div>
+                <p className="text-[11px] text-slate-400">
+                  חשבון ארגוני <span className="font-mono text-slate-500" dir="ltr">@tech-select.co.il</span>
+                </p>
               </div>
             )}
           </div>
         </main>
-      )}
-
-      {/* Clean Light Footer (Only shown when not authenticated) */}
-      {!account && !serverUser && (
-        <footer className="relative z-10 py-4 text-center text-slate-400 text-xs border-t border-slate-200/60 bg-white/50">
-          TECH-SELECT LTD &copy; {new Date().getFullYear()} &middot; מערכת פנימית מוגנת &middot; מסך זיהוי עובד
-        </footer>
       )}
     </div>
   );

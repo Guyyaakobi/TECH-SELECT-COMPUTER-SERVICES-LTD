@@ -1411,8 +1411,13 @@ export async function processAssistantChat(
   ];
 
   // System Instruction
-  const systemInstruction = `You are a work-hours logging assistant for Tech-Select employees. Speak short, practical Hebrew.
-Most entries are phone calls with customers, also remote sessions and on-site visits.
+  const systemInstruction = `You are a dedicated work-hours logging and reporting assistant for TECH-SELECT employees ("שעות לחיוב לקוח"). Speak short, practical, natural Hebrew.
+
+ABSOLUTE DOMAIN RESTRICTION (חוק ברזל - מיקוד מוחלט בדיווחי שעות TECH-SELECT בלבד):
+- You are STRICTLY and EXCLUSIVELY a work-hours logging and hours-reporting assistant for TECH-SELECT.
+- NEVER answer general knowledge questions, recipes (מתכונים, עוגות, בישול, אוכל), weather, news, politics, sports, jokes, riddles, stories, homework, general programming/coding questions, or casual off-topic conversation.
+- If the user asks ANYTHING unrelated to logging client billable hours, editing/undoing work entries, or checking employee/customer hours reports in TECH-SELECT, you MUST NOT call any tools and MUST reply ONLY with this exact single sentence:
+  "אני עוזר ייעודי לתיעוד שעות לחיוב לקוח ובדיקת דיווחים של TECH-SELECT בלבד. אשמח לעזור לך לתעד פעילות שבוצעה עבור לקוח או לבדוק דיווחי שעות."
 
 CURRENT SYSTEM CONTEXT:
 - ${jCtx.fullDateDescription}
@@ -1431,7 +1436,6 @@ MICROSOFT LISTS DUAL-WRITE SYNCHRONIZATION (סנכרון כפול מול אפל�
   7. תאריך (Date): DD/MM/YYYY.
   8. כמה זמן הושקע (Duration): מספר שעות בפורמט עשרוני (לדוגמה: 0.50, 1.00).
   9. מה נעשה (Description): פירוט מקצועי מלא של מה שבוצע בפועל.
-- Always align draft summaries and confirmations to reflect this exact professional structure.
 
 MANAGER & AUDIT CAPABILITY - HOURS REPORT, DOCUMENTATION INSPECTION & QUERIES (דוחות, ריכוז יומי/שבועי, בדיקת תיעודים, שעות לפי לקוח ועובד):
 - ROUTING DECISION TREE (עץ החלטות חובה):
@@ -1444,96 +1448,34 @@ MANAGER & AUDIT CAPABILITY - HOURS REPORT, DOCUMENTATION INSPECTION & QUERIES (�
      * "ריכוז שבועי" / "דוח שבועי" / "כמה שעות נרשמו השבוע?" -> IMMEDIATELY call get_today_hours_summary({ period: "week", date: "this_week" })!
      * "ריכוז יומי" / "דוח שעות להיום" / "דוח שעות לאתמול" -> IMMEDIATELY call get_today_hours_summary({ date: "today" }) (or "yesterday")!
      * "מה ודים עשה היום/השבוע?" / "כמה שעות עשה גיא?" -> IMMEDIATELY call get_today_hours_summary({ employee: "שם העובד", date: "today" })!
-  2. ABSOLUTE PROHIBITION FOR QUERIES:
+  3. ABSOLUTE PROHIBITION FOR QUERIES:
      - DO NOT call propose_entries, DO NOT call find_customer, DO NOT ask "מי הלקוח שעבורו בוצעה העבודה?", and DO NOT ask "כמה שעות לתעד עבור הפעילות"!
      - The user is checking information, NOT recording a new entry!
-- Present a clear, executive, polite Hebrew summary with:
-  1. כותרת ברורה עם התאריך או התקופה שנבדקו ושם הלקוח/העובד אם נשאל לגביהם.
-  2. מענה ישיר ומדויק לשאלת המשתמש:
-     - אם שאל "כמה שעות נעשו אצל לקוח X": ציין את סה״כ השעות אצל אותו לקוח, מי העובדים שעבדו אצלו, ופירוט הפעילויות שבוצעו.
-     - אם שאל "כמה אנשים תיעדו היום": ציין את כמות האנשים המדויקת, רשימת שמות העובדים, וכמה שעות כל אחד מהם תיעד.
-     - אם שאל לגבי "ריכוז שבועי" או "מתחילת החודש": הצג סיכום תקופתי מלא עם סה״כ שעות, כמות עובדים, כמות לקוחות, וחלוקה לפי עובדים ולקוחות.
-     - אם שאל "לבדוק לגבי תיעודים שעובדים עשו": פרט את התיעודים שנרשמו (שם עובד, שם לקוח, משך זמן, ותיאור הפעילות המלא).
-  3. אם לא נמצאו שעות עבור תאריך או תקופה זו:
-     - ציין באדיבות: "עד כה לא אותרו שעות עבודה שנרשמו עבור [התאריך/התקופה המבוקשת] במערכת ה-Lists."
-     - לעולם אל תזכיר את SharePoint אלא אם המשתמש ביקש במפורש לבדוק בקבצי SharePoint.
 
-CRITICAL RULE - LOGGING NEW ENTRIES ONLY (חוק ברזל - תקף אך ורק כאשר הטכנאי מדווח על עבודה חדשה לרישום!):
-- This rule applies ONLY when the employee describes work they performed to log into Excel (NOT for queries/reports!).
-- Customer matching supports bidirectional bilingual search (Hebrew ↔ English) with phonetic transliteration and customer dictionary (e.g. "טק סלקט" ↔ "Tech-Select", "מטריקס" ↔ "Matrix", "צ'ק פוינט" ↔ "Check Point", "אסיו" ↔ "Asio").
-- When logging a new entry: If the customer does NOT exist in SharePoint (neither in Hebrew nor in English) or if no customer was provided in the activity description:
-  * NEVER CALL propose_entries!
-  * NEVER OPEN A REPORT CARD OR DRAFT!
-  * STOP IMMEDIATELY and ask the employee clearly who the customer is: "לא מצאתי את הלקוח ב-SharePoint (נבדק בעברית ובאנגלית). מי הלקוח שעבורו בוצעה העבודה?"
+ULTRA-FAST SINGLE-STEP LOGGING WORKFLOW (הכנת כרטיס חיוב מיידית בתור אחד!):
+- When the employee describes work performed for a customer (via text or voice):
+  * CALL propose_entries DIRECTLY IN YOUR VERY FIRST STEP!
+  * DO NOT call find_customer, find_month_target, read_sheet_structure, or find_duplicates before propose_entries — propose_entries ALREADY verifies the customer in SharePoint (bilingual Hebrew/English), locates the monthly Excel file, inspects the tabs, and checks duplicates automatically in one fast pass!
+  * Only if NO customer name was mentioned at all in the message/history, ask briefly: "עבור איזה לקוח בוצעה הפעילות?"
 
-EXTRACTION RULES:
-- The employee may describe one OR several entries in one message (even a whole day).
-- Extract per entry:
-  1. Customer: call find_customer.
-     * Verify that the customer exists in SharePoint in Hebrew OR English.
-     * If customer is not found or ambiguous, ask the employee to clarify and DO NOT propose entry drafts for non-existent customers!
-  2. Date: default today (${jCtx.todayIso}, Asia/Jerusalem). Understand "אתמול" (${jCtx.yesterdayIso}), "ביום ראשון", "שלשום", or explicit dates. If last month is mentioned (e.g. August, "חודש שעבר"), target last month's file (${jCtx.lastMonthYear}-${jCtx.lastMonth < 10 ? "0" + jCtx.lastMonth : jCtx.lastMonth}).
-  3. Duration / משך זמן (רציף ומהיר - ללא עצירות מיותרות):
-     - עגל תמיד ל-15 דקות (15 דקות = 0.25 שעות, 30 דקות = 0.5 שעות, 45 דקות = 0.75 שעות, 60 דקות = 1 שעה).
-     - חוק קריטי - עבודה רציפה ללא שאלות מעכבות (Seamless Non-Stop Workflow):
-       כאשר העובד מדווח על פעילות ומציין לקוח ומה נעשה (לדוגמה: "תיקנתי מדפסת באסיו", "הייתי בביקור אצל גל אור"):
-       גם אם העובד לא ציין במפורש משך זמן או שעות - אל תעצור ואל תשאל "כמה שעות או זמן לתעד עבור הפעילות?"!
-       הזן כברירת מחדל חכמה 1 שעה (duration: "1 שעה", 60 דקות, isTimeSuggested = true),
-       קרא מיד ל-propose_entries ופתח את כרטיס הדיווח מיד!
-       בהודעה רשום: "הכנתי את כרטיס הדיווח עבור [שם הלקוח] (הגדרתי שעה 1 כברירת מחדל, ניתן לערוך בכרטיס או להמשיך). מאשר להזין?"
-       כך העובד יכול להזין תיעוד אחרי תיעוד ברצף מושלם בלי להיתקע בשאלות מיותרות!
-     - אם העובד כן ציין זמן (לדוגמה "שעתיים", "חצי שעה", "שעה וחצי", "45 דקות", "0.5"): קלוט את הזמן המדויק ישירות!
-  4. Work type / Tab selection (dynamic & semantic per file):
-     - Each customer's Excel file contains its own real worksheets discovered live.
-     - Match activity semantics:
-       * On-site visit / physical presence ("הייתי אצל", "ביקור", "הגעתי פיזית") -> "onsite" or matching visit tab.
-       * Remote support / phone calls / tickets / daily maintenance ("דיברתי", "התחברתי", "טלפון", "מרחוק", "איפוס סיסמה", "תמיכה") -> "tickets" or matching support tab.
-       * Project work / setup / migration / rollout ("פרויקט", "שדרוג שרת", "מיגרציה", "הקמה") -> "project" or matching project tab.
-  5. Description (ניסוח מקצועי ברמת איש IT בכיר / איש פיתוח בכיר - קריטי וסופר חשוב ללקוח):
-     - זיהוי מחבר הדיווח (קריטי): התחל תמיד את תיאור הפעילות בשם הטכנאי שכתב את הדיווח, לפי שם העובד המחובר (Employee name), בפורמט:
-       "[שם פרטי] כתב: [התיאור המקצועי המלא]"
-       לדוגמה: אם שם העובד המחובר הוא גיא (Guy) -> התחל ב: "גיא כתב: איתור תקלה פיזית..."
-       אם שם העובד המחובר הוא ודים (Vadim) -> התחל ב: "ודים כתב: תמיכה מרחוק במשתמשת..."
-       כך שבקובץ האקסל ודוח השעות יידעו תמיד בדיוק מי הטכנאי שהזין וביצע את המידע.
-     - כאשר אתה מקבל את המידע והתיאור מהטכנאי, נסח אותו ברמה מקצועית גבוהה ביותר, בדיוק כפי שאיש IT בכיר (Senior Systems Engineer) או מהנדס תוכנה/פיתוח בכיר (Senior Software Engineer) כותב עבור לקוחות ודוחות חיוב:
-     - שימוש במינוח טכנולוגי מדויק ומקצועי (כגון: Active Directory, DNS, DHCP, RAID Rebuild, Group Policy, Endpoint Security, Exchange Online, Network Latency, Firewall Rules, Data Integrity, API, Backup & Recovery, Switch Port, וכו').
-     - שמירה מלאה וקפדנית על כל הפרטים והעובדות שהטכנאי ציין (שמות שרתים, שמות מחשבים, רכיבים, שמות משתמשים/אנשי קשר, בדיקות שבוצעו) — אל תחסוך במילים, אל תקצר ואל תשמיט שום שלב!
-     - מבנה ניסוח ברור, רהוט, עשיר ומלוטש בעברית מקצועית משולבת במונחי IT באנגלית היכן שמתאים.
-     - דוגמאות להמחשת הרמה המקצועית הנדרשת:
-       * אם הטכנאי אמר: "הייתי אצל יוסי החלפתי דיסק שהסרבר צעק עליו" -> נסח: "איתור תקלה פיזית במערך האחסון של השרת, החלפת כונן תקול (Hot-Swap Drive Replacement), אתחול תהליך Rebuild למערך ה-RAID וביצוע בדיקת תקינות מערכת (Health Check) בשיתוף יוסי."
-       * אם הטכנאי אמר: "תיקנתי למאיה את המייל שלא שלח" -> נסח: "תמיכה מרחוק במשתמשת: אבחון שגיאת סנכרון ושליחה ב-Microsoft Outlook, תיקון והגדרה מחדש של פרופיל המשתמש (OST Verification), אימות קישוריות לשרת Exchange Online ובדיקת שליחה וקבלה מוצלחת מול מאיה."
-       * אם הטכנאי אמר: "עשיתי שדרוג לסוויץ' והגדרתי וילאנים" -> נסח: "שדרוג Firmware למתג הרשת הארגוני, הגדרת מקטעי רשת (VLAN Configuration), בדיקת ניתוב ואימות קישוריות ושרידות הרשת."
-       * אם הטכנאי אמר: "התחברתי לשרת DB הרצתי סקריפט וסידרתי את הנעילה" -> נסח: "התחברות מאובטחת לשרת בסיס הנתונים (Database Server), ניתוח יומני שגיאות (Event Logs), איתור ונטרול תהליך נעילה (Deadlock Resolution) והרצת סקריפט אופטימיזציה לשיפור ביצועי המערכת."
-  6. Contact person at customer: extract if mentioned (e.g. "דיברתי עם דניאל", "יוסי ביקש").
-  7. Ticket number: extract if mentioned (e.g. "טיקט 1234", "קריאה 5678").
-  8. Start time / End time (suggested and editable):
-     - If the employee didn't specify start/end times: suggest them based on duration (end = time of the report, start = end - duration, rounded to 15 minutes) and set isTimeSuggested = true.
-     - If the employee explicitly says or corrects start/end time (e.g. "התחלתי ב-10", "סיימתי ב-14:00", "הייתי בין 10:00 ל-11:30"): update startTime and endTime accordingly, recalculate duration if needed, and set isTimeSuggested = false.
-  9. Excel Tab / Work type (editable):
-     - The summary card displays the chosen tab name and allows the employee to change it (by tapping or voice: e.g. "תעביר לטאב פרויקטים", "תעביר לטאב קריאות שירות").
-     - If the employee asks to switch tabs: immediately update workType to the requested tab and re-issue propose_entries with the updated draft!
-  10. Updating description: If the technician adds more technical details in later messages (e.g. "תוסיף גם שהחלפתי כבל רשת ובדקתי פינג"), append/merge the new details into the full description so nothing is lost!
-  11. Multiple Employees / Team Work (מי עבד על הדיווח - עבודה משותפת):
-      - ברירת המחדל תמיד: עובד 1 יחיד (העובד המחובר).
-      - אם העובד מציין בדיווח שיותר מעובד אחד עבד על המשימה (לדוגמה: "אני וודים עבדנו", "עבדנו ביחד גיא ותבור", "אני ורועי היינו בביקור", "הייתי עם ניב"):
-        * זהה את שמות כל העובדים שעבדו על המשימה.
-        * העבר ב-propose_entries את המערך assignedEmployees (לדוגמה: assignedEmployees: ["גיא יעקובי", "ודים"]).
-        * במענה רשום: "הכנתי כרטיס דיווח צוותי עבור [שמות העובדים] (עם האישור תירשם שורה נפרדת לכל עובד ב-Excel וב-Lists). מאשר להזין?"
-
-CRITICAL REQUIREMENT - DYNAMIC COLUMNS PER FILE:
-Fields are mapped to the headers of the chosen worksheet by meaning. If a field has no column in the file (e.g. no ticket number column), it will NOT be written and marked as not existing in file.
-NEVER write to signature or approval columns (e.g. "חתימת לקוח", "אישור") - always leave them strictly empty!
-If the entry type has no matching tab in that customer's file, ask the employee which real tab to use from the existing tabs in the file.
-
-MANDATORY WORKFLOW:
-1. Ask ONLY for missing mandatory fields (customer, date, duration, description) – all in ONE question.
-2. Check customer existence in SharePoint via find_customer (supports Hebrew and English). If the customer is not found in SharePoint, DO NOT call propose_entries – stop and ask who the customer is.
-3. Call propose_entries directly with the extracted details ONLY IF customer exists in SharePoint.
-   NOTE: propose_entries AUTOMATICALLY finds the customer's month Excel file in SharePoint, inspects sheet structure and real tabs, and checks duplicates.
-4. Show the summary and ask "מאשר להזין?".
-5. CRITICAL RULE: NEVER call write_rows before explicit confirmation from the employee (such as "אשר והזן", "כן", "מאשר", "תזין", "מאשרת"). Nothing is written until confirmation!
-6. Accept corrections in free speech ("תשנה לחצי שעה", "זה היה אצל לקוח אחר", "התחלתי ב-10", "תעביר לטאב פרויקטים") and show the updated summary card again via propose_entries.
-7. When the user confirms ("כן", "מאשר", "תזין"), call write_rows with all fields populated, then state "נרשם ✓" with target file and row.`;
+EXTRACTION RULES FOR propose_entries:
+1. Customer: Pass the customer name in customerName (supports Hebrew or English).
+2. Date: default today (${jCtx.todayIso}, Asia/Jerusalem). Understand "אתמול" (${jCtx.yesterdayIso}), "ביום ראשון", "שלשום", or explicit dates.
+3. Duration / משך זמן (רציף ומהיר - ללא עצירות מיותרות):
+   - Round to 15 minutes (0.25, 0.5, 0.75, 1, 1.5, 2...).
+   - If the employee did NOT specify duration, default to "1 שעה" (60 minutes, isTimeSuggested = true) and call propose_entries immediately without asking!
+4. Work type / Tab selection:
+   - On-site visit ("הייתי אצל", "ביקור", "הגעתי פיזית") -> "ביקור באתר".
+   - Project work ("פרויקט", "שדרוג שרת", "מיגרציה", "הקמה") -> "פרויקטים".
+   - Remote support / phone / tickets ("דיברתי", "התחברתי", "טלפון", "מרחוק", "תמיכה", "טיקט") -> "טיקטים".
+5. Description (ניסוח מקצועי ברמת Senior IT / System Engineer):
+   - Start with "[שם פרטי] כתב: [התיאור המקצועי המלא]".
+   - Write a clear, professional Hebrew technical description preserving all technical details, server/user names, and actions performed.
+6. Contact person & Ticket number: extract if mentioned.
+7. Start time / End time: extract if mentioned, otherwise propose_entries calculates them automatically.
+8. Multiple Employees / Team Work:
+   - Default is 1 employee ("${user.name}"). If the employee mentions working with colleagues (e.g. "אני וודים", "עם תבור"), include all names in assignedEmployees.
+9. NEVER call write_rows before explicit user confirmation ("כן", "מאשר", "תזין").`;
 
   // Build Conversation Contents for Gemini
   const contents: any[] = [];
@@ -1589,7 +1531,7 @@ MANDATORY WORKFLOW:
   const generateWithFallback = async (
     requestContents: any[],
     requestConfig?: any,
-    timeoutMs = 50000
+    timeoutMs = 35000
   ): Promise<any> => {
     let lastErr: any = null;
     for (const modelName of CANDIDATE_GEMINI_MODELS) {
@@ -1609,7 +1551,7 @@ MANDATORY WORKFLOW:
         const errMsg = err?.message || String(err);
         console.warn(`[Gemini Assistant] Model ${modelName} warning: ${errMsg}. Trying next candidate model...`);
         if (errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("quota")) {
-          await new Promise((r) => setTimeout(r, 600));
+          await new Promise((r) => setTimeout(r, 400));
         }
       }
     }
@@ -1623,38 +1565,91 @@ MANDATORY WORKFLOW:
     return null;
   };
 
-  // STEP 1: Dedicated Audio Transcription (Speech-to-Text)
-  let userTranscript: string | undefined = undefined;
-  if (audio && audio.data) {
-    try {
-      const transcribeRes = await generateWithFallback(
-        [
-          {
-            inlineData: {
-              mimeType: audio.mimeType || "audio/webm",
-              data: audio.data,
-            },
-          },
-          {
-            text: "תמלל את הדיבור בהקלטה לעברית באופן מדויק ונאמן למקור. החזר אך ורק את טקסט התמלול המדויק ללא שום הערות או תוספות.",
-          },
-        ],
-        undefined,
-        25000
+  const OFF_TOPIC_REFUSAL_MSG =
+    "אני עוזר ייעודי לתיעוד שעות לחיוב לקוח ובדיקת דיווחים של TECH-SELECT בלבד. אשמח לעזור לך לתעד פעילות שבוצעה עבור לקוח או לבדוק דיווחי שעות.";
+
+  // Fast deterministic off-topic detector (blocks recipes, food, weather, jokes, sports, general trivia in <1ms)
+  const isDefinitelyOffTopic = (text: string): boolean => {
+    const clean = text.trim();
+    if (!clean) return false;
+    const hasWorkContext =
+      /(?:לקוח|שעה|שעות|דקות|טיקט|קריאה|שרת|מחשב|רשת|מדפסת|מייל|אאוטלוק|אופיס|ענן|גיבוי|פיירוול|סוויץ|ביקור|פרויקט|תמיכה|חיוב|תיעוד|תיעדתי|דיווח|אקסל|ליסט|lists|excel|sharepoint|vpn|dns|ip|ad|sql|ציוד|התקנה|תקלה|משתמש|סיסמה)/i.test(
+        clean
       );
-      userTranscript = transcribeRes?.text?.trim() || undefined;
-    } catch (transcribeErr) {
-      console.warn("[Assistant Transcribe] Fast transcribe error:", transcribeErr);
-    }
+    if (hasWorkContext) return false;
+
+    const offTopicPattern =
+      /(?:מתכון|עוגה|עוגת|שוקולד|אפייה|בישול|אוכל|פיצה|פסטה|מרק|סלט|קפה|מסעדה|מזג\s*ה?אוויר|בדיחה|ספר\s+לי\s+סיפור|שיר|חמשיר|כדורגל|כדורסל|מונדיאל|פוליטיקה|ראש\s+הממשלה|מניה|מניות|קריפטו|ביטקוין|הורוסקופ|מזל\s+אסטרולוגי|תרגם\s+לי\s+שיר|סרטים|נטפליקס|recipe|chocolate\s+cake|weather|tell\s+me\s+a\s+joke)/i;
+    return offTopicPattern.test(clean);
+  };
+
+  // STEP 1: Fast Parallel Audio Transcription + Extraction
+  let userTranscript: string | undefined = undefined;
+  let transcribePromise: Promise<string | undefined> | null = null;
+
+  if (audio && audio.data) {
+    transcribePromise = (async () => {
+      try {
+        const transcribeRes = await generateWithFallback(
+          [
+            {
+              inlineData: {
+                mimeType: audio.mimeType || "audio/webm",
+                data: audio.data,
+              },
+            },
+            {
+              text: "תמלל את הדיבור בהקלטה לעברית באופן מדויק ונאמן למקור. החזר אך ורק את טקסט התמלול המדויק ללא שום הערות או תוספות.",
+            },
+          ],
+          undefined,
+          18000
+        );
+        return transcribeRes?.text?.trim() || undefined;
+      } catch (transcribeErr) {
+        console.warn("[Assistant Transcribe] Fast transcribe error:", transcribeErr);
+        return undefined;
+      }
+    })();
   }
 
-  // Effective message text: prioritize dedicated transcript if voice was sent, otherwise text message
-  const effectiveUserText = (userTranscript || message || "").trim();
+  // If text message (no audio), check off-topic immediately before any LLM call
+  if (!audio?.data && message && isDefinitelyOffTopic(message)) {
+    return {
+      reply: OFF_TOPIC_REFUSAL_MSG,
+      transcript: undefined,
+      drafts: activeDrafts,
+      writtenEntries: [],
+      undoneCardIds: [],
+      isConfirmed: false,
+      suggestedAction: "none",
+    };
+  }
+
+  // If audio was provided, pass the inline audio directly into the first turn so tool extraction starts at t=0ms in parallel with transcription!
+  const initialUserParts: any[] = [];
+  if (audio && audio.data) {
+    initialUserParts.push({
+      inlineData: {
+        mimeType: audio.mimeType || "audio/webm",
+        data: audio.data,
+      },
+    });
+    initialUserParts.push({
+      text: `העובד הקליט הודעה קולית לתיעוד שעות או בדיקת דיווחים. חלץ את הפרטים וקרא מיד ל-propose_entries (או לכלי המתאים). אם ההקלטה אינה קשורה כלל לתיעוד שעות עבודה או ללקוחות TECH-SELECT (למשל שאלה על מתכון או נושא כללי), אל תקרא לשום כלי והחזר סירוב מנומס קצר.${activeDraftsPrompt}`,
+    });
+  } else {
+    initialUserParts.push({
+      text: `${(message || "").trim()}${activeDraftsPrompt}`,
+    });
+  }
 
   contents.push({
     role: "user",
-    parts: [{ text: `${effectiveUserText}${activeDraftsPrompt}` }],
+    parts: initialUserParts,
   });
+
+  let effectiveUserText = (message || "").trim();
 
   // Track state across tool calls
   let collectedDrafts: HoursAssistantEntryDraft[] = [...activeDrafts];
@@ -1662,11 +1657,11 @@ MANDATORY WORKFLOW:
   const undoneCardIds: string[] = [];
   let isConfirmed = false;
 
-  // Tool execution loop (max 6 iterations)
+  // Tool execution loop (max 3 iterations for speed)
   let loopCount = 0;
   let finalResponseText = "";
 
-  while (loopCount < 6) {
+  while (loopCount < 3) {
     loopCount++;
 
     const response = await generateWithFallback(
@@ -1675,7 +1670,7 @@ MANDATORY WORKFLOW:
         systemInstruction,
         tools: [{ functionDeclarations: toolDeclarations }],
       },
-      60000
+      35000
     );
 
     if (!response) {
@@ -1694,8 +1689,30 @@ MANDATORY WORKFLOW:
       break;
     }
 
+    // Ensure transcript is resolved if we need effectiveUserText inside tools
+    if (transcribePromise && !userTranscript) {
+      userTranscript = await transcribePromise;
+      transcribePromise = null;
+      if (userTranscript) {
+        effectiveUserText = userTranscript;
+        if (isDefinitelyOffTopic(userTranscript)) {
+          return {
+            reply: OFF_TOPIC_REFUSAL_MSG,
+            transcript: userTranscript,
+            drafts: activeDrafts,
+            writtenEntries: [],
+            undoneCardIds: [],
+            isConfirmed: false,
+            suggestedAction: "none",
+          };
+        }
+      }
+    }
+
     // Execute tool calls and group responses into a single user turn
     const responseParts: any[] = [];
+    let shouldFastExitLoop = false;
+
     for (const call of calls) {
       const { name, args } = call;
       let toolResult: any = {};
@@ -1703,7 +1720,7 @@ MANDATORY WORKFLOW:
       try {
         if (name === "find_customer") {
           const query = String(args.query || "");
-          const matches = await withSafeTimeout(findCustomer(query, activeEnv), 15000, []);
+          const matches = await withSafeTimeout(findCustomer(query, activeEnv), 10000, []);
           const topMatches = matches.slice(0, 5).map((m) => ({
             name: m.customer.name,
             webUrl: m.customer.webUrl,
@@ -1729,7 +1746,7 @@ MANDATORY WORKFLOW:
           const date = String(args.date || jCtx.todayIso);
           const target = await withSafeTimeout(
             findMonthTarget(customerFolderName, date, activeEnv),
-            15000,
+            10000,
             { found: false, searchPattern: date } as any
           );
           toolResult = target;
@@ -1737,7 +1754,7 @@ MANDATORY WORKFLOW:
           const fileId = String(args.fileId || "");
           const structure = await withSafeTimeout(
             readSheetStructure(fileId, activeEnv),
-            15000,
+            10000,
             { totalDataRows: 0, nextEmptyRowAddress: "Row 2", headers: [] } as any
           );
           toolResult = structure;
@@ -1755,7 +1772,7 @@ MANDATORY WORKFLOW:
               },
               activeEnv
             ),
-            12000,
+            8000,
             { hasDuplicates: false, duplicates: [] }
           );
           toolResult = dupRes;
@@ -1771,48 +1788,49 @@ MANDATORY WORKFLOW:
               continue;
             }
 
-            // CRITICAL SERVER-SIDE RULE: Verify customer exists in SharePoint in Hebrew OR English
-            const customerCheck = await withSafeTimeout(
-              checkCustomerExistsInSharePoint(rawCustomerName, activeEnv),
-              12000,
-              { exists: false, bestMatch: null, score: 0, checkedLanguages: ["hebrew", "english"] }
-            );
+            const date = String(raw.date || jCtx.todayIso).trim();
+
+            // Run customer verification AND initial month target lookup in parallel
+            const [customerCheck, initialMt] = await Promise.all([
+              withSafeTimeout(
+                checkCustomerExistsInSharePoint(rawCustomerName, activeEnv),
+                8000,
+                { exists: false, bestMatch: null, score: 0, checkedLanguages: ["hebrew", "english"] }
+              ),
+              withSafeTimeout(
+                findMonthTarget(rawCustomerName, date, activeEnv),
+                8000,
+                { found: false, availableFiles: [] } as any
+              ),
+            ]);
 
             if (!customerCheck.exists || !customerCheck.bestMatch) {
               if (rawCustomerName.length >= 2) {
                 console.log(`[propose_entries] Proceeding with employee-provided customer "${rawCustomerName}"`);
               } else {
-                console.warn(
-                  `[propose_entries] BLOCKED: Customer "${rawCustomerName}" does not exist in SharePoint (bilingual check failed).`
-                );
                 rejectedCustomerNames.push(rawCustomerName);
                 continue;
               }
             }
 
-            // Only replace employee's provided customer name if match has high confidence (>= 0.88)
             const customerName =
               customerCheck.exists && customerCheck.score >= 0.88 && customerCheck.customerName
                 ? customerCheck.customerName
                 : rawCustomerName;
-            console.log(`[propose_entries] Customer verification: raw="${rawCustomerName}", resolved="${customerName}", score=${customerCheck.score}`);
-            const date = String(raw.date || jCtx.todayIso).trim();
+
             const rawDuration = raw.duration || "";
             const parsedDuration = roundToQuarterHour(rawDuration);
-            // Seamless Non-Stop Workflow: If employee didn't specify duration, default to 60 minutes (1 hour)
             const hasUserSpecifiedDuration = parsedDuration.minutes > 0;
             const minutes = hasUserSpecifiedDuration ? parsedDuration.minutes : 60;
             const hours = hasUserSpecifiedDuration ? parsedDuration.hours : 1;
-            const formatted = hasUserSpecifiedDuration ? parsedDuration.formatted : "60 דקות (1 שעה - ברירת מחדל)";
+            const formatted = hasUserSpecifiedDuration ? parsedDuration.formatted : "1 שעה";
 
-            // Find matching active draft if this is an update to an existing draft
             const matchingActiveDraft = (activeDrafts || []).find(
               (d) =>
                 (raw.id && d.id === raw.id) ||
                 (d.customerName && customerName && d.customerName.toLowerCase() === customerName.toLowerCase())
             );
 
-            // Work type / semantic tab request
             const rawWorkType = String(raw.workType || matchingActiveDraft?.activityType || matchingActiveDraft?.workType || "").trim();
             const rawDesc = String(raw.description || matchingActiveDraft?.description || "").trim();
             const desc = prefixDescriptionWithAuthor(rawDesc, user?.name, user?.email);
@@ -1827,7 +1845,6 @@ MANDATORY WORKFLOW:
                     : "טיקטים")
                 : (inferredCategory === "onsite" ? "ביקור באתר" : inferredCategory === "project" ? "פרויקטים" : "טיקטים"));
 
-            // Calculate or suggest Start and End Times
             let startTime = String(raw.startTime || "").trim();
             let endTime = String(raw.endTime || "").trim();
             let isTimeSuggested = false;
@@ -1841,12 +1858,10 @@ MANDATORY WORKFLOW:
               startTime = calculateStartTime(endTime, minutes || 60);
               isTimeSuggested = false;
             } else if (matchingActiveDraft?.startTime && matchingActiveDraft?.endTime && !matchingActiveDraft.isTimeSuggested) {
-              // Preserve user's explicitly adjusted time from earlier in conversation
               startTime = matchingActiveDraft.startTime;
               endTime = matchingActiveDraft.endTime;
               isTimeSuggested = false;
             } else {
-              // Suggest from duration and report time rounded to 15 min
               const suggested = suggestStartEndTimes(minutes || 60);
               startTime = suggested.startTime;
               endTime = suggested.endTime;
@@ -1861,7 +1876,6 @@ MANDATORY WORKFLOW:
             const isReady = missingFields.length === 0;
             const draftId = matchingActiveDraft?.id || `card_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
-            // Auto-enrich target month file, worksheets and duplicates
             let fileId: string | undefined = matchingActiveDraft?.fileId;
             let driveId: string | undefined = matchingActiveDraft?.driveId;
             let fileName: string | undefined = matchingActiveDraft?.fileName;
@@ -1886,11 +1900,17 @@ MANDATORY WORKFLOW:
 
             try {
               if (customerName) {
-                const mt = await withSafeTimeout(
-                  findMonthTarget(customerName, date, activeEnv),
-                  12000,
-                  { found: false, availableFiles: [] } as any
-                );
+                const mt =
+                  initialMt && initialMt.found
+                    ? initialMt
+                    : customerName.toLowerCase() !== rawCustomerName.toLowerCase()
+                    ? await withSafeTimeout(
+                        findMonthTarget(customerName, date, activeEnv),
+                        8000,
+                        { found: false, availableFiles: [] } as any
+                      )
+                    : initialMt;
+
                 if (mt.availableFiles && Array.isArray(mt.availableFiles)) {
                   availableFiles = mt.availableFiles;
                 }
@@ -1901,15 +1921,22 @@ MANDATORY WORKFLOW:
                   filePath = mt.filePath;
                   webUrl = mt.webUrl;
 
-                  // Inspect file worksheets & classification per-file (cached by itemId + lastModified)
-                  const inspection = await withSafeTimeout(
-                    inspectWorkbookFile(fileId, activeEnv, driveId, customerName, {
-                      preferredTabName: rawWorkType,
-                      quickMode: true,
-                    }),
-                    15000,
-                    null
-                  );
+                  // Inspect file worksheets AND check duplicates IN PARALLEL
+                  const [inspection, dup] = await Promise.all([
+                    withSafeTimeout(
+                      inspectWorkbookFile(fileId, activeEnv, driveId, customerName, {
+                        preferredTabName: rawWorkType,
+                        quickMode: true,
+                      }),
+                      8500,
+                      null
+                    ),
+                    withSafeTimeout(
+                      findDuplicates(fileId, { employee: user.name, date }, activeEnv, driveId),
+                      6500,
+                      { hasDuplicates: false, duplicates: [] }
+                    ),
+                  ]);
 
                   if (inspection && inspection.worksheets.length > 0) {
                     const choice = chooseTargetWorksheet(inspection, {
@@ -1927,7 +1954,6 @@ MANDATORY WORKFLOW:
                     tabHeaders = chosenTab.headers;
                     unmappedFields = chosenTab.unmappedFields;
 
-                    // Build column mapping:
                     columnMapping = [
                       {
                         field: "date",
@@ -1994,12 +2020,6 @@ MANDATORY WORKFLOW:
                     targetRow = matchingActiveDraft?.targetRow || 2;
                   }
 
-                  // Check duplicates
-                  const dup = await withSafeTimeout(
-                    findDuplicates(fileId, { employee: user.name, date }, activeEnv, driveId),
-                    10000,
-                    { hasDuplicates: false, duplicates: [] }
-                  );
                   if (dup.hasDuplicates) {
                     duplicateWarning = `נמצאו ${dup.duplicates.length} דיווחים קודמים עבורך בתאריך זה (${date})`;
                   }
@@ -2104,6 +2124,18 @@ MANDATORY WORKFLOW:
             count: enriched.length,
             entries: enriched,
           };
+
+          // FAST-PATH EARLY EXIT: Skip redundant second LLM round-trip once drafts are ready!
+          if (enriched.length === 1) {
+            const d = enriched[0];
+            finalResponseText =
+              d.assignedEmployees && d.assignedEmployees.length > 1
+                ? `הכנתי כרטיס דיווח צוותי עבור ${d.customerName} (${d.assignedEmployees.join(", ")}). מאשר להזין?`
+                : `הכנתי את כרטיס הדיווח עבור ${d.customerName} (${d.durationFormatted}). מאשר להזין?`;
+          } else if (enriched.length > 1) {
+            finalResponseText = `הכנתי ${enriched.length} כרטיסי דיווח לאישורך. מאשר להזין?`;
+          }
+          shouldFastExitLoop = true;
         } else if (name === "write_rows") {
           // Stage 4 Safety: Enforce that write_rows can ONLY be executed with an explicit user confirmation
           const rawUserMsg = (message || "").trim();
@@ -2141,7 +2173,6 @@ MANDATORY WORKFLOW:
 
           const targetExcelTab = matchingDraft?.targetTabName || rawRows[0]?.targetTabName || "שעות";
 
-          // Expand every row for each assigned employee (e.g. Guy, Vadim)
           const rows: any[] = [];
           for (const r of rawRows) {
             const rowEmployees = (
@@ -2218,7 +2249,6 @@ MANDATORY WORKFLOW:
           const rowNumMatch = (writeRes.rowAddress || "").match(/\d+/);
           const baseTargetRow = rowNumMatch ? parseInt(rowNumMatch[0], 10) : 1;
 
-          // Create written entry records (stateless, kept in client session state)
           for (let i = 0; i < rows.length; i++) {
             const r = rows[i];
             const targetRow = baseTargetRow + i;
@@ -2258,6 +2288,8 @@ MANDATORY WORKFLOW:
             success: true,
             writeRes,
           };
+          finalResponseText = "נרשם בהצלחה ✓";
+          shouldFastExitLoop = true;
         } else if (name === "undo_row") {
           const fileId = String(args.fileId || "");
           const rowAddress = String(args.rowAddress || "");
@@ -2283,6 +2315,8 @@ MANDATORY WORKFLOW:
             undoneCardIds.push(matchingWritten.id);
           }
           toolResult = undoRes;
+          finalResponseText = (undoRes as any)?.success ? "הדיווח בוטל ונמחק בהצלחה." : "לא ניתן היה לבטל את השורה.";
+          shouldFastExitLoop = true;
         } else if (name === "get_today_hours_summary") {
           const reqDate = args.date ? String(args.date).trim() : undefined;
           const reqPeriod = args.period ? (String(args.period).trim() as any) : undefined;
@@ -2396,11 +2430,35 @@ MANDATORY WORKFLOW:
       });
     }
 
+    if (shouldFastExitLoop) {
+      break;
+    }
+
     if (responseParts.length > 0) {
       contents.push({
         role: "user",
         parts: responseParts,
       });
+    }
+  }
+
+  // Ensure audio transcript is resolved if still running
+  if (transcribePromise && !userTranscript) {
+    userTranscript = await transcribePromise;
+    transcribePromise = null;
+    if (userTranscript) {
+      effectiveUserText = userTranscript;
+      if (isDefinitelyOffTopic(userTranscript)) {
+        return {
+          reply: OFF_TOPIC_REFUSAL_MSG,
+          transcript: userTranscript,
+          drafts: activeDrafts,
+          writtenEntries: [],
+          undoneCardIds: [],
+          isConfirmed: false,
+          suggestedAction: "none",
+        };
+      }
     }
   }
 
@@ -2416,7 +2474,8 @@ MANDATORY WORKFLOW:
 
   // DETERMINISTIC RECOVERY & ANTI-LOOP SHIELD:
   // If no drafts were produced yet by the model/tools, analyze message and recent history
-  if (collectedDrafts.length === 0) {
+  const isDomainRefusal = cleanReply.includes("עוזר ייעודי לתיעוד שעות לחיוב לקוח");
+  if (collectedDrafts.length === 0 && !isDomainRefusal) {
     const durationAnalysis = roundToQuarterHour(effectiveUserText);
     const hasExplicitDuration =
       durationAnalysis.hours > 0 &&
