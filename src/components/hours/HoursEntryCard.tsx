@@ -516,29 +516,72 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
               </div>
             </div>
 
-            <div>
-              <label className="block text-[11px] text-slate-500 font-medium mb-1">
-                היקף שעות לחיוב
-              </label>
-              <input
-                type="text"
-                value={writtenEditDuration}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setWrittenEditDuration(val);
-                  const numMatch = val.match(/(\d+(?:\.\d+)?)/);
-                  if (numMatch) {
-                    const num = parseFloat(numMatch[1]);
-                    const mins = val.includes("דק") ? Math.round(num) : Math.round(num * 60);
-                    if (mins > 0 && mins <= 720) {
-                      const start = writtenEditStart || "09:00";
-                      setWrittenEditEnd(calcEndTimeFromDuration(start, mins));
+            {/* Time Fields: משעה, עד שעה, היקף שעות */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div>
+                <label className="block text-[11px] text-slate-500 font-medium mb-1">משעה</label>
+                <input
+                  type="time"
+                  lang="en-GB"
+                  step="60"
+                  value={writtenEditStart}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setWrittenEditStart(val);
+                    if (val && writtenEditEnd) {
+                      const c = computeTimesAndDuration(val, writtenEditEnd, 60);
+                      setWrittenEditDuration(c.durationFormatted);
                     }
-                  }
-                }}
-                className="w-full px-3 py-1.5 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs font-semibold text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
-                placeholder="למשל: 1.5 שעות"
-              />
+                  }}
+                  className="w-full px-3 py-1.5 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs font-mono text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
+                  dir="ltr"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] text-slate-500 font-medium mb-1">עד שעה</label>
+                <input
+                  type="time"
+                  lang="en-GB"
+                  step="60"
+                  value={writtenEditEnd}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setWrittenEditEnd(val);
+                    if (writtenEditStart && val) {
+                      const c = computeTimesAndDuration(writtenEditStart, val, 60);
+                      setWrittenEditDuration(c.durationFormatted);
+                    }
+                  }}
+                  className="w-full px-3 py-1.5 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs font-mono text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
+                  dir="ltr"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] text-slate-500 font-medium mb-1">
+                  היקף שעות לחיוב
+                </label>
+                <input
+                  type="text"
+                  value={writtenEditDuration}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setWrittenEditDuration(val);
+                    const numMatch = val.match(/(\d+(?:\.\d+)?)/);
+                    if (numMatch) {
+                      const num = parseFloat(numMatch[1]);
+                      const mins = val.includes("דק") ? Math.round(num) : Math.round(num * 60);
+                      if (mins > 0 && mins <= 720) {
+                        const start = writtenEditStart || "09:00";
+                        setWrittenEditEnd(calcEndTimeFromDuration(start, mins));
+                      }
+                    }
+                  }}
+                  className="w-full px-3 py-1.5 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs font-semibold text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
+                  placeholder="למשל: 1.5 שעות"
+                />
+              </div>
             </div>
 
             <div>
@@ -603,15 +646,22 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
           </div>
         ) : (
           <>
-            {/* Compact Metrics Row (No Start/End Clock Times) */}
-            <div className="grid grid-cols-3 gap-2 text-xs mb-3">
+            {/* Compact Metrics Row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs mb-3">
               <div className="p-2.5 rounded-xl bg-[#EFF6FF]/60 border border-[#DBEAFE]">
                 <span className="text-slate-500 block text-[10px]">שעות לחיוב</span>
                 <span className="font-bold text-[#2563EB] font-mono">{written.durationFormatted}</span>
               </div>
 
               <div className="p-2.5 rounded-xl bg-[#F8FAFC] border border-[#DBEAFE]/70">
-                <span className="text-slate-500 block text-[10px]">תאריך פעילות</span>
+                <span className="text-slate-500 block text-[10px]">משעה – עד שעה</span>
+                <span className="font-mono font-medium text-[#172B4D]" dir="ltr">
+                  {written.startTime || "09:00"} – {written.endTime || "10:00"}
+                </span>
+              </div>
+
+              <div className="p-2.5 rounded-xl bg-[#F8FAFC] border border-[#DBEAFE]/70">
+                <span className="text-slate-500 block text-[10px]">תאריך</span>
                 <span className="font-semibold text-[#172B4D]">{written.date}</span>
               </div>
 
@@ -773,6 +823,67 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                 onChange={(e) => setEditDate(e.target.value)}
                 className="w-full px-3 py-1.5 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
                 placeholder="YYYY-MM-DD"
+              />
+            </div>
+          </div>
+
+          {/* Time Fields: משעה, עד שעה, משך זמן */}
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <label className="block text-[11px] text-slate-500 font-medium mb-1">משעה</label>
+              <input
+                type="time"
+                lang="en-GB"
+                step="60"
+                value={editStartTime}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setEditStartTime(val);
+                  if (val) {
+                    const timeCalcs = computeTimesAndDuration(
+                      val,
+                      editEndTime,
+                      draft?.durationMinutes || 30
+                    );
+                    setEditEndTime(timeCalcs.endTime);
+                    setEditDuration(timeCalcs.durationFormatted);
+                  }
+                }}
+                className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs font-mono text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
+                dir="ltr"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-slate-500 font-medium mb-1">עד שעה</label>
+              <input
+                type="time"
+                lang="en-GB"
+                step="60"
+                value={editEndTime}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setEditEndTime(val);
+                  if (val && editStartTime) {
+                    const timeCalcs = computeTimesAndDuration(
+                      editStartTime,
+                      val,
+                      draft?.durationMinutes || 30
+                    );
+                    setEditDuration(timeCalcs.durationFormatted);
+                  }
+                }}
+                className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs font-mono text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
+                dir="ltr"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] text-slate-500 font-medium mb-1">שעות לחיוב</label>
+              <input
+                type="text"
+                value={editDuration}
+                onChange={(e) => setEditDuration(e.target.value)}
+                className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs font-semibold text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
+                placeholder="1 שעה"
               />
             </div>
           </div>
@@ -1066,13 +1177,101 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             })}
           </div>
 
-          {/* Compact Billable Duration & Direct Hours Editor */}
+          {/* Time & Duration Controls: משעה | עד שעה | סה״כ שעות לחיוב */}
           <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#DBEAFE] mb-3 space-y-2.5">
-            <div className="flex flex-wrap items-center justify-between gap-2.5">
-              <div className="flex items-center gap-2">
-                <label className="text-xs font-bold text-[#172B4D]">עריכת שעות לחיוב:</label>
+            {/* Clock Time Inputs: משעה and עד שעה */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+              <div className="bg-white px-2.5 py-1.5 rounded-xl border border-[#DBEAFE] flex items-center justify-between gap-1">
+                <span className="text-[11px] font-semibold text-[#172B4D]">משעה</span>
+                <input
+                  type="time"
+                  lang="en-GB"
+                  step="60"
+                  value={draft.startTime || "09:00"}
+                  onChange={(e) => {
+                    const newStart = e.target.value;
+                    const timeCalcs = computeTimesAndDuration(
+                      newStart,
+                      draft.endTime || "10:00",
+                      draft.durationMinutes || 60
+                    );
+                    if (onUpdateDraft) {
+                      onUpdateDraft({
+                        ...draft,
+                        startTime: newStart,
+                        endTime: timeCalcs.endTime,
+                        durationMinutes: timeCalcs.durationMinutes,
+                        durationHours: timeCalcs.durationHours,
+                        durationFormatted: timeCalcs.durationFormatted,
+                        isTimeSuggested: false,
+                        mappedRow: {
+                          ...(draft.mappedRow || {}),
+                          "שעת התחלה": newStart,
+                          "שעת סיום": timeCalcs.endTime,
+                          משך: timeCalcs.durationHours,
+                          שעות: timeCalcs.durationHours,
+                          "סה״כ שעות": timeCalcs.durationHours,
+                          "סה\"כ שעות": timeCalcs.durationHours,
+                        },
+                      });
+                    }
+                  }}
+                  className="text-[16px] sm:text-xs font-mono font-bold text-[#2563EB] bg-transparent focus:outline-none cursor-pointer"
+                  dir="ltr"
+                />
+              </div>
 
-                {/* Direct Stepper & Number Input */}
+              <div className="bg-white px-2.5 py-1.5 rounded-xl border border-[#DBEAFE] flex items-center justify-between gap-1">
+                <span className="text-[11px] font-semibold text-[#172B4D]">עד שעה</span>
+                <input
+                  type="time"
+                  lang="en-GB"
+                  step="60"
+                  value={draft.endTime || "10:00"}
+                  onChange={(e) => {
+                    const newEnd = e.target.value;
+                    const timeCalcs = computeTimesAndDuration(
+                      draft.startTime || "09:00",
+                      newEnd,
+                      draft.durationMinutes || 60
+                    );
+                    if (onUpdateDraft) {
+                      onUpdateDraft({
+                        ...draft,
+                        startTime: timeCalcs.startTime,
+                        endTime: newEnd,
+                        durationMinutes: timeCalcs.durationMinutes,
+                        durationHours: timeCalcs.durationHours,
+                        durationFormatted: timeCalcs.durationFormatted,
+                        isTimeSuggested: false,
+                        mappedRow: {
+                          ...(draft.mappedRow || {}),
+                          "שעת התחלה": timeCalcs.startTime,
+                          "שעת סיום": newEnd,
+                          משך: timeCalcs.durationHours,
+                          שעות: timeCalcs.durationHours,
+                          "סה״כ שעות": timeCalcs.durationHours,
+                          "סה\"כ שעות": timeCalcs.durationHours,
+                        },
+                      });
+                    }
+                  }}
+                  className="text-[16px] sm:text-xs font-mono font-bold text-[#2563EB] bg-transparent focus:outline-none cursor-pointer"
+                  dir="ltr"
+                />
+              </div>
+
+              <div className="col-span-2 sm:col-span-1 bg-white px-2.5 py-1.5 rounded-xl border border-[#DBEAFE] flex items-center justify-between gap-1">
+                <span className="text-[11px] font-semibold text-[#172B4D]">תאריך</span>
+                <span className="font-medium text-[#172B4D]">{draft.date}</span>
+              </div>
+            </div>
+
+            {/* Direct Stepper & Number Input for Total Hours */}
+            <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1 border-t border-[#DBEAFE]/60">
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-bold text-[#172B4D]">סה״כ שעות לחיוב:</label>
+
                 <div className="flex items-center bg-white border border-[#DBEAFE] rounded-xl p-1 shadow-2xs">
                   <button
                     type="button"
@@ -1183,11 +1382,6 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                   </button>
                 </div>
                 <span className="text-xs text-slate-500 font-semibold">שעות</span>
-              </div>
-
-              <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                <Calendar className="w-3.5 h-3.5 text-[#2563EB]" />
-                <span className="font-medium text-[#172B4D]">{draft.date}</span>
               </div>
             </div>
 
