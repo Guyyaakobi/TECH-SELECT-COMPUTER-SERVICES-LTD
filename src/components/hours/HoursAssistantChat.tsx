@@ -1583,94 +1583,69 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
   const firstName = (currentUser.name || "").split(" ")[0] || currentUser.name || "עובד";
   const greeting = getTimeBasedGreeting();
 
-  // Compute Friendly 7-Hour Daily Quota Metrics & Creative Hebrew Copy
+  // Compute Autonomy-First Documentation Progress (7 hours as a billable documentation reference point, never a workday clock)
   const loggedHoursToday = Math.max(0, todayQuota.todayHours);
-  const remainingQuotaHours = Math.max(0, Math.round((DAILY_QUOTA_HOURS - loggedHoursToday) * 100) / 100);
-  const extraQuotaHours = Math.max(0, Math.round((loggedHoursToday - DAILY_QUOTA_HOURS) * 100) / 100);
+  const remainingRefHours = Math.max(0, Math.round((DAILY_QUOTA_HOURS - loggedHoursToday) * 100) / 100);
   const quotaPercent = Math.min(100, Math.round((loggedHoursToday / DAILY_QUOTA_HOURS) * 100));
   const isQuotaReached = loggedHoursToday >= DAILY_QUOTA_HOURS;
 
-  const getQuotaCreativeStatus = () => {
+  const getDocumentationProgressStatus = () => {
     if (isQuotaReached) {
       return {
-        emoji: "🏆",
-        badgeText: "הגעת למכסה היומית! (7/7 שעות)",
-        headline: `אלוף ${firstName}! כבשת את היעד היומי 🎉`,
-        subtext:
-          extraQuotaHours > 0
-            ? `תיעדת היום כבר ${loggedHoursToday} שעות לחיוב לקוח (${extraQuotaHours}+ מעל מכסת 7 השעות היומית) — שאפו ענק על העבודה המצוינת!`
-            : `תיעדת היום ${loggedHoursToday} שעות לחיוב לקוח והשלמת במלואה את מכסת 7 השעות היומית — כל הכבוד!`,
-        theme: "emerald" as const,
+        headline: `תיעוד מלא ומסודר להיום — ${loggedHoursToday} שעות לחיוב לקוח`,
+        subtext: `כל הפעילויות שתיעדת היום מסונכרנות ב-Microsoft Lists ובקובצי הלקוחות.`,
       };
     }
     if (loggedHoursToday === 0) {
       return {
-        emoji: "☕",
-        badgeText: "טרם הגעת למכסה היומית · חסרות 7 ש׳",
-        headline: `היום עוד לפנינו, ${firstName}! עדיין לא הגעת למכסה היומית`,
-        subtext: `מד השעות היומי שלך עומד על 0 מתוך ${DAILY_QUOTA_HOURS} שעות. תעד את הפעילות הראשונה להיום ובוא נצא לדרך בחיוך! 🚀`,
-        theme: "amber" as const,
+        headline: `מעקב תיעוד פעילויות לחיוב לקוח`,
+        subtext: `כאן מתעדכנות השעות לחיוב לקוח שתיעדת היום, כדי ששום פעילות שביצעת לא תתפספס.`,
       };
     }
-    if (loggedHoursToday < 3.5) {
+    if (loggedHoursToday < 4) {
       return {
-        emoji: "🌱",
-        badgeText: `טרם הגעת למכסה היומית · עוד ${remainingQuotaHours} ש׳ ליעד`,
-        headline: `התחלה נהדרת, ${firstName}! בדרך למכסה היומית (${loggedHoursToday} מתוך 7 ש׳)`,
-        subtext: `המנועים כבר חמים! תיעדת היום ${loggedHoursToday} שעות — חסרות עוד ${remainingQuotaHours} שעות כדי להגיע למכסה היומית של 7 שעות 💪`,
-        theme: "amber" as const,
-      };
-    }
-    if (loggedHoursToday < 5.5) {
-      return {
-        emoji: "🚀",
-        badgeText: `טרם הגעת למכסה היומית · עוד ${remainingQuotaHours} ש׳ ליעד`,
-        headline: `קצב אש, ${firstName}! עברת כבר חצי מהמכסה היומית (${loggedHoursToday}/7 ש׳)`,
-        subtext: `כבר ${loggedHoursToday} שעות מתועדות היום (${quotaPercent}%) — רק עוד ${remainingQuotaHours} שעות ואתה סוגר את מכסת 7 השעות היומית כמו אלוף! ⭐`,
-        theme: "blue" as const,
+        headline: `תועדו היום ${loggedHoursToday} שעות לחיוב לקוח`,
+        subtext: `התיעוד שלך מתקדם מצוין · עוד ${remainingRefHours} ש׳ לנקודת הייחוס היומית לתיעוד (7 ש׳).`,
       };
     }
     return {
-      emoji: "🏁",
-      badgeText: `כמעט במכסה היומית! רק עוד ${remainingQuotaHours} ש׳`,
-      headline: `ישורת אחרונה, ${firstName}! מרחק נגיעה מהמכסה היומית (${loggedHoursToday}/7 ש׳)`,
-      subtext: `תיעדת כבר ${loggedHoursToday} שעות היום — חסרות רק עוד ${
-        remainingQuotaHours === 1 ? "שעה אחת" : `${remainingQuotaHours} שעות`
-      } להשלמת מכסת 7 השעות היומית! 🎯`,
-      theme: "indigo" as const,
+      headline: `רצף תיעוד מעולה — ${loggedHoursToday} שעות לחיוב לקוח היום`,
+      subtext: `רוב הפעילויות להיום כבר מתועדות · עוד ${
+        remainingRefHours === 1 ? "שעה אחת" : `${remainingRefHours} ש׳`
+      } להשלמת רצף של 7 שעות מתועדות.`,
     };
   };
 
-  const quotaCreative = getQuotaCreativeStatus();
+  const docProgress = getDocumentationProgressStatus();
 
   return (
-    <div className="w-full h-full flex flex-row overflow-hidden relative bg-white" dir="ltr">
+    <div className="w-full h-full flex flex-row overflow-hidden relative bg-[#F8FAFC]" dir="ltr">
       {/* Mobile Backdrop Overlay */}
       {isSidebarOpen && (
         <div
           onClick={() => setIsSidebarOpen(false)}
-          className="md:hidden fixed inset-0 bg-black/30 backdrop-blur-xs z-30 transition-opacity"
+          className="md:hidden fixed inset-0 bg-[#172B4D]/30 backdrop-blur-xs z-30 transition-opacity"
         />
       )}
 
-      {/* LEFT SIDEBAR: Minimalist Conversation History (ChatGPT / Gemini Style) */}
+      {/* LEFT SIDEBAR: Minimalist Conversation History with Blue Tints */}
       <aside
         dir="rtl"
         className={`
           fixed md:relative inset-y-0 left-0 z-40
-          ${isSidebarOpen ? "w-76 sm:w-80 border-r border-slate-200/80" : "w-0 border-r-0"}
-          bg-[#f9f9fb]
+          ${isSidebarOpen ? "w-76 sm:w-80 border-r border-[#DBEAFE]" : "w-0 border-r-0"}
+          bg-[#F8FAFC]
           transition-all duration-300 ease-in-out
           flex flex-col shrink-0 overflow-hidden
           shadow-xl md:shadow-none
         `}
       >
         {/* Sidebar Header */}
-        <div className="p-3.5 border-b border-slate-200/60 flex items-center justify-between shrink-0">
+        <div className="p-3.5 border-b border-[#DBEAFE]/80 bg-white/80 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
-            <History className="w-4 h-4 text-slate-600" />
+            <History className="w-4 h-4 text-[#2563EB]" />
             <div>
-              <h2 className="text-xs font-semibold text-slate-900 leading-tight">היסטוריית תיעודים</h2>
+              <h2 className="text-xs font-semibold text-[#172B4D] leading-tight">היסטוריית תיעודים</h2>
               <span className="text-[10px] text-slate-400">10 אחרונים · ניתן לעריכה</span>
             </div>
           </div>
@@ -1678,26 +1653,26 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
           <button
             type="button"
             onClick={toggleSidebar}
-            className="p-1.5 rounded-lg hover:bg-slate-200/60 text-slate-500 hover:text-slate-900 cursor-pointer transition-colors"
+            className="p-1.5 rounded-lg hover:bg-[#EFF6FF] text-slate-500 hover:text-[#2563EB] cursor-pointer transition-colors"
             title="צמצם היסטוריה"
           >
             <PanelLeftClose className="w-4 h-4" />
           </button>
         </div>
 
-        {/* New Parallel Session Button */}
+        {/* New Parallel Session Button (Primary Blue) */}
         <div className="p-3 shrink-0">
           <button
             type="button"
             onClick={handleNewChat}
-            className="w-full py-2.5 px-3.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-200/90 text-slate-800 shadow-2xs flex items-center justify-between text-xs font-medium cursor-pointer transition-colors"
+            className="w-full py-2.5 px-3.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white shadow-2xs flex items-center justify-between text-xs font-medium cursor-pointer transition-colors"
             title="פתח סשן תיעוד חדש במקביל (הסשן הקודם ימשיך לרוץ ברקע)"
           >
             <div className="flex items-center gap-2">
-              <Plus className="w-4 h-4 text-slate-700" />
+              <Plus className="w-4 h-4 text-white" />
               <span>סשן תיעוד חדש</span>
             </div>
-            <span className="text-[10px] text-slate-400">במקביל</span>
+            <span className="text-[10px] text-[#DBEAFE]">במקביל</span>
           </button>
         </div>
 
@@ -1709,7 +1684,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
             <button
               type="button"
               onClick={handleClearAllHistory}
-              className="px-2 py-0.5 rounded-md hover:bg-slate-200/70 text-slate-500 hover:text-slate-900 text-[10px] font-medium flex items-center gap-1 cursor-pointer transition-colors"
+              className="px-2 py-0.5 rounded-md hover:bg-[#EFF6FF] text-slate-500 hover:text-[#2563EB] text-[10px] font-medium flex items-center gap-1 cursor-pointer transition-colors"
               title="מחק את כל היסטוריית התיעודים השמורה בדפדפן"
             >
               <Trash2 className="w-3 h-3" />
@@ -1722,8 +1697,8 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
         <div className="flex-1 overflow-y-auto px-2.5 py-1 space-y-1">
           {savedSessions.length === 0 ? (
             <div className="py-10 px-3 text-center text-slate-400 flex flex-col items-center">
-              <MessageSquare className="w-5 h-5 text-slate-300 mb-2 stroke-1.5" />
-              <p className="text-xs font-medium text-slate-500">אין תיעודים שמורים</p>
+              <MessageSquare className="w-5 h-5 text-[#DBEAFE] mb-2 stroke-1.5" />
+              <p className="text-xs font-medium text-[#172B4D]/70">אין תיעודים שמורים</p>
               <p className="text-[11px] text-slate-400 mt-0.5">
                 עשרת התיעודים האחרונים יופיעו כאן
               </p>
@@ -1751,36 +1726,36 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                     w-full p-2.5 rounded-xl border text-right cursor-pointer flex flex-col gap-1 group transition-all
                     ${
                       isActive
-                        ? "bg-white border-slate-300 text-slate-900 shadow-2xs"
-                        : "bg-transparent hover:bg-white/80 border-transparent hover:border-slate-200/70 text-slate-600 hover:text-slate-900"
+                        ? "bg-[#EFF6FF] border-[#DBEAFE] text-[#172B4D] shadow-2xs"
+                        : "bg-white/60 hover:bg-white border-transparent hover:border-[#DBEAFE] text-slate-600 hover:text-[#172B4D]"
                     }
                   `}
                 >
                   <div className="flex items-start justify-between gap-2 w-full">
                     <div className="flex items-start gap-2 min-w-0 flex-1">
-                      <div className="mt-0.5 shrink-0 text-slate-400">
+                      <div className="mt-0.5 shrink-0 text-[#2563EB]">
                         {isSessLoading ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-slate-700" />
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#06B6D4]" />
                         ) : lastWritten ? (
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <CheckCircle2 className="w-3.5 h-3.5 text-[#2563EB]" />
                         ) : (
-                          <MessageSquare className="w-3.5 h-3.5" />
+                          <MessageSquare className="w-3.5 h-3.5 text-[#2563EB]/70" />
                         )}
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <p className="text-xs truncate font-medium text-slate-900">
+                          <p className="text-xs truncate font-medium text-[#172B4D]">
                             {sess.title || "שיחת דיווח"}
                           </p>
                           {displayHours !== undefined && (
-                            <span className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 text-[10px] font-medium shrink-0">
+                            <span className="px-1.5 py-0.2 rounded bg-white border border-[#DBEAFE] text-[#2563EB] text-[10px] font-medium shrink-0">
                               {displayHours} ש׳
                             </span>
                           )}
                         </div>
 
                         {sess.preview && (
-                          <p className="text-[11px] text-slate-400 truncate mt-0.5">
+                          <p className="text-[11px] text-slate-500 truncate mt-0.5">
                             {sess.preview}
                           </p>
                         )}
@@ -1788,12 +1763,12 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                         <div className="flex items-center gap-1.5 mt-1 flex-wrap text-[10px] text-slate-400">
                           <span>{formatRelativeTime(sess.updatedAt || sess.createdAt)}</span>
                           {isSessLoading && (
-                            <span className="text-slate-700 font-medium animate-pulse">
+                            <span className="text-[#06B6D4] font-medium animate-pulse">
                               · מעבד ברקע...
                             </span>
                           )}
                           {!isSessLoading && hasDrafts && (
-                            <span className="text-slate-600 font-medium">
+                            <span className="text-[#2563EB] font-medium">
                               · ממתין לאישור
                             </span>
                           )}
@@ -1805,7 +1780,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                       <button
                         type="button"
                         onClick={(e) => handleOpenSidebarEdit(e, sess)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-[#2563EB] hover:bg-white transition-colors cursor-pointer"
                         title="ערוך שעות או הודעה שתיעדת"
                       >
                         <Pencil className="w-3.5 h-3.5" />
@@ -1825,10 +1800,10 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                   {isEditingThis && (
                     <div
                       onClick={(e) => e.stopPropagation()}
-                      className="mt-1.5 pt-2 border-t border-slate-200/80 bg-white rounded-xl p-2.5 space-y-2 shadow-xs"
+                      className="mt-1.5 pt-2 border-t border-[#DBEAFE] bg-white rounded-xl p-2.5 space-y-2 shadow-xs"
                     >
                       <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-semibold text-slate-800">
+                        <span className="text-[11px] font-semibold text-[#172B4D]">
                           {lastWritten ? "עריכת שעות ותיעוד" : "עריכת הודעה"}
                         </span>
                         <button
@@ -1837,7 +1812,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                             e.stopPropagation();
                             setEditingSidebarSessionId(null);
                           }}
-                          className="text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
+                          className="text-slate-400 hover:text-[#172B4D] p-0.5 cursor-pointer"
                         >
                           <X className="w-3.5 h-3.5" />
                         </button>
@@ -1856,17 +1831,17 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                               max="12"
                               value={sidebarEditHours}
                               onChange={(e) => setSidebarEditHours(parseFloat(e.target.value) || 0.25)}
-                              className="w-16 px-2 py-1 text-[16px] sm:text-xs font-semibold border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 text-center"
+                              className="w-16 px-2 py-1 text-[16px] sm:text-xs font-semibold border border-[#DBEAFE] rounded-lg focus:outline-none focus:border-[#2563EB] text-center text-[#172B4D]"
                             />
                             {[0.5, 1, 1.5, 2, 3].map((preset) => (
                               <button
                                 key={preset}
                                 type="button"
                                 onClick={() => setSidebarEditHours(preset)}
-                                className={`px-2 py-0.5 rounded-md text-[10px] font-medium border cursor-pointer ${
+                                className={`px-2 py-0.5 rounded-md text-[10px] font-medium border cursor-pointer transition-colors ${
                                   Number(sidebarEditHours) === preset
-                                    ? "bg-slate-900 text-white border-slate-900"
-                                    : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                                    ? "bg-[#2563EB] text-white border-[#2563EB]"
+                                    : "bg-[#EFF6FF] text-[#2563EB] border-[#DBEAFE] hover:bg-[#DBEAFE]/70"
                                 }`}
                               >
                                 {preset} ש׳
@@ -1881,7 +1856,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                           rows={2}
                           value={sidebarEditText}
                           onChange={(e) => setSidebarEditText(e.target.value)}
-                          className="w-full px-2.5 py-1.5 text-[16px] sm:text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-slate-900 resize-none leading-relaxed"
+                          className="w-full px-2.5 py-1.5 text-[16px] sm:text-xs border border-[#DBEAFE] rounded-lg focus:outline-none focus:border-[#2563EB] resize-none leading-relaxed text-[#172B4D]"
                           placeholder="עדכן את תיאור העבודה..."
                         />
                       </div>
@@ -1893,7 +1868,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                             e.stopPropagation();
                             setEditingSidebarSessionId(null);
                           }}
-                          className="px-2.5 py-1 rounded-lg border border-slate-200 text-[11px] font-medium text-slate-600 hover:bg-slate-100 cursor-pointer"
+                          className="px-2.5 py-1 rounded-lg border border-[#DBEAFE] text-[11px] font-medium text-[#172B4D] hover:bg-[#EFF6FF] cursor-pointer"
                         >
                           ביטול
                         </button>
@@ -1901,7 +1876,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                           type="button"
                           disabled={isSavingSidebarEdit}
                           onClick={(e) => handleSaveSidebarSessionEdit(e, sess)}
-                          className="px-3 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-medium flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          className="px-3 py-1 rounded-lg bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[11px] font-medium flex items-center gap-1 cursor-pointer disabled:opacity-50"
                         >
                           {isSavingSidebarEdit ? (
                             <RefreshCw className="w-3 h-3 animate-spin" />
@@ -1920,12 +1895,12 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
         </div>
 
         {/* Sidebar Footer */}
-        <div className="p-3 border-t border-slate-200/60 bg-white/60 flex flex-col gap-2 text-[11px] text-slate-500 shrink-0">
+        <div className="p-3 border-t border-[#DBEAFE]/80 bg-white/80 flex flex-col gap-2 text-[11px] text-slate-500 shrink-0">
           {onLogout && (
             <button
               type="button"
               onClick={onLogout}
-              className="w-full py-2 px-3 rounded-xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/90 text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+              className="w-full py-2 px-3 rounded-xl bg-white hover:bg-[#EFF6FF] text-[#172B4D] hover:text-[#2563EB] border border-[#DBEAFE] text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>התנתק מהחשבון</span>
@@ -1934,56 +1909,46 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
         </div>
       </aside>
 
-      {/* MAIN CHAT CANVAS (ChatGPT / Gemini Minimalist Layout) */}
+      {/* MAIN CHAT CANVAS */}
       <div dir="rtl" className="flex-1 h-full flex flex-col justify-between overflow-hidden relative text-right min-w-0 bg-white">
         {/* Single Sleek Sub-Header Bar */}
-        <div className="px-3 sm:px-6 py-2 border-b border-slate-100 bg-white/95 backdrop-blur-xs flex items-center justify-between gap-2 shrink-0 z-10">
+        <div className="px-3 sm:px-6 py-2 border-b border-[#DBEAFE]/70 bg-white/95 backdrop-blur-xs flex items-center justify-between gap-2 shrink-0 z-10">
           <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 overflow-x-auto no-scrollbar">
             {/* Sidebar Toggle Button */}
             <button
               type="button"
               onClick={toggleSidebar}
-              className="px-2.5 py-1 rounded-full hover:bg-slate-100 text-slate-600 hover:text-slate-900 cursor-pointer flex items-center gap-1.5 border border-slate-200/80 transition-colors shrink-0"
+              className="px-2.5 py-1 rounded-full bg-[#EFF6FF]/60 hover:bg-[#EFF6FF] text-[#172B4D] hover:text-[#2563EB] cursor-pointer flex items-center gap-1.5 border border-[#DBEAFE] transition-colors shrink-0"
               title={isSidebarOpen ? "צמצם היסטוריה" : "היסטוריית תיעודים (10 אחרונים)"}
             >
               {isSidebarOpen ? (
-                <PanelLeftClose className="w-3.5 h-3.5 text-slate-700 shrink-0" />
+                <PanelLeftClose className="w-3.5 h-3.5 text-[#2563EB] shrink-0" />
               ) : (
-                <PanelLeftOpen className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+                <PanelLeftOpen className="w-3.5 h-3.5 text-[#2563EB] shrink-0" />
               )}
               <span className="text-[11px] font-medium whitespace-nowrap">
                 {isSidebarOpen ? "הסתר" : `היסטוריה (${savedSessions.length})`}
               </span>
             </button>
 
-            {/* Clean, Friendly 7-Hour Daily Quota Pill */}
+            {/* Autonomy-First Documentation Progress Pill */}
             <button
               type="button"
               onClick={onOpenMyLoggedHours}
-              className={`px-2.5 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
-                isQuotaReached
-                  ? "bg-emerald-50/80 hover:bg-emerald-100/80 text-emerald-900 border-emerald-200"
-                  : "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200/90"
-              }`}
-              title={
-                isQuotaReached
-                  ? `הגעת למכסה היומית! תיעדת ${loggedHoursToday} מתוך 7 שעות היום`
-                  : `טרם הגעת למכסה היומית (7 שעות) — תיעדת ${loggedHoursToday} שעות היום, חסרות עוד ${remainingQuotaHours} שעות`
-              }
+              className="px-3 py-1 rounded-full text-[11px] font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors bg-[#EFF6FF] hover:bg-[#DBEAFE]/70 text-[#2563EB] border border-[#DBEAFE]"
+              title="מעקב תיעוד פעילויות לחיוב לקוח היום"
             >
-              <span>{quotaCreative.emoji}</span>
+              <CheckCircle2 className={`w-3.5 h-3.5 shrink-0 ${isQuotaReached ? "text-[#06B6D4]" : "text-[#2563EB]"}`} />
               <span>
                 {todayQuota.loading && !todayQuota.loaded
-                  ? "בודק מכסה..."
-                  : isQuotaReached
-                  ? `${loggedHoursToday}/7 ש׳ · הושלם`
-                  : `${loggedHoursToday}/7 ש׳ היום (חסרות ${remainingQuotaHours} ש׳)`}
+                  ? "מעדכן תיעוד..."
+                  : `תועדו היום: ${loggedHoursToday} ש׳ לחיוב`}
               </span>
             </button>
 
             {/* Parallel Running Sessions Indicator */}
             {backgroundRunningSessions.length > 0 && (
-              <span className="text-[11px] px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0">
+              <span className="text-[11px] px-2.5 py-1 rounded-full bg-[#EFF6FF] border border-[#DBEAFE] text-[#06B6D4] font-medium flex items-center gap-1.5 whitespace-nowrap shrink-0">
                 <RefreshCw className="w-3 h-3 animate-spin shrink-0" />
                 <span>{backgroundRunningSessions.length} ברקע</span>
               </span>
@@ -1993,7 +1958,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
           <button
             type="button"
             onClick={handleNewChat}
-            className="flex items-center gap-1 px-2.5 sm:px-3 py-1 rounded-full bg-slate-900 hover:bg-slate-800 text-[11px] text-white font-medium cursor-pointer transition-colors whitespace-nowrap shrink-0"
+            className="flex items-center gap-1 px-3 py-1 rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] text-[11px] text-white font-medium cursor-pointer transition-colors whitespace-nowrap shrink-0"
             title="פתח סשן תיעוד חדש במקביל"
           >
             <Plus className="w-3.5 h-3.5 shrink-0" />
@@ -2001,13 +1966,13 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
           </button>
         </div>
 
-        {/* Minimal Parallel Session Switcher (Only shown when multiple sessions exist or running in background) */}
+        {/* Minimal Parallel Session Switcher */}
         {(savedSessions.length > 1 || backgroundRunningSessions.length > 0) && (
-          <div className="px-3 sm:px-6 py-1 bg-[#f9fafb] border-b border-slate-100 flex items-center gap-1 overflow-x-auto no-scrollbar shrink-0">
+          <div className="px-3 sm:px-6 py-1 bg-[#F8FAFC] border-b border-[#DBEAFE]/60 flex items-center gap-1 overflow-x-auto no-scrollbar shrink-0">
             {!savedSessions.some((s) => s.id === currentSessionId) && (
               <button
                 type="button"
-                className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-slate-900 text-white flex items-center gap-1 shrink-0 cursor-pointer"
+                className="px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-[#2563EB] text-white flex items-center gap-1 shrink-0 cursor-pointer"
               >
                 <span>סשן חדש</span>
               </button>
@@ -2025,14 +1990,14 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                   onClick={() => handleSelectSession(sess)}
                   className={`px-2.5 py-0.5 rounded-full text-[11px] font-medium flex items-center gap-1 shrink-0 transition-colors cursor-pointer border ${
                     isCurrent
-                      ? "bg-slate-900 text-white border-slate-900"
-                      : "bg-white text-slate-600 border-slate-200/80 hover:bg-slate-100"
+                      ? "bg-[#2563EB] text-white border-[#2563EB]"
+                      : "bg-white text-[#172B4D] border-[#DBEAFE] hover:bg-[#EFF6FF]"
                   }`}
                 >
-                  {isRunning && <RefreshCw className="w-2.5 h-2.5 animate-spin" />}
+                  {isRunning && <RefreshCw className="w-2.5 h-2.5 animate-spin text-[#06B6D4]" />}
                   <span className="max-w-[110px] truncate">{sess.title || "שיחה"}</span>
                   {pendingDraftsCount > 0 && !isRunning && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#06B6D4]" />
                   )}
                 </button>
               );
@@ -2040,44 +2005,44 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
           </div>
         )}
 
-        {/* Content Area: Empty State (Minimalist ChatGPT/Gemini Greeting) OR Message Feed */}
+        {/* Content Area: Empty State OR Message Feed */}
         {messages.length === 0 && activeDrafts.length === 0 && !loading ? (
           <div className="flex-1 flex flex-col items-center justify-center w-full max-w-2xl mx-auto px-4 py-4 overflow-y-auto">
             <div className="text-center w-full space-y-5">
               {/* Minimalist Executive Greeting */}
               <div className="space-y-1.5">
-                <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900 tracking-tight">
+                <h1 className="text-2xl sm:text-3xl font-semibold text-[#172B4D] tracking-tight">
                   {greeting}, {firstName}
                 </h1>
-                <p className="text-sm sm:text-base text-slate-400 font-normal">
+                <p className="text-sm sm:text-base text-slate-500 font-normal">
                   תעד פעילות שבוצעה עבור לקוח בטקסט או בהקלטה קולית
                 </p>
               </div>
 
-              {/* Clean, Friendly & Luxurious 7-Hour Daily Quota Card */}
+              {/* Autonomy-First Documentation Progress Card (Positive billable logging tracker, no workday supervision) */}
               <div
                 onClick={onOpenMyLoggedHours}
                 role="button"
-                className="w-full max-w-lg mx-auto p-4 rounded-2xl bg-[#f9fafb] hover:bg-[#f4f5f7] border border-slate-200/80 text-right transition-colors cursor-pointer"
+                className="w-full max-w-lg mx-auto p-4 rounded-2xl bg-[#EFF6FF]/60 hover:bg-[#EFF6FF] border border-[#DBEAFE] text-right transition-colors cursor-pointer"
               >
-                <div className="flex items-center justify-between gap-3 mb-2">
+                <div className="flex items-center justify-between gap-3 mb-2.5">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="text-base shrink-0">{quotaCreative.emoji}</span>
+                    <div className="w-8 h-8 rounded-xl bg-white border border-[#DBEAFE] flex items-center justify-center text-[#2563EB] shrink-0">
+                      <CheckCircle2 className={`w-4 h-4 ${isQuotaReached ? "text-[#06B6D4]" : "text-[#2563EB]"}`} />
+                    </div>
                     <div className="min-w-0">
-                      <h3 className="text-xs sm:text-sm font-semibold text-slate-900 truncate">
-                        {quotaCreative.headline}
+                      <h3 className="text-xs sm:text-sm font-semibold text-[#172B4D] truncate">
+                        {docProgress.headline}
                       </h3>
                       <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                        {isQuotaReached
-                          ? `השלמת את מכסת 7 השעות היומית (${loggedHoursToday} שעות מתועדות)`
-                          : `טרם הגעת למכסה היומית · חסרות עוד ${remainingQuotaHours} שעות להשלמת 7 שעות`}
+                        {docProgress.subtext}
                       </p>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="text-xs sm:text-sm font-semibold text-slate-900 font-mono bg-white border border-slate-200/80 px-2.5 py-1 rounded-xl">
-                      {loggedHoursToday} / 7 ש׳
+                    <span className="text-xs sm:text-sm font-semibold text-[#2563EB] font-mono bg-white border border-[#DBEAFE] px-2.5 py-1 rounded-xl">
+                      {loggedHoursToday} ש׳
                     </span>
                     <button
                       type="button"
@@ -2085,47 +2050,47 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                         e.stopPropagation();
                         fetchTodayQuotaStatus();
                       }}
-                      className="p-1.5 rounded-xl hover:bg-slate-200/60 text-slate-400 hover:text-slate-700 cursor-pointer transition-colors"
-                      title="רענן מכסה יומית"
+                      className="p-1.5 rounded-xl hover:bg-white text-[#2563EB]/70 hover:text-[#2563EB] cursor-pointer transition-colors"
+                      title="רענן נתוני תיעוד"
                     >
-                      <RefreshCw className={`w-3.5 h-3.5 ${todayQuota.loading ? "animate-spin text-slate-700" : ""}`} />
+                      <RefreshCw className={`w-3.5 h-3.5 ${todayQuota.loading ? "animate-spin text-[#06B6D4]" : ""}`} />
                     </button>
                   </div>
                 </div>
 
-                {/* Single Sleek Progress Bar */}
-                <div className="w-full h-1.5 rounded-full bg-slate-200/80 overflow-hidden">
+                {/* Single Sleek Blue Progress Bar (7h billable documentation reference) */}
+                <div className="w-full h-1.5 rounded-full bg-[#DBEAFE] overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all duration-500 ${
-                      isQuotaReached ? "bg-emerald-600" : "bg-slate-900"
+                      isQuotaReached ? "bg-[#06B6D4]" : "bg-[#2563EB]"
                     }`}
                     style={{ width: `${quotaPercent}%` }}
                   />
                 </div>
               </div>
 
-              {/* Clean Minimalist Suggestion Chips */}
+              {/* Interactive Quick-Action Chips with Subtle Blue Presence */}
               <div className="flex flex-wrap items-center justify-center gap-2 max-w-lg mx-auto pt-1">
                 {isGuyOrAdmin ? (
                   <>
                     <button
                       type="button"
                       onClick={() => handleSendText("כמה אנשים תיעדו היום?")}
-                      className="px-3.5 py-2 rounded-full bg-white hover:bg-slate-50 border border-slate-200/90 text-xs text-slate-700 font-medium transition-colors cursor-pointer"
+                      className="px-3.5 py-2 rounded-full bg-white hover:bg-[#EFF6FF] border border-[#DBEAFE] text-xs text-[#172B4D] hover:text-[#2563EB] font-medium transition-colors cursor-pointer"
                     >
                       כמה אנשים תיעדו היום?
                     </button>
                     <button
                       type="button"
                       onClick={() => handleSendText("ריכוז שבועי")}
-                      className="px-3.5 py-2 rounded-full bg-white hover:bg-slate-50 border border-slate-200/90 text-xs text-slate-700 font-medium transition-colors cursor-pointer"
+                      className="px-3.5 py-2 rounded-full bg-white hover:bg-[#EFF6FF] border border-[#DBEAFE] text-xs text-[#172B4D] hover:text-[#2563EB] font-medium transition-colors cursor-pointer"
                     >
                       ריכוז שבועי
                     </button>
                     <button
                       type="button"
                       onClick={() => handleSendText("כמה שעות נרשמו היום?")}
-                      className="px-3.5 py-2 rounded-full bg-white hover:bg-slate-50 border border-slate-200/90 text-xs text-slate-700 font-medium transition-colors cursor-pointer"
+                      className="px-3.5 py-2 rounded-full bg-white hover:bg-[#EFF6FF] border border-[#DBEAFE] text-xs text-[#172B4D] hover:text-[#2563EB] font-medium transition-colors cursor-pointer"
                     >
                       כמה שעות נרשמו היום?
                     </button>
@@ -2135,21 +2100,21 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                     <button
                       type="button"
                       onClick={() => setInputText("הייתי היום שעתיים בביקור אצל ")}
-                      className="px-3.5 py-2 rounded-full bg-white hover:bg-slate-50 border border-slate-200/90 text-xs text-slate-600 hover:text-slate-900 font-medium transition-colors cursor-pointer"
+                      className="px-3.5 py-2 rounded-full bg-white hover:bg-[#EFF6FF] border border-[#DBEAFE] text-xs text-[#172B4D] hover:text-[#2563EB] font-medium transition-colors cursor-pointer"
                     >
                       ביקור באתר לקוח
                     </button>
                     <button
                       type="button"
                       onClick={() => setInputText("שעה תמיכה מרחוק וטיפול בטיקט אצל ")}
-                      className="px-3.5 py-2 rounded-full bg-white hover:bg-slate-50 border border-slate-200/90 text-xs text-slate-600 hover:text-slate-900 font-medium transition-colors cursor-pointer"
+                      className="px-3.5 py-2 rounded-full bg-white hover:bg-[#EFF6FF] border border-[#DBEAFE] text-xs text-[#172B4D] hover:text-[#2563EB] font-medium transition-colors cursor-pointer"
                     >
                       תמיכה מרחוק / טיקט
                     </button>
                     <button
                       type="button"
                       onClick={() => setInputText("3 שעות עבודה על פרויקט אצל ")}
-                      className="px-3.5 py-2 rounded-full bg-white hover:bg-slate-50 border border-slate-200/90 text-xs text-slate-600 hover:text-slate-900 font-medium transition-colors cursor-pointer"
+                      className="px-3.5 py-2 rounded-full bg-white hover:bg-[#EFF6FF] border border-[#DBEAFE] text-xs text-[#172B4D] hover:text-[#2563EB] font-medium transition-colors cursor-pointer"
                     >
                       עבודת פרויקט
                     </button>
@@ -2182,11 +2147,11 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                       key={msg.id}
                       className={`flex flex-col ${isUser ? "items-start" : "items-stretch"} space-y-2`}
                     >
-                      {/* User Message Bubble (ChatGPT / Gemini clean grey pill) */}
+                      {/* User Message Bubble (Clean Blue Tint Pill) */}
                       {isUser ? (
-                        <div className="bg-[#f4f4f5] text-slate-900 rounded-2xl px-4 py-2.5 text-sm sm:text-[15px] leading-relaxed max-w-[90%] sm:max-w-[80%] group relative">
+                        <div className="bg-[#EFF6FF] border border-[#DBEAFE] text-[#172B4D] rounded-2xl px-4 py-2.5 text-sm sm:text-[15px] leading-relaxed max-w-[90%] sm:max-w-[80%] group relative">
                           {msg.isVoice && (
-                            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mb-1 font-medium">
+                            <div className="flex items-center gap-1.5 text-[11px] text-[#2563EB] mb-1 font-medium">
                               <Volume2 className="w-3 h-3" />
                               <span>תמלול קולי</span>
                             </div>
@@ -2198,20 +2163,20 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                                 rows={2}
                                 value={editingMsgText}
                                 onChange={(e) => setEditingMsgText(e.target.value)}
-                                className="w-full p-2 text-[16px] sm:text-sm bg-white border border-slate-300 rounded-xl focus:outline-none focus:border-slate-900 resize-none"
+                                className="w-full p-2 text-[16px] sm:text-sm bg-white border border-[#DBEAFE] rounded-xl focus:outline-none focus:border-[#2563EB] resize-none text-[#172B4D]"
                               />
                               <div className="flex items-center justify-end gap-1.5">
                                 <button
                                   type="button"
                                   onClick={() => setEditingMsgId(null)}
-                                  className="px-2.5 py-1 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-200/70 cursor-pointer"
+                                  className="px-2.5 py-1 rounded-lg text-xs font-medium text-[#172B4D] hover:bg-white cursor-pointer"
                                 >
                                   ביטול
                                 </button>
                                 <button
                                   type="button"
                                   onClick={() => handleSaveEditedUserMessage(msg.id)}
-                                  className="px-3 py-1 rounded-lg text-xs font-medium bg-slate-900 hover:bg-slate-800 text-white flex items-center gap-1 cursor-pointer"
+                                  className="px-3 py-1 rounded-lg text-xs font-medium bg-[#2563EB] hover:bg-[#1D4ED8] text-white flex items-center gap-1 cursor-pointer"
                                 >
                                   <Check className="w-3 h-3" />
                                   <span>עדכן</span>
@@ -2228,7 +2193,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                                     setEditingMsgId(msg.id);
                                     setEditingMsgText(msg.text.replace(/^🎙️\s*"?|"?$/g, ""));
                                   }}
-                                  className="text-[11px] text-slate-400 hover:text-slate-700 font-normal flex items-center gap-1 cursor-pointer transition-colors"
+                                  className="text-[11px] text-[#2563EB]/70 hover:text-[#2563EB] font-normal flex items-center gap-1 cursor-pointer transition-colors"
                                   title="ערוך הודעה"
                                 >
                                   <Pencil className="w-2.5 h-2.5" />
@@ -2240,20 +2205,20 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                           )}
                         </div>
                       ) : (
-                        /* Assistant Message: Minimalist Clean Layout */
+                        /* Assistant Message: Minimalist Clean Layout with AI Accent */
                         <div className="flex items-start gap-3 w-full min-w-0">
-                          <div className="w-7 h-7 rounded-full bg-slate-900 text-white flex items-center justify-center shrink-0 mt-0.5">
+                          <div className="w-7 h-7 rounded-xl bg-[#EFF6FF] border border-[#DBEAFE] text-[#06B6D4] flex items-center justify-center shrink-0 mt-0.5">
                             <Sparkles className="w-3.5 h-3.5" />
                           </div>
 
                           <div className="flex-1 min-w-0 space-y-2.5">
-                            <div className="text-sm sm:text-[15px] text-slate-800 leading-relaxed font-normal">
+                            <div className="text-sm sm:text-[15px] text-[#172B4D] leading-relaxed font-normal">
                               <p className="whitespace-pre-line break-words">{msg.text}</p>
                               {isAuthErrorMsg && onLogout && (
                                 <button
                                   type="button"
                                   onClick={onLogout}
-                                  className="mt-2.5 px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors"
+                                  className="mt-2.5 px-3.5 py-1.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors"
                                 >
                                   <LogOut className="w-3.5 h-3.5" />
                                   <span>התנתק והתחבר מחדש</span>
@@ -2307,15 +2272,15 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
 
               {/* Minimal Loading Indicator */}
               {loading && (
-                <div className="flex items-center justify-between gap-3 py-2.5 px-3.5 rounded-2xl bg-[#f9fafb] border border-slate-200/80 max-w-md">
+                <div className="flex items-center justify-between gap-3 py-2.5 px-3.5 rounded-2xl bg-[#EFF6FF]/60 border border-[#DBEAFE] max-w-md">
                   <div className="flex items-center gap-2.5">
-                    <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-900 border-t-transparent animate-spin flex-shrink-0" />
-                    <span className="text-xs text-slate-600 font-medium">{loadingStep}</span>
+                    <div className="w-3.5 h-3.5 rounded-full border-2 border-[#06B6D4] border-t-transparent animate-spin flex-shrink-0" />
+                    <span className="text-xs text-[#172B4D] font-medium">{loadingStep}</span>
                   </div>
                   <button
                     type="button"
                     onClick={handleNewChat}
-                    className="px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 text-[11px] font-medium flex items-center gap-1 shrink-0 cursor-pointer"
+                    className="px-2.5 py-1 rounded-lg bg-white hover:bg-[#EFF6FF] text-[#2563EB] border border-[#DBEAFE] text-[11px] font-medium flex items-center gap-1 shrink-0 cursor-pointer"
                   >
                     <Plus className="w-3 h-3" />
                     <span>במקביל</span>
@@ -2328,15 +2293,15 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
           </div>
         )}
 
-        {/* Docked iPhone-Optimized Floating Composer Bar (ChatGPT / Gemini Style) */}
+        {/* Docked iPhone-Optimized Floating Composer Bar */}
         <div className="w-full max-w-2xl mx-auto px-3 sm:px-4 pb-[max(0.6rem,env(safe-area-inset-bottom))] sm:pb-4 pt-1.5 shrink-0 bg-white">
           {/* Active Audio Recording Bar */}
           {isRecording && (
-            <div className="mb-2 flex items-center justify-between p-3 rounded-2xl bg-slate-900 text-white shadow-sm">
+            <div className="mb-2 flex items-center justify-between p-3 rounded-2xl bg-[#2563EB] text-white shadow-xs">
               <div className="flex items-center gap-2.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
+                <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping" />
                 <span className="text-xs font-medium">מקליט דיווח קולי...</span>
-                <span className="font-mono text-xs text-slate-300">
+                <span className="font-mono text-xs text-[#DBEAFE]">
                   {formatRecordingTime(recordingSeconds)}
                 </span>
               </div>
@@ -2344,9 +2309,9 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
               <button
                 type="button"
                 onClick={stopRecording}
-                className="py-1 px-3 rounded-xl bg-white text-slate-900 font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
+                className="py-1 px-3 rounded-xl bg-white text-[#2563EB] font-semibold text-xs flex items-center gap-1.5 cursor-pointer"
               >
-                <Square className="w-3 h-3 fill-slate-900" />
+                <Square className="w-3 h-3 fill-[#2563EB]" />
                 <span>סיום ושליחה</span>
               </button>
             </div>
@@ -2354,15 +2319,15 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
 
           {/* Microphone Permission Error Banner */}
           {micPermissionError && (
-            <div className="mb-2.5 p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-slate-800 text-xs flex flex-col gap-1.5">
+            <div className="mb-2.5 p-3.5 rounded-2xl bg-[#EFF6FF] border border-[#DBEAFE] text-[#172B4D] text-xs flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
-                <span className="font-semibold flex items-center gap-1.5">
+                <span className="font-semibold flex items-center gap-1.5 text-[#2563EB]">
                   <MicOff className="w-3.5 h-3.5" /> {micPermissionError.title}
                 </span>
                 <button
                   type="button"
                   onClick={() => setMicPermissionError(null)}
-                  className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                  className="text-slate-400 hover:text-[#172B4D] cursor-pointer"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -2372,12 +2337,12 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
           )}
 
           {/* Composer Pill */}
-          <div className="w-full rounded-[26px] bg-[#f4f4f5] focus-within:bg-white focus-within:ring-1 focus-within:ring-slate-300 border border-slate-200/80 transition-all p-1.5 sm:p-2 flex items-end gap-2 shadow-2xs">
+          <div className="w-full rounded-[26px] bg-[#F8FAFC] focus-within:bg-white focus-within:ring-1 focus-within:ring-[#2563EB]/40 focus-within:border-[#2563EB] border border-[#DBEAFE] transition-all p-1.5 sm:p-2 flex items-end gap-2 shadow-2xs">
             {/* Plus icon for parallel session */}
             <button
               type="button"
               onClick={handleNewChat}
-              className="w-9 h-9 rounded-full bg-white hover:bg-slate-100 flex items-center justify-center text-slate-600 border border-slate-200/80 shrink-0 cursor-pointer self-end transition-colors"
+              className="w-9 h-9 rounded-full bg-white hover:bg-[#EFF6FF] flex items-center justify-center text-[#2563EB] border border-[#DBEAFE] shrink-0 cursor-pointer self-end transition-colors"
               title="פתח סשן תיעוד חדש במקביל"
             >
               <Plus className="w-4 h-4" />
@@ -2404,7 +2369,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                   ? "מעבד... לחץ + לפתיחת תיעוד נוסף במקביל"
                   : "תאר את הפעילות והלקוח, או הקלט..."
               }
-              className="flex-1 bg-transparent text-slate-900 placeholder-slate-400 text-[16px] sm:text-[15px] leading-relaxed focus:outline-none py-1.5 px-1.5 resize-none overflow-y-auto max-h-36 min-h-[28px] box-border"
+              className="flex-1 bg-transparent text-[#172B4D] placeholder-slate-400 text-[16px] sm:text-[15px] leading-relaxed focus:outline-none py-1.5 px-1.5 resize-none overflow-y-auto max-h-36 min-h-[28px] box-border"
             />
 
             {/* Microphone & Send Buttons */}
@@ -2416,7 +2381,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                 className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
                   isRecording
                     ? "bg-red-600 text-white animate-pulse"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-white"
+                    : "text-[#2563EB] hover:bg-[#EFF6FF]"
                 }`}
                 title={isRecording ? "עצור הקלטה" : "הקלט הודעה קולית"}
               >
@@ -2428,7 +2393,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                   type="button"
                   onClick={() => handleSendText()}
                   disabled={loading}
-                  className="w-9 h-9 rounded-full bg-slate-900 hover:bg-slate-800 text-white flex items-center justify-center shrink-0 cursor-pointer transition-all"
+                  className="w-9 h-9 rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] text-white flex items-center justify-center shrink-0 cursor-pointer transition-all"
                   title="שלח"
                 >
                   <Send className="w-4 h-4 -scale-x-100" />

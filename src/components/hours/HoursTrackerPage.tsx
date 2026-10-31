@@ -436,8 +436,8 @@ export const HoursTrackerPage: React.FC = () => {
   useEffect(() => {
     const originalBodyBg = document.body.style.backgroundColor;
     const originalHtmlBg = document.documentElement.style.backgroundColor;
-    document.body.style.backgroundColor = "#ffffff";
-    document.documentElement.style.backgroundColor = "#ffffff";
+    document.body.style.backgroundColor = "#F8FAFC";
+    document.documentElement.style.backgroundColor = "#F8FAFC";
     return () => {
       document.body.style.backgroundColor = originalBodyBg;
       document.documentElement.style.backgroundColor = originalHtmlBg;
@@ -473,26 +473,26 @@ export const HoursTrackerPage: React.FC = () => {
   return (
     <div
       dir="rtl"
-      className="min-h-[100dvh] h-[100dvh] w-full bg-white text-slate-900 flex flex-col font-sans selection:bg-slate-900 selection:text-white relative overflow-hidden pt-[env(safe-area-inset-top)]"
+      className="min-h-[100dvh] h-[100dvh] w-full bg-[#F8FAFC] text-[#172B4D] flex flex-col font-sans selection:bg-[#2563EB] selection:text-white relative overflow-hidden pt-[env(safe-area-inset-top)]"
     >
-      {/* Top Header - Minimalist Luxury Navbar (ChatGPT / Gemini Style) */}
-      <header className="relative z-20 h-13 sm:h-14 border-b border-slate-200/70 bg-white/95 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between gap-2 shrink-0">
+      {/* Top Header - Modern Blue-Accented Minimalist Navbar */}
+      <header className="relative z-20 h-13 sm:h-14 border-b border-[#DBEAFE] bg-white/95 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-2.5 shrink-0 min-w-0">
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-900 flex items-center justify-center text-white shrink-0">
-            <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-[#2563EB] flex items-center justify-center text-white shrink-0">
+            <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
           </div>
           <div className="flex items-center gap-2 min-w-0">
-            <span className="text-sm font-semibold text-slate-900 tracking-tight whitespace-nowrap">
+            <span className="text-sm font-semibold text-[#172B4D] tracking-tight whitespace-nowrap">
               שעות לחיוב לקוח
             </span>
-            <span className="hidden sm:inline text-slate-300 font-light">·</span>
-            <span className="hidden sm:inline text-xs font-medium text-slate-400 tracking-wide whitespace-nowrap">
+            <span className="hidden sm:inline text-[#DBEAFE] font-light">·</span>
+            <span className="hidden sm:inline text-xs font-medium text-[#2563EB]/80 tracking-wide whitespace-nowrap">
               TECH-SELECT
             </span>
           </div>
         </div>
 
-        {/* Right & Left Header Controls: Clean Minimalist Pills + Always-Accessible Logout */}
+        {/* Right & Left Header Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 justify-end">
           {(account || serverUser) ? (
             <>
@@ -501,10 +501,10 @@ export const HoursTrackerPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setShowMyLoggedHoursModal(true)}
-                  className="text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-full border border-slate-200/90 bg-slate-50 hover:bg-slate-100 text-slate-800 font-medium flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap shrink-0"
-                  title="בדוק כמה שעות לחיוב לקוח תיעדת היום ובכל יום מתוך Microsoft Lists"
+                  className="text-[11px] sm:text-xs px-2.5 sm:px-3.5 py-1.5 rounded-full border border-[#DBEAFE] bg-[#EFF6FF] hover:bg-[#DBEAFE]/70 text-[#2563EB] font-medium flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap shrink-0"
+                  title="צפה בריכוז התיעודים שלך לפי יום ב-Microsoft Lists"
                 >
-                  <ListChecks className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+                  <ListChecks className="w-3.5 h-3.5 text-[#2563EB] shrink-0" />
                   <span>כמה תיעדתי היום</span>
                 </button>
 
@@ -513,12 +513,12 @@ export const HoursTrackerPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setShowDailySummaryModal(true)}
-                    className="text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-full border border-slate-200/90 bg-white hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap shrink-0"
-                    title="דוח וריכוז שעות עבודה יומי לכל העובדים (מנהל)"
+                    className="text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-full border border-[#DBEAFE] bg-white hover:bg-[#EFF6FF] text-[#172B4D] font-medium flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap shrink-0"
+                    title="דוח וריכוז שעות לחיוב יומי (מנהל)"
                   >
-                    <BarChart3 className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                    <BarChart3 className="w-3.5 h-3.5 text-[#2563EB] shrink-0" />
                     <span className="sm:hidden">דוח יומי</span>
-                    <span className="hidden sm:inline">שעות היום (מנהל)</span>
+                    <span className="hidden sm:inline">ריכוז צוות</span>
                   </button>
                 )}
 
@@ -527,10 +527,10 @@ export const HoursTrackerPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setShowCentralLogModal(true)}
-                    className="text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-full border border-slate-200/90 bg-white hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap shrink-0"
-                    title="יומן שעות מרכזי (LOG) לכל העובדים"
+                    className="text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-full border border-[#DBEAFE] bg-white hover:bg-[#EFF6FF] text-[#172B4D] font-medium flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap shrink-0"
+                    title="יומן שעות מרכזי (LOG)"
                   >
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-[#06B6D4] shrink-0" />
                     <span className="sm:hidden">LOG</span>
                     <span className="hidden sm:inline">יומן מרכזי</span>
                   </button>
@@ -542,8 +542,8 @@ export const HoursTrackerPage: React.FC = () => {
                     onClick={() => setShowTestPanel(!showTestPanel)}
                     className={`text-xs p-1.5 sm:px-3 sm:py-1.5 rounded-full border font-medium flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition-colors ${
                       showTestPanel
-                        ? "bg-slate-900 text-white border-slate-900"
-                        : "bg-white hover:bg-slate-50 text-slate-600 border-slate-200/90"
+                        ? "bg-[#2563EB] text-white border-[#2563EB]"
+                        : "bg-white hover:bg-[#EFF6FF] text-[#172B4D] border-[#DBEAFE]"
                     }`}
                     title="פאנל בדיקות טכני וסריקת מבנה קבצים"
                   >
@@ -552,11 +552,11 @@ export const HoursTrackerPage: React.FC = () => {
                   </button>
                 )}
 
-                <div className="hidden md:flex items-center gap-2 text-right bg-slate-50 border border-slate-200/80 rounded-full py-1 px-2.5 shrink-0">
-                  <div className="w-5 h-5 rounded-full bg-slate-900 text-white flex items-center justify-center text-[11px] font-semibold shrink-0">
+                <div className="hidden md:flex items-center gap-2 text-right bg-[#EFF6FF]/70 border border-[#DBEAFE] rounded-full py-1 px-2.5 shrink-0">
+                  <div className="w-5 h-5 rounded-full bg-[#2563EB] text-white flex items-center justify-center text-[11px] font-semibold shrink-0">
                     {displayName.charAt(0)}
                   </div>
-                  <span className="text-xs font-medium text-slate-700 whitespace-nowrap">
+                  <span className="text-xs font-medium text-[#172B4D] whitespace-nowrap">
                     {displayName}
                   </span>
                 </div>
@@ -566,7 +566,7 @@ export const HoursTrackerPage: React.FC = () => {
               <button
                 type="button"
                 onClick={handleLogout}
-                className="px-2.5 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200/90 flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
+                className="px-2.5 sm:px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-medium text-[#172B4D]/80 hover:text-[#2563EB] bg-white hover:bg-[#EFF6FF] border border-[#DBEAFE] flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
                 title="התנתק / יציאה מהחשבון והחלפת משתמש בכל שלב"
               >
                 <LogOut className="w-3.5 h-3.5 shrink-0" />
@@ -575,15 +575,15 @@ export const HoursTrackerPage: React.FC = () => {
             </>
           ) : (
             <div className="flex items-center gap-2 shrink-0">
-              <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 border border-slate-200/80 px-3 py-1 rounded-full whitespace-nowrap">
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse" />
+              <div className="flex items-center gap-2 text-xs text-[#2563EB] bg-[#EFF6FF] border border-[#DBEAFE] px-3 py-1 rounded-full whitespace-nowrap">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#06B6D4] animate-pulse" />
                 <span>הזדהות</span>
               </div>
               {loading && (
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="px-2.5 py-1.5 rounded-full text-[11px] font-medium text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
+                  className="px-2.5 py-1.5 rounded-full text-[11px] font-medium text-[#172B4D] hover:text-[#2563EB] bg-white hover:bg-[#EFF6FF] border border-[#DBEAFE] flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
                   title="עצור חיבור אוטומטי והתנתק"
                 >
                   <LogOut className="w-3.5 h-3.5 shrink-0" />
@@ -597,7 +597,7 @@ export const HoursTrackerPage: React.FC = () => {
 
       {/* Main Content Area */}
       {(account || serverUser) ? (
-        <main className="relative z-10 flex-1 w-full h-[calc(100dvh-3.25rem)] sm:h-[calc(100dvh-3.5rem)] overflow-hidden flex flex-col bg-white">
+        <main className="relative z-10 flex-1 w-full h-[calc(100dvh-3.25rem)] sm:h-[calc(100dvh-3.5rem)] overflow-hidden flex flex-col bg-[#F8FAFC]">
           {/* Per-User "כמה תיעדתי היום" Modal (Directly queries Microsoft Lists) */}
           {showMyLoggedHoursModal && (
             <MyLoggedHoursModal
@@ -629,16 +629,16 @@ export const HoursTrackerPage: React.FC = () => {
 
           {/* Admin Test Panel Modal Overlay */}
           {showTestPanel && serverUser?.isAdmin && (
-            <div className="absolute inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
-              <div className="w-full max-w-4xl max-h-[90vh] bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col text-right">
-                <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
-                  <div className="flex items-center gap-2 text-slate-800 font-bold text-sm">
-                    <ShieldCheck className="w-4 h-4 text-slate-700" />
+            <div className="absolute inset-0 z-50 bg-[#172B4D]/40 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="w-full max-w-4xl max-h-[90vh] bg-white rounded-3xl shadow-xl border border-[#DBEAFE] overflow-hidden flex flex-col text-right">
+                <div className="px-6 py-4 border-b border-[#DBEAFE] flex items-center justify-between bg-[#EFF6FF]/60">
+                  <div className="flex items-center gap-2 text-[#172B4D] font-bold text-sm">
+                    <ShieldCheck className="w-4 h-4 text-[#2563EB]" />
                     <span>פאנל בדיקה טכני ומבנה קבצים</span>
                   </div>
                   <button
                     onClick={() => setShowTestPanel(false)}
-                    className="w-8 h-8 rounded-full bg-white hover:bg-slate-200 border border-slate-200 flex items-center justify-center text-slate-500 hover:text-slate-800 cursor-pointer font-bold"
+                    className="w-8 h-8 rounded-full bg-white hover:bg-[#EFF6FF] border border-[#DBEAFE] flex items-center justify-center text-[#172B4D] cursor-pointer font-bold"
                   >
                     &times;
                   </button>
@@ -667,13 +667,13 @@ export const HoursTrackerPage: React.FC = () => {
           </HoursErrorBoundary>
         </main>
       ) : (
-        <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 sm:px-8 py-6 sm:py-10 bg-white">
+        <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 sm:px-8 py-6 sm:py-10 bg-[#F8FAFC]">
           <div className="w-full max-w-sm transition-all">
             {/* Missing System Configuration Screen */}
             {missingConfig && (
-              <div className="p-6 rounded-2xl bg-slate-50 border border-slate-200 text-right mb-6">
-                <div className="flex items-center gap-2.5 text-slate-900 mb-2">
-                  <AlertCircle className="w-5 h-5 flex-shrink-0" />
+              <div className="p-6 rounded-2xl bg-white border border-[#DBEAFE] text-right mb-6">
+                <div className="flex items-center gap-2.5 text-[#172B4D] mb-2">
+                  <AlertCircle className="w-5 h-5 flex-shrink-0 text-[#2563EB]" />
                   <h3 className="text-sm font-semibold">
                     חסרה הגדרת מערכת: {missingConfig}
                   </h3>
@@ -681,7 +681,7 @@ export const HoursTrackerPage: React.FC = () => {
                 <p className="text-xs text-slate-600 leading-relaxed mb-3">
                   השרת אינו מוגדר עם המשתנה הנדרש עבור אימות Microsoft 365.
                 </p>
-                <div className="p-2.5 rounded-xl bg-white border border-slate-200 text-xs text-slate-700 font-mono" dir="ltr">
+                <div className="p-2.5 rounded-xl bg-[#EFF6FF]/60 border border-[#DBEAFE] text-xs text-[#172B4D] font-mono" dir="ltr">
                   GET /api/hours/config &rarr; {missingConfig} is empty
                 </div>
               </div>
@@ -689,14 +689,14 @@ export const HoursTrackerPage: React.FC = () => {
 
             {/* Loading State Spinner */}
             {!missingConfig && loading && (
-              <div className="p-8 rounded-3xl bg-white border border-slate-200/90 text-center shadow-xs">
-                <div className="w-9 h-9 rounded-full border-2 border-slate-200 border-t-slate-900 animate-spin mx-auto mb-4" />
-                <p className="text-sm font-medium text-slate-900 mb-1">{loadingMessage}</p>
+              <div className="p-8 rounded-3xl bg-white border border-[#DBEAFE] text-center shadow-xs">
+                <div className="w-9 h-9 rounded-full border-2 border-[#DBEAFE] border-t-[#2563EB] animate-spin mx-auto mb-4" />
+                <p className="text-sm font-medium text-[#172B4D] mb-1">{loadingMessage}</p>
                 <p className="text-xs text-slate-400 mb-5">Microsoft 365 Single Sign-On</p>
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="mx-auto px-4 py-2 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                  className="mx-auto px-4 py-2 rounded-full bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#2563EB] text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                 >
                   <LogOut className="w-3.5 h-3.5" />
                   <span>התנתק / החלף משתמש</span>
@@ -706,9 +706,9 @@ export const HoursTrackerPage: React.FC = () => {
 
             {/* Error Message Screen */}
             {!missingConfig && !loading && errorMessage && (
-              <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-right mb-5">
-                <div className="flex items-center gap-2 text-slate-900 mb-1.5">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0 text-slate-700" />
+              <div className="p-5 rounded-2xl bg-white border border-[#DBEAFE] text-right mb-5">
+                <div className="flex items-center gap-2 text-[#172B4D] mb-1.5">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0 text-[#2563EB]" />
                   <h3 className="text-xs font-semibold">הודעת מערכת</h3>
                 </div>
                 <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-line mb-4">
@@ -718,14 +718,14 @@ export const HoursTrackerPage: React.FC = () => {
                   <button
                     type="button"
                     onClick={() => setErrorMessage(null)}
-                    className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-100 border border-slate-200 text-xs font-medium text-slate-700 transition-colors cursor-pointer"
+                    className="px-3 py-1.5 rounded-lg bg-[#EFF6FF] hover:bg-[#DBEAFE] text-xs font-medium text-[#2563EB] transition-colors cursor-pointer"
                   >
                     סגור
                   </button>
                   <button
                     type="button"
                     onClick={handleLogout}
-                    className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                    className="px-3 py-1.5 rounded-lg bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
                   >
                     <LogOut className="w-3.5 h-3.5" />
                     <span>נקה חיבור</span>
@@ -736,12 +736,12 @@ export const HoursTrackerPage: React.FC = () => {
 
             {/* Minimalist Sign-in Card */}
             {!missingConfig && !loading && !account && !serverUser && (showFallbackButton || errorMessage) && (
-              <div className="p-7 sm:p-8 rounded-3xl bg-white border border-slate-200/90 shadow-xs text-center">
-                <div className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center mx-auto mb-5">
+              <div className="p-7 sm:p-8 rounded-3xl bg-white border border-[#DBEAFE] shadow-xs text-center">
+                <div className="w-12 h-12 rounded-2xl bg-[#EFF6FF] border border-[#DBEAFE] text-[#2563EB] flex items-center justify-center mx-auto mb-5">
                   <Sparkles className="w-5 h-5" />
                 </div>
 
-                <h2 className="text-xl font-semibold text-slate-900 mb-1.5 tracking-tight">
+                <h2 className="text-xl font-semibold text-[#172B4D] mb-1.5 tracking-tight">
                   שעות לחיוב לקוח
                 </h2>
                 <p className="text-xs text-slate-400 font-normal mb-6">
@@ -750,7 +750,7 @@ export const HoursTrackerPage: React.FC = () => {
 
                 <button
                   onClick={handleManualLogin}
-                  className="w-full py-3 px-5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-medium text-sm flex items-center justify-center gap-3 transition-all cursor-pointer active:scale-[0.99] mb-4"
+                  className="w-full py-3 px-5 rounded-2xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-medium text-sm flex items-center justify-center gap-3 transition-all cursor-pointer active:scale-[0.99] mb-4"
                 >
                   <div className="grid grid-cols-2 gap-0.5 w-3.5 h-3.5 flex-shrink-0">
                     <div className="w-1.5 h-1.5 bg-[#f25022]" />
@@ -762,7 +762,7 @@ export const HoursTrackerPage: React.FC = () => {
                 </button>
 
                 <p className="text-[11px] text-slate-400">
-                  חשבון ארגוני <span className="font-mono text-slate-500" dir="ltr">@tech-select.co.il</span>
+                  חשבון ארגוני <span className="font-mono text-[#2563EB]/80" dir="ltr">@tech-select.co.il</span>
                 </p>
               </div>
             )}

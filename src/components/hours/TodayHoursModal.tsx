@@ -101,43 +101,43 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
   return (
     <div
       dir="rtl"
-      className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 transition-opacity"
+      className="fixed inset-0 z-50 bg-[#172B4D]/45 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 transition-opacity"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-4xl max-h-[92vh] bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col text-right animate-in fade-in zoom-in-95 duration-200"
+        className="w-full max-w-4xl max-h-[92vh] bg-white rounded-3xl shadow-xl border border-[#DBEAFE] overflow-hidden flex flex-col text-right animate-in fade-in zoom-in-95 duration-200 text-[#172B4D]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Modal Header */}
-        <div className="px-5 py-4 border-b border-slate-200/90 flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-blue-50/70 via-indigo-50/40 to-white shrink-0">
+        <div className="px-5 py-4 border-b border-[#DBEAFE] flex flex-wrap items-center justify-between gap-3 bg-[#F8FAFC] shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-xs">
+            <div className="w-9 h-9 rounded-2xl bg-[#EFF6FF] border border-[#DBEAFE] text-[#2563EB] flex items-center justify-center">
               <Clock className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-slate-900">
-                  ריכוז שעות עבודה יומי
+                <h2 className="text-base font-bold text-[#172B4D]">
+                  ריכוז תיעוד שעות לחיוב לקוח
                 </h2>
-                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-blue-100/90 text-blue-800 border border-blue-200">
+                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#EFF6FF] text-[#2563EB] border border-[#DBEAFE]">
                   מנהל (g@tech-select.co.il)
                 </span>
               </div>
               <p className="text-xs text-slate-500">
-                צפייה מרוכזת בשעות שנרשמו היום בכל קבצי הלקוחות ב-SharePoint
+                צפייה מרוכזת בתיעוד שעות לחיוב שנרשם בקבצי הלקוחות ב-SharePoint
               </p>
             </div>
           </div>
 
           {/* Quick Date Switcher & Actions */}
           <div className="flex items-center gap-2">
-            <div className="flex items-center bg-slate-100 p-1 rounded-xl text-xs font-semibold text-slate-600">
+            <div className="flex items-center bg-[#EFF6FF] border border-[#DBEAFE] p-1 rounded-xl text-xs font-semibold text-[#172B4D]">
               <button
                 onClick={() => setSelectedDate("today")}
                 className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
                   selectedDate === "today"
-                    ? "bg-white text-blue-600 shadow-2xs font-bold"
-                    : "hover:text-slate-900"
+                    ? "bg-[#2563EB] text-white shadow-2xs font-bold"
+                    : "hover:text-[#2563EB]"
                 }`}
               >
                 היום
@@ -146,8 +146,8 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
                 onClick={() => setSelectedDate("yesterday")}
                 className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
                   selectedDate === "yesterday"
-                    ? "bg-white text-blue-600 shadow-2xs font-bold"
-                    : "hover:text-slate-900"
+                    ? "bg-[#2563EB] text-white shadow-2xs font-bold"
+                    : "hover:text-[#2563EB]"
                 }`}
               >
                 אתמול
@@ -156,8 +156,8 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
                 onClick={() => setSelectedDate("week")}
                 className={`px-3 py-1 rounded-lg transition-colors cursor-pointer ${
                   selectedDate === "week"
-                    ? "bg-white text-blue-600 shadow-2xs font-bold"
-                    : "hover:text-slate-900"
+                    ? "bg-[#2563EB] text-white shadow-2xs font-bold"
+                    : "hover:text-[#2563EB]"
                 }`}
               >
                 השבוע
@@ -167,19 +167,19 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
             <button
               onClick={() => fetchReport(selectedDate === "custom" ? customDate : selectedDate)}
               disabled={loading}
-              className="p-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 shadow-2xs transition-colors cursor-pointer"
+              className="p-2 rounded-xl bg-white hover:bg-[#EFF6FF] border border-[#DBEAFE] text-[#2563EB] transition-colors cursor-pointer"
               title="רענן נתונים"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-blue-600" : ""}`} />
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-[#06B6D4]" : ""}`} />
             </button>
 
             <button
               onClick={handleCopySummary}
               disabled={!report || report.totalEntries === 0}
-              className="px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-medium text-slate-700 shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
+              className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#EFF6FF] border border-[#DBEAFE] text-xs font-medium text-[#172B4D] flex items-center gap-1.5 cursor-pointer disabled:opacity-40 transition-colors"
               title="העתק סיכום ללוח"
             >
-              {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? <Check className="w-3.5 h-3.5 text-[#06B6D4]" /> : <Copy className="w-3.5 h-3.5 text-[#2563EB]" />}
               <span>{copied ? "הועתק!" : "העתק סיכום"}</span>
             </button>
 
@@ -187,7 +187,7 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
               href={`/api/hours/export-excel?date=${encodeURIComponent(report?.date || "")}&period=${encodeURIComponent(selectedDate)}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-2xs flex items-center gap-1.5 cursor-pointer transition-colors"
+              className="px-3 py-1.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
               title="ייצא את הנתונים מ-Microsoft Lists לקובץ Excel"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -196,7 +196,7 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
 
             <button
               onClick={onClose}
-              className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center font-bold text-lg cursor-pointer transition-colors"
+              className="w-8 h-8 rounded-full bg-white hover:bg-[#EFF6FF] border border-[#DBEAFE] text-slate-500 hover:text-[#172B4D] flex items-center justify-center font-bold text-lg cursor-pointer transition-colors"
             >
               &times;
             </button>
@@ -205,40 +205,40 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
 
         {/* KPI Summary Cards */}
         {report && (
-          <div className="p-4 sm:px-6 bg-slate-50/70 border-b border-slate-200/80 shrink-0">
+          <div className="p-4 sm:px-6 bg-white border-b border-[#DBEAFE] shrink-0">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="p-3 sm:p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
-                <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-                  <span>סה״כ שעות</span>
-                  <Clock className="w-3.5 h-3.5 text-blue-600" />
+              <div className="p-3 sm:p-3.5 rounded-2xl bg-[#EFF6FF] border border-[#DBEAFE]">
+                <div className="flex items-center justify-between text-xs text-[#2563EB] mb-1 font-medium">
+                  <span>סה״כ שעות לחיוב</span>
+                  <Clock className="w-3.5 h-3.5 text-[#2563EB]" />
                 </div>
-                <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                <div className="text-xl sm:text-2xl font-black text-[#172B4D] tracking-tight">
                   {report.totalHours} <span className="text-xs font-normal text-slate-500">שעות</span>
                 </div>
-                <div className="text-[11px] text-blue-600 font-medium mt-0.5">
+                <div className="text-[11px] text-[#2563EB] font-medium mt-0.5">
                   {report.totalHoursFormatted}
                 </div>
               </div>
 
-              <div className="p-3 sm:p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+              <div className="p-3 sm:p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#DBEAFE]/80">
                 <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-                  <span>עובדים פעילים</span>
-                  <Users className="w-3.5 h-3.5 text-purple-600" />
+                  <span>עובדים מתעדים</span>
+                  <Users className="w-3.5 h-3.5 text-[#2563EB]" />
                 </div>
-                <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                <div className="text-xl sm:text-2xl font-black text-[#172B4D] tracking-tight">
                   {report.activeEmployeesCount}
                 </div>
                 <div className="text-[11px] text-slate-500 font-medium mt-0.5">
-                  {report.activeEmployeesCount === 1 ? "עובד אחד דיווח" : "עובדים שדיווחו היום"}
+                  {report.activeEmployeesCount === 1 ? "עובד אחד תיעד" : "עובדים שתיעדו"}
                 </div>
               </div>
 
-              <div className="p-3 sm:p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+              <div className="p-3 sm:p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#DBEAFE]/80">
                 <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
                   <span>לקוחות שטופלו</span>
-                  <Building2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <Building2 className="w-3.5 h-3.5 text-[#06B6D4]" />
                 </div>
-                <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                <div className="text-xl sm:text-2xl font-black text-[#172B4D] tracking-tight">
                   {report.activeCustomersCount}
                 </div>
                 <div className="text-[11px] text-slate-500 font-medium mt-0.5">
@@ -246,12 +246,12 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
                 </div>
               </div>
 
-              <div className="p-3 sm:p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+              <div className="p-3 sm:p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#DBEAFE]/80">
                 <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-                  <span>דיווחים שנרשמו</span>
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-amber-600" />
+                  <span>תיעודים שנרשמו</span>
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-[#2563EB]" />
                 </div>
-                <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                <div className="text-xl sm:text-2xl font-black text-[#172B4D] tracking-tight">
                   {report.totalEntries}
                 </div>
                 <div className="text-[11px] text-slate-500 font-medium mt-0.5">
@@ -261,14 +261,14 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
             </div>
 
             {/* Segmented View Tabs */}
-            <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-slate-200/60">
+            <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-[#DBEAFE]/70">
               <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => setActiveTab("employees")}
                   className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
                     activeTab === "employees"
-                      ? "bg-blue-600 text-white shadow-xs"
-                      : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                      ? "bg-[#2563EB] text-white shadow-2xs"
+                      : "bg-white text-[#172B4D] hover:bg-[#EFF6FF] border border-[#DBEAFE]"
                   }`}
                 >
                   <Users className="w-3.5 h-3.5" />
@@ -279,8 +279,8 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
                   onClick={() => setActiveTab("customers")}
                   className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
                     activeTab === "customers"
-                      ? "bg-blue-600 text-white shadow-xs"
-                      : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                      ? "bg-[#2563EB] text-white shadow-2xs"
+                      : "bg-white text-[#172B4D] hover:bg-[#EFF6FF] border border-[#DBEAFE]"
                   }`}
                 >
                   <Building2 className="w-3.5 h-3.5" />
@@ -291,12 +291,12 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
                   onClick={() => setActiveTab("entries")}
                   className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer ${
                     activeTab === "entries"
-                      ? "bg-blue-600 text-white shadow-xs"
-                      : "bg-white text-slate-600 hover:bg-slate-100 border border-slate-200"
+                      ? "bg-[#2563EB] text-white shadow-2xs"
+                      : "bg-white text-[#172B4D] hover:bg-[#EFF6FF] border border-[#DBEAFE]"
                   }`}
                 >
                   <FileSpreadsheet className="w-3.5 h-3.5" />
-                  <span>כל הדיווחים ({report.totalEntries})</span>
+                  <span>כל התיעודים ({report.totalEntries})</span>
                 </button>
               </div>
 
@@ -306,9 +306,9 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
                     onClose();
                     onAskAssistant("כמה רשמו היום שעות?");
                   }}
-                  className="px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
+                  className="px-3 py-1.5 rounded-xl bg-[#EFF6FF] hover:bg-[#DBEAFE]/70 border border-[#DBEAFE] text-[#2563EB] text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
                 >
-                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                  <Sparkles className="w-3.5 h-3.5 text-[#06B6D4]" />
                   <span>שאל את העוזר על שעות אלו</span>
                 </button>
               )}
@@ -317,12 +317,12 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
         )}
 
         {/* Content Body */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-3 bg-[#F8FAFC]">
           {loading && (
             <div className="py-16 text-center">
-              <div className="w-10 h-10 rounded-full border-3 border-blue-100 border-t-blue-600 animate-spin mx-auto mb-3" />
-              <p className="text-sm font-semibold text-slate-700">סורק ומסכם שעות עבודה מ-SharePoint...</p>
-              <p className="text-xs text-slate-400 mt-1">בודק קבצי לקוחות פעילים ומאמת דיווחים</p>
+              <div className="w-10 h-10 rounded-full border-3 border-[#DBEAFE] border-t-[#06B6D4] animate-spin mx-auto mb-3" />
+              <p className="text-sm font-semibold text-[#172B4D]">סורק ומסכם שעות לחיוב מ-SharePoint...</p>
+              <p className="text-xs text-slate-400 mt-1">בודק קבצי לקוחות פעילים ומאמת תיעודים</p>
             </div>
           )}
 
@@ -335,14 +335,14 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
 
           {!loading && report && report.totalEntries === 0 && (
             <div className="py-16 px-4 text-center">
-              <div className="w-14 h-14 rounded-3xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
+              <div className="w-14 h-14 rounded-3xl bg-[#EFF6FF] border border-[#DBEAFE] text-[#2563EB] flex items-center justify-center mx-auto mb-3">
                 <Clock className="w-7 h-7" />
               </div>
-              <h3 className="text-base font-bold text-slate-800 mb-1">
-                טרם נרשמו שעות עבודה לתאריך זה ({report.date})
+              <h3 className="text-base font-bold text-[#172B4D] mb-1">
+                טרם תועדו שעות לחיוב לתאריך זה ({report.date})
               </h3>
               <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                כאשר עובדים ידווחו שעות באמצעות העוזר הקולי או ישירות ב-Excel, הדיווחים יופיעו כאן בזמן אמת.
+                כאשר עובדים יתעדו פעילויות לחיוב לקוח, התיעודים יופיעו כאן בזמן אמת.
               </p>
             </div>
           )}
@@ -355,19 +355,19 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
                 return (
                   <div
                     key={emp.employeeName}
-                    className="rounded-2xl border border-slate-200 bg-white hover:border-slate-300 transition-all shadow-2xs overflow-hidden"
+                    className="rounded-2xl border border-[#DBEAFE] bg-white hover:border-[#2563EB]/30 transition-all shadow-2xs overflow-hidden"
                   >
                     <div
                       onClick={() => setExpandedEmployee(isExpanded ? null : emp.employeeName)}
                       className="p-4 flex items-center justify-between gap-3 cursor-pointer select-none"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-2xs">
+                        <div className="w-10 h-10 rounded-2xl bg-[#2563EB] text-white flex items-center justify-center font-bold text-sm">
                           {emp.employeeName.charAt(0)}
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="font-bold text-sm text-slate-900">{emp.employeeName}</span>
+                            <span className="font-bold text-sm text-[#172B4D]">{emp.employeeName}</span>
                             {emp.employeeEmail && (
                               <span className="text-[11px] text-slate-400 font-mono" dir="ltr">
                                 {emp.employeeEmail}
@@ -378,7 +378,7 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
                             {emp.customers.map((c) => (
                               <span
                                 key={c}
-                                className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-medium border border-slate-200/80"
+                                className="text-[10px] px-2 py-0.5 rounded-md bg-[#F8FAFC] text-[#172B4D] font-medium border border-[#DBEAFE]"
                               >
                                 {c}
                               </span>
@@ -389,39 +389,39 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
 
                       <div className="flex items-center gap-3">
                         <div className="text-left">
-                          <span className="text-base font-black text-blue-600">
-                            {emp.totalHours} <span className="text-xs font-normal text-slate-500">שעות</span>
+                          <span className="text-base font-black text-[#2563EB]">
+                            {emp.totalHours} <span className="text-xs font-normal text-slate-500">שעות לחיוב</span>
                           </span>
                           <span className="block text-[10px] text-slate-400">
-                            {emp.entriesCount} דיווחים
+                            {emp.entriesCount} תיעודים
                           </span>
                         </div>
                         {isExpanded ? (
-                          <ChevronUp className="w-4 h-4 text-slate-400" />
+                          <ChevronUp className="w-4 h-4 text-[#2563EB]" />
                         ) : (
-                          <ChevronDown className="w-4 h-4 text-slate-400" />
+                          <ChevronDown className="w-4 h-4 text-[#2563EB]" />
                         )}
                       </div>
                     </div>
 
                     {/* Expanded Detail Rows */}
                     {isExpanded && (
-                      <div className="px-4 pb-4 pt-1 border-t border-slate-100 bg-slate-50/50 space-y-2">
+                      <div className="px-4 pb-4 pt-2 border-t border-[#DBEAFE]/70 bg-[#F8FAFC] space-y-2">
                         {emp.entries.map((entry) => (
                           <div
                             key={entry.id}
-                            className="p-3 rounded-xl bg-white border border-slate-200/90 shadow-2xs text-xs space-y-1.5"
+                            className="p-3 rounded-xl bg-white border border-[#DBEAFE] text-xs space-y-1.5"
                           >
-                            <div className="flex items-center justify-between text-slate-600 font-medium">
-                              <span className="font-bold text-slate-900">{entry.customerName}</span>
-                              <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-bold">
-                                {entry.durationHours} שעות {entry.startTime ? `(${entry.startTime} - ${entry.endTime || ""})` : ""}
+                            <div className="flex items-center justify-between text-[#172B4D] font-medium">
+                              <span className="font-bold text-[#172B4D]">{entry.customerName}</span>
+                              <span className="px-2.5 py-0.5 rounded-full bg-[#EFF6FF] border border-[#DBEAFE] text-[#2563EB] font-bold">
+                                {entry.durationHours} שעות לחיוב
                               </span>
                             </div>
-                            <p className="text-slate-700 leading-relaxed whitespace-pre-line text-[11px]">
+                            <p className="text-[#172B4D] leading-relaxed whitespace-pre-line text-[11px]">
                               {entry.description}
                             </p>
-                            <div className="flex items-center gap-3 text-[10px] text-slate-400 pt-1 border-t border-slate-100">
+                            <div className="flex items-center gap-3 text-[10px] text-slate-400 pt-1 border-t border-[#DBEAFE]/60">
                               <span>סוג פעילות: {entry.workType || entry.sheetName || "טיקטים"}</span>
                               {entry.ticketNumber && <span>קריאה: {entry.ticketNumber}</span>}
                               {entry.contactPerson && <span>איש קשר: {entry.contactPerson}</span>}
@@ -430,7 +430,7 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
                                   href={entry.webUrl}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="text-blue-600 hover:underline flex items-center gap-0.5 mr-auto"
+                                  className="text-[#2563EB] hover:underline flex items-center gap-0.5 mr-auto"
                                 >
                                   <span>פתח קובץ</span>
                                   <ExternalLink className="w-2.5 h-2.5" />
@@ -455,24 +455,24 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
                 return (
                   <div
                     key={cust.customerName}
-                    className="rounded-2xl border border-slate-200 bg-white hover:border-slate-300 transition-all shadow-2xs overflow-hidden"
+                    className="rounded-2xl border border-[#DBEAFE] bg-white hover:border-[#2563EB]/30 transition-all shadow-2xs overflow-hidden"
                   >
                     <div
                       onClick={() => setExpandedCustomer(isExpanded ? null : cust.customerName)}
                       className="p-4 flex items-center justify-between gap-3 cursor-pointer select-none"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center shadow-2xs">
+                        <div className="w-10 h-10 rounded-2xl bg-[#EFF6FF] text-[#2563EB] border border-[#DBEAFE] flex items-center justify-center">
                           <Building2 className="w-5 h-5" />
                         </div>
                         <div>
-                          <span className="font-bold text-sm text-slate-900">{cust.customerName}</span>
+                          <span className="font-bold text-sm text-[#172B4D]">{cust.customerName}</span>
                           <div className="flex items-center gap-1.5 mt-1">
                             <span className="text-[10px] text-slate-500">עובדים:</span>
                             {cust.employees.map((e) => (
                               <span
                                 key={e}
-                                className="text-[10px] px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 font-semibold"
+                                className="text-[10px] px-2 py-0.5 rounded-md bg-[#F8FAFC] border border-[#DBEAFE] text-[#172B4D] font-semibold"
                               >
                                 {e}
                               </span>
@@ -483,36 +483,36 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
 
                       <div className="flex items-center gap-3">
                         <div className="text-left">
-                          <span className="text-base font-black text-emerald-700">
-                            {cust.totalHours} <span className="text-xs font-normal text-slate-500">שעות</span>
+                          <span className="text-base font-black text-[#2563EB]">
+                            {cust.totalHours} <span className="text-xs font-normal text-slate-500">שעות לחיוב</span>
                           </span>
                           <span className="block text-[10px] text-slate-400">
-                            {cust.entriesCount} דיווחים
+                            {cust.entriesCount} תיעודים
                           </span>
                         </div>
                         {isExpanded ? (
-                          <ChevronUp className="w-4 h-4 text-slate-400" />
+                          <ChevronUp className="w-4 h-4 text-[#2563EB]" />
                         ) : (
-                          <ChevronDown className="w-4 h-4 text-slate-400" />
+                          <ChevronDown className="w-4 h-4 text-[#2563EB]" />
                         )}
                       </div>
                     </div>
 
                     {/* Expanded Detail Rows */}
                     {isExpanded && (
-                      <div className="px-4 pb-4 pt-1 border-t border-slate-100 bg-slate-50/50 space-y-2">
+                      <div className="px-4 pb-4 pt-2 border-t border-[#DBEAFE]/70 bg-[#F8FAFC] space-y-2">
                         {cust.entries.map((entry) => (
                           <div
                             key={entry.id}
-                            className="p-3 rounded-xl bg-white border border-slate-200/90 shadow-2xs text-xs space-y-1.5"
+                            className="p-3 rounded-xl bg-white border border-[#DBEAFE] text-xs space-y-1.5"
                           >
-                            <div className="flex items-center justify-between text-slate-600 font-medium">
-                              <span className="font-bold text-blue-700">{entry.employeeName}</span>
-                              <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold">
-                                {entry.durationHours} שעות {entry.startTime ? `(${entry.startTime} - ${entry.endTime || ""})` : ""}
+                            <div className="flex items-center justify-between text-[#172B4D] font-medium">
+                              <span className="font-bold text-[#2563EB]">{entry.employeeName}</span>
+                              <span className="px-2.5 py-0.5 rounded-full bg-[#EFF6FF] border border-[#DBEAFE] text-[#2563EB] font-bold">
+                                {entry.durationHours} שעות לחיוב
                               </span>
                             </div>
-                            <p className="text-slate-700 leading-relaxed whitespace-pre-line text-[11px]">
+                            <p className="text-[#172B4D] leading-relaxed whitespace-pre-line text-[11px]">
                               {entry.description}
                             </p>
                           </div>
@@ -531,33 +531,27 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
               {report.entries.map((entry) => (
                 <div
                   key={entry.id}
-                  className="p-3.5 rounded-2xl bg-white border border-slate-200/90 hover:border-slate-300 shadow-2xs text-xs space-y-2"
+                  className="p-3.5 rounded-2xl bg-white border border-[#DBEAFE] hover:border-[#2563EB]/30 shadow-2xs text-xs space-y-2"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-900 text-sm">{entry.customerName}</span>
+                      <span className="font-bold text-[#172B4D] text-sm">{entry.customerName}</span>
                       <span className="text-slate-300">&middot;</span>
-                      <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold text-[11px]">
+                      <span className="px-2 py-0.5 rounded-full bg-[#EFF6FF] border border-[#DBEAFE] text-[#2563EB] font-semibold text-[11px]">
                         {entry.employeeName}
                       </span>
                     </div>
 
-                    <span className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-black text-xs">
-                      {entry.durationHours} שעות
+                    <span className="px-2.5 py-0.5 rounded-full bg-[#EFF6FF] border border-[#DBEAFE] text-[#2563EB] font-black text-xs">
+                      {entry.durationHours} שעות לחיוב
                     </span>
                   </div>
 
-                  <p className="text-slate-700 leading-relaxed whitespace-pre-line text-xs font-normal">
+                  <p className="text-[#172B4D] leading-relaxed whitespace-pre-line text-xs font-normal">
                     {entry.description}
                   </p>
 
-                  <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400 pt-1.5 border-t border-slate-100">
-                    {entry.startTime && (
-                      <span className="flex items-center gap-1 text-slate-500">
-                        <Clock className="w-3 h-3 text-slate-400" />
-                        <span>{entry.startTime} עד {entry.endTime || ""}</span>
-                      </span>
-                    )}
+                  <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-400 pt-1.5 border-t border-[#DBEAFE]/60">
                     <span>סוג פעילות: {entry.workType || entry.sheetName || "טיקטים"}</span>
                     {entry.ticketNumber && <span>קריאה: {entry.ticketNumber}</span>}
                     {entry.contactPerson && <span>איש קשר: {entry.contactPerson}</span>}
@@ -566,7 +560,7 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
                         href={entry.webUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-blue-600 hover:underline flex items-center gap-0.5 mr-auto font-medium"
+                        className="text-[#2563EB] hover:underline flex items-center gap-0.5 mr-auto font-medium"
                       >
                         <span>פתח ב-Excel</span>
                         <ExternalLink className="w-2.5 h-2.5" />

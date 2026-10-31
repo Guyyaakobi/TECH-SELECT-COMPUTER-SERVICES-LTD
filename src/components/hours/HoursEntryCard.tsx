@@ -384,18 +384,18 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   const getWorkTypeIcon = (wt: string) => {
     const s = (wt || "").toLowerCase();
     if (s.includes("ביקור") || s.includes("אתר") || s.includes("onsite") || s.includes("visit")) {
-      return <MapPin className="w-3.5 h-3.5 text-slate-600" />;
+      return <MapPin className="w-3.5 h-3.5 text-[#2563EB]" />;
     }
     if (s.includes("פרויקט") || s.includes("פרוייקט") || s.includes("project")) {
-      return <FolderKanban className="w-3.5 h-3.5 text-slate-600" />;
+      return <FolderKanban className="w-3.5 h-3.5 text-[#2563EB]" />;
     }
-    return <Ticket className="w-3.5 h-3.5 text-slate-600" />;
+    return <Ticket className="w-3.5 h-3.5 text-[#2563EB]" />;
   };
 
   const getListsWorkTypeBadge = (wt?: string) => {
     const norm = String(wt || "").toLowerCase();
     if (norm.includes("פרויקט") || norm.includes("project")) {
-      return { label: "פרויקטים", bg: "bg-slate-100 text-slate-700 border-slate-200" };
+      return { label: "פרויקטים", bg: "bg-[#EFF6FF] text-[#2563EB] border-[#DBEAFE]" };
     }
     if (
       norm.includes("ביקור") ||
@@ -404,9 +404,9 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       norm.includes("onsite") ||
       norm.includes("visit")
     ) {
-      return { label: "ביקור באתר", bg: "bg-slate-100 text-slate-700 border-slate-200" };
+      return { label: "ביקור באתר", bg: "bg-[#EFF6FF] text-[#2563EB] border-[#DBEAFE]" };
     }
-    return { label: "טיקטים", bg: "bg-slate-100 text-slate-700 border-slate-200" };
+    return { label: "טיקטים", bg: "bg-[#EFF6FF] text-[#2563EB] border-[#DBEAFE]" };
   };
 
   // ==========================================
@@ -418,20 +418,20 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
     const handlerDisplay = written.employeeName || currentUser?.name || "עובד";
 
     return (
-      <div className="relative overflow-hidden rounded-2xl bg-white border border-slate-200/90 p-3.5 sm:p-5 shadow-xs text-right my-2 text-slate-900">
+      <div className="relative overflow-hidden rounded-2xl bg-white border border-[#DBEAFE] p-3.5 sm:p-5 shadow-2xs text-right my-2 text-[#172B4D]">
         {/* Clean Minimalist Header */}
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-3 border-b border-slate-100">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-3 border-b border-[#DBEAFE]/70">
           <div className="flex flex-wrap items-center gap-2 min-w-0">
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 font-semibold text-xs">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-              <span>נרשם</span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#EFF6FF] text-[#2563EB] border border-[#DBEAFE] font-semibold text-xs">
+              <CheckCircle2 className="w-3.5 h-3.5 text-[#06B6D4]" />
+              <span>תועד בהצלחה</span>
             </span>
 
-            <span className="text-sm font-bold text-slate-900 truncate">
+            <span className="text-sm font-bold text-[#172B4D] truncate">
               {written.customerName}
             </span>
 
-            <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium border ${workTypeBadge.bg}`}>
+            <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border ${workTypeBadge.bg}`}>
               {workTypeBadge.label}
             </span>
           </div>
@@ -442,10 +442,10 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                 type="button"
                 onClick={() => setIsEditingWritten(!isEditingWritten)}
                 disabled={isSavingWrittenEdit}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200/80 text-slate-700 text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
-                title="ערוך שעות או תיאור פעילות שתועדו"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#F8FAFC] hover:bg-[#EFF6FF] border border-[#DBEAFE] text-[#172B4D] hover:text-[#2563EB] text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
+                title="ערוך שעות לחיוב או תיאור פעילות שתועדו"
               >
-                <Edit3 className="w-3.5 h-3.5" />
+                <Edit3 className="w-3.5 h-3.5 text-[#2563EB]" />
                 <span>{isEditingWritten ? "סגור" : "ערוך"}</span>
               </button>
             )}
@@ -454,7 +454,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
               <button
                 onClick={() => onUndo && onUndo(written.id, written)}
                 disabled={isUndoing}
-                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-red-50 border border-slate-200 hover:border-red-200 text-slate-600 hover:text-red-600 text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-red-50 border border-[#DBEAFE] hover:border-red-200 text-slate-600 hover:text-red-600 text-xs font-medium transition-colors cursor-pointer disabled:opacity-50"
                 title="ביטול ומחיקת השורה תוך 10 דקות"
               >
                 <Undo2 className={`w-3.5 h-3.5 ${isUndoing ? "animate-spin" : ""}`} />
@@ -465,100 +465,80 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
         </div>
 
         {isEditingWritten ? (
-          <div className="p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80 mb-3 space-y-3">
+          <div className="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#DBEAFE] mb-3 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-900">
-                עריכת דיווח (מתעדכן ב-Lists וב-Excel)
+              <span className="text-xs font-semibold text-[#172B4D]">
+                עריכת תיעוד פעילות (מתעדכן ב-Lists וב-Excel)
               </span>
             </div>
 
-            {/* Quick Duration Chips */}
-            <div className="flex flex-wrap gap-1.5">
-              {[
-                { label: "15 דק׳", mins: 15 },
-                { label: "30 דק׳", mins: 30 },
-                { label: "45 דק׳", mins: 45 },
-                { label: "שעה", mins: 60 },
-                { label: "1.5 ש׳", mins: 90 },
-                { label: "שעתיים", mins: 120 },
-                { label: "3 ש׳", mins: 180 },
-                { label: "4 ש׳", mins: 240 },
-              ].map((preset) => {
-                const newEnd = calcEndTimeFromDuration(writtenEditStart || "09:00", preset.mins);
-                const calcs = computeTimesAndDuration(writtenEditStart || "09:00", newEnd, preset.mins);
-                const isActive = writtenEditDuration === calcs.durationFormatted;
-                return (
-                  <button
-                    key={preset.mins}
-                    type="button"
-                    onClick={() => {
-                      const start = writtenEditStart || "09:00";
-                      const end = calcEndTimeFromDuration(start, preset.mins);
-                      const c = computeTimesAndDuration(start, end, preset.mins);
-                      setWrittenEditStart(c.startTime);
-                      setWrittenEditEnd(c.endTime);
-                      setWrittenEditDuration(c.durationFormatted);
-                    }}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
-                      isActive
-                        ? "bg-slate-900 text-white border-slate-900"
-                        : "bg-white hover:bg-slate-100 text-slate-700 border-slate-200"
-                    }`}
-                  >
-                    {preset.label}
-                  </button>
-                );
-              })}
+            {/* Quick Billable Duration Chips */}
+            <div>
+              <label className="block text-[11px] text-slate-500 font-medium mb-1.5">
+                בחירה מהירה של היקף שעות לחיוב
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { label: "15 דק׳", mins: 15 },
+                  { label: "30 דק׳", mins: 30 },
+                  { label: "45 דק׳", mins: 45 },
+                  { label: "שעה", mins: 60 },
+                  { label: "1.5 ש׳", mins: 90 },
+                  { label: "שעתיים", mins: 120 },
+                  { label: "3 ש׳", mins: 180 },
+                  { label: "4 ש׳", mins: 240 },
+                ].map((preset) => {
+                  const newEnd = calcEndTimeFromDuration(writtenEditStart || "09:00", preset.mins);
+                  const calcs = computeTimesAndDuration(writtenEditStart || "09:00", newEnd, preset.mins);
+                  const isActive = writtenEditDuration === calcs.durationFormatted;
+                  return (
+                    <button
+                      key={preset.mins}
+                      type="button"
+                      onClick={() => {
+                        const start = writtenEditStart || "09:00";
+                        const end = calcEndTimeFromDuration(start, preset.mins);
+                        const c = computeTimesAndDuration(start, end, preset.mins);
+                        setWrittenEditStart(c.startTime);
+                        setWrittenEditEnd(c.endTime);
+                        setWrittenEditDuration(c.durationFormatted);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
+                        isActive
+                          ? "bg-[#2563EB] text-white border-[#2563EB] font-semibold"
+                          : "bg-white hover:bg-[#EFF6FF] text-[#172B4D] border-[#DBEAFE]"
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <div>
-                <label className="block text-[11px] text-slate-500 font-medium mb-1">התחלה</label>
-                <input
-                  type="time"
-                  lang="en-GB"
-                  step="60"
-                  value={writtenEditStart}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setWrittenEditStart(val);
-                    if (val && writtenEditEnd) {
-                      const c = computeTimesAndDuration(val, writtenEditEnd, 60);
-                      setWrittenEditDuration(c.durationFormatted);
+            <div>
+              <label className="block text-[11px] text-slate-500 font-medium mb-1">
+                היקף שעות לחיוב
+              </label>
+              <input
+                type="text"
+                value={writtenEditDuration}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setWrittenEditDuration(val);
+                  const numMatch = val.match(/(\d+(?:\.\d+)?)/);
+                  if (numMatch) {
+                    const num = parseFloat(numMatch[1]);
+                    const mins = val.includes("דק") ? Math.round(num) : Math.round(num * 60);
+                    if (mins > 0 && mins <= 720) {
+                      const start = writtenEditStart || "09:00";
+                      setWrittenEditEnd(calcEndTimeFromDuration(start, mins));
                     }
-                  }}
-                  className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs font-mono text-slate-900 focus:outline-none focus:border-slate-400"
-                  dir="ltr"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] text-slate-500 font-medium mb-1">סיום</label>
-                <input
-                  type="time"
-                  lang="en-GB"
-                  step="60"
-                  value={writtenEditEnd}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setWrittenEditEnd(val);
-                    if (writtenEditStart && val) {
-                      const c = computeTimesAndDuration(writtenEditStart, val, 60);
-                      setWrittenEditDuration(c.durationFormatted);
-                    }
-                  }}
-                  className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs font-mono text-slate-900 focus:outline-none focus:border-slate-400"
-                  dir="ltr"
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] text-slate-500 font-medium mb-1">משך זמן</label>
-                <input
-                  type="text"
-                  value={writtenEditDuration}
-                  onChange={(e) => setWrittenEditDuration(e.target.value)}
-                  className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs font-semibold text-slate-900 focus:outline-none focus:border-slate-400"
-                />
-              </div>
+                  }
+                }}
+                className="w-full px-3 py-1.5 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs font-semibold text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
+                placeholder="למשל: 1.5 שעות"
+              />
             </div>
 
             <div>
@@ -569,7 +549,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                 rows={3}
                 value={writtenEditDescription}
                 onChange={(e) => setWrittenEditDescription(e.target.value)}
-                className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs text-slate-900 focus:outline-none focus:border-slate-400 resize-y"
+                className="w-full px-3 py-2 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs text-[#172B4D] focus:outline-none focus:border-[#2563EB] resize-y"
                 placeholder="עדכן את תיאור הפעילות..."
               />
             </div>
@@ -598,7 +578,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                   });
                   setIsEditingWritten(false);
                 }}
-                className="flex-1 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+                className="flex-1 py-2 px-3 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
               >
                 {isSavingWrittenEdit ? (
                   <>
@@ -615,7 +595,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
               <button
                 type="button"
                 onClick={() => setIsEditingWritten(false)}
-                className="py-2 px-3 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-medium cursor-pointer"
+                className="py-2 px-3 rounded-xl bg-white hover:bg-[#EFF6FF] border border-[#DBEAFE] text-[#172B4D] text-xs font-medium cursor-pointer transition-colors"
               >
                 ביטול
               </button>
@@ -623,48 +603,41 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
           </div>
         ) : (
           <>
-            {/* Compact Metrics Row */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs mb-3">
-              <div className="p-2.5 rounded-xl bg-[#f9fafb] border border-slate-100">
-                <span className="text-slate-400 block text-[10px]">זמן לחיוב</span>
-                <span className="font-bold text-slate-900 font-mono">{written.durationFormatted}</span>
+            {/* Compact Metrics Row (No Start/End Clock Times) */}
+            <div className="grid grid-cols-3 gap-2 text-xs mb-3">
+              <div className="p-2.5 rounded-xl bg-[#EFF6FF]/60 border border-[#DBEAFE]">
+                <span className="text-slate-500 block text-[10px]">שעות לחיוב</span>
+                <span className="font-bold text-[#2563EB] font-mono">{written.durationFormatted}</span>
               </div>
 
-              <div className="p-2.5 rounded-xl bg-[#f9fafb] border border-slate-100">
-                <span className="text-slate-400 block text-[10px]">שעות</span>
-                <span className="font-mono font-medium text-slate-800" dir="ltr">
-                  {written.startTime || "09:00"} – {written.endTime || "10:00"}
-                </span>
+              <div className="p-2.5 rounded-xl bg-[#F8FAFC] border border-[#DBEAFE]/70">
+                <span className="text-slate-500 block text-[10px]">תאריך פעילות</span>
+                <span className="font-semibold text-[#172B4D]">{written.date}</span>
               </div>
 
-              <div className="p-2.5 rounded-xl bg-[#f9fafb] border border-slate-100">
-                <span className="text-slate-400 block text-[10px]">תאריך</span>
-                <span className="font-medium text-slate-800">{written.date}</span>
-              </div>
-
-              <div className="p-2.5 rounded-xl bg-[#f9fafb] border border-slate-100">
-                <span className="text-slate-400 block text-[10px]">עובד</span>
-                <span className="font-medium text-slate-800 truncate block">{handlerDisplay}</span>
+              <div className="p-2.5 rounded-xl bg-[#F8FAFC] border border-[#DBEAFE]/70">
+                <span className="text-slate-500 block text-[10px]">מתעד</span>
+                <span className="font-semibold text-[#172B4D] truncate block">{handlerDisplay}</span>
               </div>
             </div>
 
             {/* Clean Description */}
-            <div className="p-3 rounded-xl bg-[#f9fafb] border border-slate-100 text-xs sm:text-[13px] text-slate-800 leading-relaxed mb-3">
+            <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#DBEAFE]/70 text-xs sm:text-[13px] text-[#172B4D] leading-relaxed mb-3">
               <p className="whitespace-pre-wrap">{written.description}</p>
             </div>
           </>
         )}
 
         {/* Minimal Footer */}
-        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 pt-2.5 border-t border-slate-100">
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 pt-2.5 border-t border-[#DBEAFE]/60">
           <div className="flex flex-wrap items-center gap-2.5">
             <span className="inline-flex items-center gap-1">
-              <Check className="w-3 h-3 text-emerald-600" />
+              <Check className="w-3 h-3 text-[#06B6D4]" />
               <span>Excel (שורה {written.targetRow})</span>
             </span>
             {written.listItemId ? (
               <span className="inline-flex items-center gap-1">
-                <Check className="w-3 h-3 text-emerald-600" />
+                <Check className="w-3 h-3 text-[#06B6D4]" />
                 <span>Microsoft Lists</span>
               </span>
             ) : written.listsSyncResult?.error ? (
@@ -684,7 +657,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                 href={written.webUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-900 font-medium transition-colors"
+                className="inline-flex items-center gap-1 text-[#2563EB] hover:text-[#1D4ED8] font-medium transition-colors"
               >
                 <span>Excel</span>
                 <ExternalLink className="w-3 h-3" />
@@ -694,7 +667,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
               href="https://techselectltd.sharepoint.com/sites/Customers/Lists/List/AllItems.aspx?env=WebViewList"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-900 font-medium transition-colors"
+              className="inline-flex items-center gap-1 text-[#2563EB] hover:text-[#1D4ED8] font-medium transition-colors"
             >
               <span>Lists</span>
               <ExternalLink className="w-3 h-3" />
@@ -717,23 +690,23 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       : [currentUser?.name || "עובד"];
 
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-white border border-slate-200/90 p-3.5 sm:p-5 shadow-xs text-right my-2 text-slate-900">
+    <div className="relative overflow-hidden rounded-2xl bg-white border border-[#DBEAFE] p-3.5 sm:p-5 shadow-2xs text-right my-2 text-[#172B4D]">
       {/* Minimalist Header: Customer, Work Type Badge & Edit Toggle */}
-      <div className="flex items-start justify-between gap-2 mb-3 pb-3 border-b border-slate-100">
+      <div className="flex items-start justify-between gap-2 mb-3 pb-3 border-b border-[#DBEAFE]/70">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          <div className="w-8 h-8 rounded-lg bg-slate-900 text-white flex items-center justify-center shrink-0">
+          <div className="w-8 h-8 rounded-lg bg-[#EFF6FF] border border-[#DBEAFE] text-[#2563EB] flex items-center justify-center shrink-0">
             <Building2 className="w-4 h-4" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1.5">
-              <h4 className="text-sm sm:text-[15px] font-bold text-slate-900 truncate">
+              <h4 className="text-sm sm:text-[15px] font-bold text-[#172B4D] truncate">
                 {draft.customerName || "לקוח"}
               </h4>
-              <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium border shrink-0 ${draftWorkTypeBadge.bg}`}>
+              <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border shrink-0 ${draftWorkTypeBadge.bg}`}>
                 {draftWorkTypeBadge.label}
               </span>
               {draft.ticketNumber && (
-                <span className="px-2 py-0.5 rounded-full text-[11px] font-mono text-slate-600 bg-slate-100 border border-slate-200 shrink-0">
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-mono text-[#2563EB] bg-[#EFF6FF] border border-[#DBEAFE] shrink-0">
                   #{draft.ticketNumber.replace(/^(טיקט|ticket)\s*/i, "")}
                 </span>
               )}
@@ -753,10 +726,10 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
 
         <button
           onClick={() => setIsEditing(!isEditing)}
-          className="px-2.5 py-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/80 text-xs font-medium transition-colors flex items-center gap-1 cursor-pointer shrink-0"
-          title="עריכה ידנית"
+          className="px-2.5 py-1 rounded-lg bg-[#F8FAFC] hover:bg-[#EFF6FF] text-[#172B4D] hover:text-[#2563EB] border border-[#DBEAFE] text-xs font-medium transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+          title="עריכת פרטי התיעוד"
         >
-          <Edit3 className="w-3.5 h-3.5" />
+          <Edit3 className="w-3.5 h-3.5 text-[#2563EB]" />
           <span>{isEditing ? "סגור" : "ערוך"}</span>
         </button>
       </div>
@@ -780,7 +753,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
 
       {/* Main Fields / Inline Edit Form */}
       {isEditing ? (
-        <div className="space-y-3 mb-4 p-3.5 rounded-xl bg-slate-50/80 border border-slate-200/80">
+        <div className="space-y-3 mb-4 p-3.5 rounded-xl bg-[#F8FAFC] border border-[#DBEAFE]">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <div>
               <label className="block text-[11px] text-slate-500 font-medium mb-1">שם לקוח</label>
@@ -788,7 +761,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                 type="text"
                 value={editCustomer}
                 onChange={(e) => setEditCustomer(e.target.value)}
-                className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs text-slate-900 focus:outline-none focus:border-slate-400"
+                className="w-full px-3 py-1.5 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
               />
             </div>
 
@@ -798,70 +771,71 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                 type="text"
                 value={editDate}
                 onChange={(e) => setEditDate(e.target.value)}
-                className="w-full px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs text-slate-900 focus:outline-none focus:border-slate-400"
+                className="w-full px-3 py-1.5 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
                 placeholder="YYYY-MM-DD"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            <div>
-              <label className="block text-[11px] text-slate-500 font-medium mb-1">התחלה</label>
-              <input
-                type="time"
-                lang="en-GB"
-                step="60"
-                value={editStartTime}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setEditStartTime(val);
-                  if (val) {
-                    const timeCalcs = computeTimesAndDuration(
-                      val,
-                      editEndTime,
-                      draft?.durationMinutes || 30
-                    );
-                    setEditEndTime(timeCalcs.endTime);
-                    setEditDuration(timeCalcs.durationFormatted);
+          {/* Billable Duration Only (No Start/End Clock Inputs) */}
+          <div>
+            <label className="block text-[11px] text-slate-500 font-medium mb-1">
+              היקף שעות לחיוב
+            </label>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {[
+                { label: "15 דק׳", mins: 15 },
+                { label: "30 דק׳", mins: 30 },
+                { label: "45 דק׳", mins: 45 },
+                { label: "שעה", mins: 60 },
+                { label: "1.5 ש׳", mins: 90 },
+                { label: "שעתיים", mins: 120 },
+                { label: "3 ש׳", mins: 180 },
+                { label: "4 ש׳", mins: 240 },
+              ].map((preset) => {
+                const start = editStartTime || "09:00";
+                const end = calcEndTimeFromDuration(start, preset.mins);
+                const c = computeTimesAndDuration(start, end, preset.mins);
+                const isActive = editDuration === c.durationFormatted;
+                return (
+                  <button
+                    key={preset.mins}
+                    type="button"
+                    onClick={() => {
+                      setEditStartTime(c.startTime);
+                      setEditEndTime(c.endTime);
+                      setEditDuration(c.durationFormatted);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
+                      isActive
+                        ? "bg-[#2563EB] text-white border-[#2563EB] font-semibold"
+                        : "bg-white hover:bg-[#EFF6FF] text-[#172B4D] border-[#DBEAFE]"
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
+            <input
+              type="text"
+              value={editDuration}
+              onChange={(e) => {
+                const val = e.target.value;
+                setEditDuration(val);
+                const numMatch = val.match(/(\d+(?:\.\d+)?)/);
+                if (numMatch) {
+                  const num = parseFloat(numMatch[1]);
+                  const mins = val.includes("דק") ? Math.round(num) : Math.round(num * 60);
+                  if (mins > 0 && mins <= 720) {
+                    const start = editStartTime || "09:00";
+                    setEditEndTime(calcEndTimeFromDuration(start, mins));
                   }
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs font-mono text-slate-900 focus:outline-none focus:border-slate-400"
-                dir="ltr"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] text-slate-500 font-medium mb-1">סיום</label>
-              <input
-                type="time"
-                lang="en-GB"
-                step="60"
-                value={editEndTime}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setEditEndTime(val);
-                  if (val && editStartTime) {
-                    const timeCalcs = computeTimesAndDuration(
-                      editStartTime,
-                      val,
-                      draft?.durationMinutes || 30
-                    );
-                    setEditDuration(timeCalcs.durationFormatted);
-                  }
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs font-mono text-slate-900 focus:outline-none focus:border-slate-400"
-                dir="ltr"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] text-slate-500 font-medium mb-1">משך זמן</label>
-              <input
-                type="text"
-                value={editDuration}
-                onChange={(e) => setEditDuration(e.target.value)}
-                className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs font-semibold text-slate-900 focus:outline-none focus:border-slate-400"
-                placeholder="1 שעה"
-              />
-            </div>
+                }
+              }}
+              className="w-full px-3 py-1.5 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs font-semibold text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
+              placeholder="1 שעה"
+            />
           </div>
 
           {/* Field: סוג הפעילות */}
@@ -896,8 +870,8 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                     }}
                     className={`py-1.5 px-2 rounded-lg text-xs font-medium border flex items-center justify-center gap-1 cursor-pointer transition-colors ${
                       isSelected
-                        ? "bg-slate-900 text-white border-slate-900 font-semibold"
-                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                        ? "bg-[#2563EB] text-white border-[#2563EB] font-semibold"
+                        : "bg-white text-[#172B4D] border-[#DBEAFE] hover:bg-[#EFF6FF]"
                     }`}
                   >
                     {opt.icon}
@@ -919,8 +893,8 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                     onClick={() => setEditWorkType(t.name)}
                     className={`py-1 px-2.5 rounded-lg text-xs font-medium border flex items-center gap-1 cursor-pointer transition-colors ${
                       editWorkType === t.name
-                        ? "bg-slate-900 text-white border-slate-900 font-semibold"
-                        : "bg-white text-slate-700 border-slate-200 hover:bg-slate-100"
+                        ? "bg-[#2563EB] text-white border-[#2563EB] font-semibold"
+                        : "bg-white text-[#172B4D] border-[#DBEAFE] hover:bg-[#EFF6FF]"
                     }`}
                   >
                     <span className="truncate">{t.name}</span>
@@ -931,14 +905,14 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
           )}
 
           {/* Field: מי עבד על המשימה */}
-          <div className="p-2.5 rounded-xl bg-white border border-slate-200/80">
+          <div className="p-2.5 rounded-xl bg-white border border-[#DBEAFE]">
             <div className="flex items-center justify-between mb-1.5">
-              <label className="text-[11px] text-slate-700 font-semibold flex items-center gap-1.5">
-                <Users className="w-3.5 h-3.5 text-slate-500" />
-                עובדים בדיווח ({editEmployees.length})
+              <label className="text-[11px] text-[#172B4D] font-semibold flex items-center gap-1.5">
+                <Users className="w-3.5 h-3.5 text-[#2563EB]" />
+                עובדים בתיעוד ({editEmployees.length})
               </label>
               {editEmployees.length > 1 && (
-                <span className="text-[10px] bg-slate-100 text-slate-700 font-medium px-2 py-0.5 rounded-full">
+                <span className="text-[10px] bg-[#EFF6FF] text-[#2563EB] border border-[#DBEAFE] font-medium px-2 py-0.5 rounded-full">
                   {editEmployees.length} שורות נפרדות
                 </span>
               )}
@@ -963,11 +937,11 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                     }}
                     className={`text-[11px] px-2 py-1 rounded-lg border transition-colors cursor-pointer flex items-center gap-1 ${
                       isSelected
-                        ? "bg-slate-900 text-white border-slate-900 font-medium"
-                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                        ? "bg-[#2563EB] text-white border-[#2563EB] font-medium"
+                        : "bg-[#F8FAFC] text-[#172B4D] border-[#DBEAFE] hover:bg-[#EFF6FF]"
                     }`}
                   >
-                    {isSelected ? <Check className="w-3 h-3 text-white" /> : <Plus className="w-3 h-3 text-slate-400" />}
+                    {isSelected ? <Check className="w-3 h-3 text-white" /> : <Plus className="w-3 h-3 text-[#2563EB]" />}
                     <span>{memberName}</span>
                   </button>
                 );
@@ -990,7 +964,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                   }
                 }}
                 placeholder="הוסף שם עובד נוסף..."
-                className="flex-1 bg-slate-50 border border-slate-200 text-[16px] sm:text-xs px-2.5 py-1 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:border-slate-400"
+                className="flex-1 bg-[#F8FAFC] border border-[#DBEAFE] text-[16px] sm:text-xs px-2.5 py-1 rounded-lg text-[#172B4D] placeholder-slate-400 focus:outline-none focus:border-[#2563EB]"
               />
               <button
                 type="button"
@@ -1003,7 +977,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                     setCustomEmployeeInput("");
                   }
                 }}
-                className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1 cursor-pointer"
+                className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1 cursor-pointer transition-colors"
               >
                 <Plus className="w-3 h-3" />
                 <span>הוסף</span>
@@ -1019,7 +993,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
               rows={3}
               value={editDescription}
               onChange={(e) => setEditDescription(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-white border border-slate-200 text-[16px] sm:text-xs text-slate-900 focus:outline-none focus:border-slate-400 resize-y"
+              className="w-full px-3 py-2 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs text-[#172B4D] focus:outline-none focus:border-[#2563EB] resize-y"
               placeholder="פרט את הפעולות שבוצעו..."
             />
           </div>
@@ -1027,14 +1001,14 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
           <div className="flex items-center gap-2 pt-1">
             <button
               onClick={handleSaveEdit}
-              className="flex-1 py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
+              className="flex-1 py-2 px-3 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
             >
               <Save className="w-3.5 h-3.5" />
               <span>שמור שינויים</span>
             </button>
             <button
               onClick={() => setIsEditing(false)}
-              className="py-2 px-3 rounded-xl bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-medium cursor-pointer"
+              className="py-2 px-3 rounded-xl bg-white hover:bg-[#EFF6FF] border border-[#DBEAFE] text-[#172B4D] text-xs font-medium cursor-pointer transition-colors"
             >
               ביטול
             </button>
@@ -1042,8 +1016,8 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
         </div>
       ) : (
         <>
-          {/* Sleek Segmented Work-Type Selector (Monochrome / Minimal) */}
-          <div className="mb-3 bg-slate-100/80 p-1 rounded-xl grid grid-cols-3 gap-1">
+          {/* Sleek Segmented Work-Type Selector */}
+          <div className="mb-3 bg-[#EFF6FF]/80 border border-[#DBEAFE] p-1 rounded-xl grid grid-cols-3 gap-1">
             {[
               { id: "טיקטים", label: "טיקטים", icon: <Ticket className="w-3.5 h-3.5 shrink-0" /> },
               { id: "ביקור באתר", label: "ביקור באתר", icon: <MapPin className="w-3.5 h-3.5 shrink-0" /> },
@@ -1081,8 +1055,8 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                   }}
                   className={`py-1.5 px-2 rounded-lg text-xs font-medium flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
                     isSelected
-                      ? "bg-white text-slate-900 font-semibold shadow-2xs"
-                      : "text-slate-500 hover:text-slate-800"
+                      ? "bg-[#2563EB] text-white font-semibold shadow-2xs"
+                      : "text-[#172B4D]/75 hover:text-[#2563EB] hover:bg-white/60"
                   }`}
                 >
                   {opt.icon}
@@ -1092,24 +1066,24 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             })}
           </div>
 
-          {/* Compact Metrics & Quick Time Adjustment */}
-          <div className="p-3 rounded-xl bg-[#f9fafb] border border-slate-100 mb-3 space-y-2.5">
+          {/* Compact Billable Duration & Quick Adjustment (Zero Start/End Clock Times) */}
+          <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#DBEAFE]/80 mb-3 space-y-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500">זמן לחיוב:</span>
-                <span className="text-sm font-bold text-slate-900 font-mono">
+                <span className="text-xs text-slate-500">שעות לחיוב:</span>
+                <span className="text-sm font-bold text-[#2563EB] font-mono">
                   {draft.durationFormatted || "לא צוין"}
                 </span>
               </div>
 
               <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                <span className="font-medium text-slate-700">{draft.date}</span>
+                <Calendar className="w-3.5 h-3.5 text-[#2563EB]" />
+                <span className="font-medium text-[#172B4D]">{draft.date}</span>
               </div>
             </div>
 
             {/* Quick Duration Pills */}
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1.5">
               {[
                 { mins: 15, h: 0.25, lbl: "15 דק׳" },
                 { mins: 30, h: 0.5, lbl: "30 דק׳" },
@@ -1117,26 +1091,28 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                 { mins: 60, h: 1, lbl: "שעה" },
                 { mins: 90, h: 1.5, lbl: "1.5 ש׳" },
                 { mins: 120, h: 2, lbl: "שעתיים" },
+                { mins: 180, h: 3, lbl: "3 ש׳" },
+                { mins: 240, h: 4, lbl: "4 ש׳" },
               ].map((d) => (
                 <button
                   key={d.mins}
                   type="button"
                   onClick={() => {
                     if (onUpdateDraft) {
-                      const newEnd = draft.startTime
-                        ? calcEndTimeFromDuration(draft.startTime, d.mins)
-                        : draft.endTime;
+                      const baseStart = draft.startTime || "09:00";
+                      const newEnd = calcEndTimeFromDuration(baseStart, d.mins);
                       const durationLbl = d.h === 1 ? "1 שעה" : `${d.h} שעות`;
                       onUpdateDraft({
                         ...draft,
                         durationMinutes: d.mins,
                         durationHours: d.h,
                         durationFormatted: durationLbl,
+                        startTime: baseStart,
                         endTime: newEnd,
                         isTimeSuggested: false,
                         mappedRow: {
                           ...(draft.mappedRow || {}),
-                          "שעת התחלה": draft.startTime,
+                          "שעת התחלה": baseStart,
                           "שעת סיום": newEnd,
                           משך: d.h,
                           שעות: d.h,
@@ -1146,117 +1122,34 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                       });
                     }
                   }}
-                  className={`px-2 py-1 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border transition-colors cursor-pointer ${
                     draft.durationMinutes === d.mins
-                      ? "bg-slate-900 text-white border-slate-900 font-semibold"
-                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100"
+                      ? "bg-[#2563EB] text-white border-[#2563EB] font-semibold"
+                      : "bg-white text-[#172B4D] border-[#DBEAFE] hover:bg-[#EFF6FF]"
                   }`}
                 >
                   {d.lbl}
                 </button>
               ))}
             </div>
-
-            {/* Inline Start / End 24h Time Inputs */}
-            <div className="grid grid-cols-2 gap-2 pt-1">
-              <div className="bg-white px-2.5 py-1.5 rounded-lg border border-slate-200/80 flex items-center justify-between gap-1">
-                <span className="text-[11px] text-slate-400">התחלה</span>
-                <input
-                  type="time"
-                  lang="en-GB"
-                  step="60"
-                  value={draft.startTime || ""}
-                  onChange={(e) => {
-                    const newStart = e.target.value;
-                    const timeCalcs = computeTimesAndDuration(
-                      newStart,
-                      draft.endTime || "",
-                      draft.durationMinutes || 30
-                    );
-                    if (onUpdateDraft) {
-                      onUpdateDraft({
-                        ...draft,
-                        startTime: newStart,
-                        endTime: timeCalcs.endTime,
-                        durationMinutes: timeCalcs.durationMinutes,
-                        durationHours: timeCalcs.durationHours,
-                        durationFormatted: timeCalcs.durationFormatted,
-                        isTimeSuggested: false,
-                        mappedRow: {
-                          ...(draft.mappedRow || {}),
-                          "שעת התחלה": newStart,
-                          "שעת סיום": timeCalcs.endTime,
-                          משך: timeCalcs.durationHours,
-                          שעות: timeCalcs.durationHours,
-                          "סה״כ שעות": timeCalcs.durationHours,
-                          "סה\"כ שעות": timeCalcs.durationHours,
-                        },
-                      });
-                    }
-                  }}
-                  className="text-[16px] sm:text-xs font-mono font-semibold text-slate-900 bg-transparent focus:outline-none cursor-pointer"
-                  dir="ltr"
-                />
-              </div>
-
-              <div className="bg-white px-2.5 py-1.5 rounded-lg border border-slate-200/80 flex items-center justify-between gap-1">
-                <span className="text-[11px] text-slate-400">סיום</span>
-                <input
-                  type="time"
-                  lang="en-GB"
-                  step="60"
-                  value={draft.endTime || ""}
-                  onChange={(e) => {
-                    const newEnd = e.target.value;
-                    const timeCalcs = computeTimesAndDuration(
-                      draft.startTime || "",
-                      newEnd,
-                      draft.durationMinutes || 30
-                    );
-                    if (onUpdateDraft) {
-                      onUpdateDraft({
-                        ...draft,
-                        startTime: timeCalcs.startTime,
-                        endTime: newEnd,
-                        durationMinutes: timeCalcs.durationMinutes,
-                        durationHours: timeCalcs.durationHours,
-                        durationFormatted: timeCalcs.durationFormatted,
-                        isTimeSuggested: false,
-                        mappedRow: {
-                          ...(draft.mappedRow || {}),
-                          "שעת התחלה": timeCalcs.startTime,
-                          "שעת סיום": newEnd,
-                          משך: timeCalcs.durationHours,
-                          שעות: timeCalcs.durationHours,
-                          "סה״כ שעות": timeCalcs.durationHours,
-                          "סה\"כ שעות": timeCalcs.durationHours,
-                        },
-                      });
-                    }
-                  }}
-                  className="text-[16px] sm:text-xs font-mono font-semibold text-slate-900 bg-transparent focus:outline-none cursor-pointer"
-                  dir="ltr"
-                />
-              </div>
-            </div>
           </div>
 
           {/* Description Box */}
-          <div className="p-3 rounded-xl bg-[#f9fafb] border border-slate-100 text-xs sm:text-[13px] text-slate-800 leading-relaxed mb-3">
+          <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#DBEAFE]/80 text-xs sm:text-[13px] text-[#172B4D] leading-relaxed mb-3">
             <span className="text-[10px] text-slate-400 font-medium block mb-1">
               תיאור פעילות
             </span>
-            <p className="font-medium text-slate-900 whitespace-pre-wrap">
+            <p className="font-medium text-[#172B4D] whitespace-pre-wrap">
               {draft.description || "טרם הוזן תיאור"}
             </p>
           </div>
 
           {/* Minimal 1-Line SharePoint Target File Indicator */}
           <div className="mb-3.5">
-            <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#f9fafb] border border-slate-100 text-xs">
+            <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#DBEAFE]/80 text-xs">
               <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                <FileSpreadsheet className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span className="font-mono text-slate-600 text-[11px] truncate" dir="ltr">
+                <FileSpreadsheet className="w-3.5 h-3.5 text-[#2563EB] shrink-0" />
+                <span className="font-mono text-[#172B4D] text-[11px] truncate" dir="ltr">
                   {draft.fileName || "לא זוהה קובץ יעד"}
                 </span>
                 {draft.targetRow ? (
@@ -1275,7 +1168,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                     loadCustomerFiles();
                   }
                 }}
-                className="text-[11px] text-slate-600 hover:text-slate-900 font-medium flex items-center gap-1 cursor-pointer shrink-0"
+                className="text-[11px] text-[#2563EB] hover:text-[#1D4ED8] font-medium flex items-center gap-1 cursor-pointer shrink-0"
               >
                 <span>{draft.fileName ? "החלף" : "בחר קובץ"}</span>
                 {isSelectingFile ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
@@ -1283,14 +1176,14 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             </div>
 
             {isSelectingFile && (
-              <div className="mt-1.5 p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1.5">
+              <div className="mt-1.5 p-2.5 rounded-xl bg-[#F8FAFC] border border-[#DBEAFE] space-y-1.5">
                 <div className="flex items-center justify-between text-[11px] text-slate-500">
                   <span>קבצי Excel ({draft.customerName}):</span>
                   <button
                     type="button"
                     onClick={loadCustomerFiles}
                     disabled={isLoadingFiles}
-                    className="inline-flex items-center gap-1 text-[10px] text-slate-700 hover:text-slate-900 cursor-pointer"
+                    className="inline-flex items-center gap-1 text-[10px] text-[#2563EB] hover:text-[#1D4ED8] cursor-pointer"
                   >
                     <RefreshCw className={`w-3 h-3 ${isLoadingFiles ? "animate-spin" : ""}`} />
                     <span>רענן</span>
@@ -1299,7 +1192,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
 
                 {isLoadingFiles ? (
                   <div className="py-2.5 text-center text-slate-500 text-xs flex items-center justify-center gap-2">
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-slate-600" />
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#06B6D4]" />
                     <span>טוען קבצים...</span>
                   </div>
                 ) : fileList.length > 0 ? (
@@ -1313,8 +1206,8 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                           onClick={() => handleSelectFile(f)}
                           className={`w-full text-right px-2.5 py-1.5 rounded-lg text-xs font-mono flex items-center justify-between transition-colors cursor-pointer border ${
                             isSelected
-                              ? "bg-slate-900 border-slate-900 text-white font-semibold"
-                              : "bg-white border-slate-200 text-slate-700 hover:bg-slate-100"
+                              ? "bg-[#2563EB] border-[#2563EB] text-white font-semibold"
+                              : "bg-white border-[#DBEAFE] text-[#172B4D] hover:bg-[#EFF6FF]"
                           }`}
                           dir="ltr"
                         >
@@ -1329,7 +1222,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                     <button
                       type="button"
                       onClick={loadCustomerFiles}
-                      className="text-slate-800 underline text-[11px] cursor-pointer"
+                      className="text-[#2563EB] underline text-[11px] cursor-pointer"
                     >
                       סרוק קבצים מ-SharePoint
                     </button>
@@ -1341,7 +1234,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
         </>
       )}
 
-      {/* Primary CTA Button */}
+      {/* Primary CTA Button in Full Blue */}
       <div className="flex flex-row items-center gap-2">
         <button
           onClick={() => {
@@ -1355,14 +1248,14 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             if (onConfirm) onConfirm(draft.id, draft);
           }}
           disabled={isConfirming || !draft.isReadyForConfirmation}
-          className="flex-1 py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+          className="flex-1 py-2.5 px-4 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
         >
           <CheckCircle2 className={`w-4 h-4 shrink-0 ${isConfirming ? "animate-spin" : ""}`} />
           <span className="truncate">
             {isConfirming
               ? assignedList.length > 1
                 ? `מזין ${assignedList.length} שורות...`
-                : "מזין דיווח..."
+                : "מזין תיעוד..."
               : assignedList.length > 1
               ? `אשר והזן (${assignedList.length} עובדים)`
               : "אשר והזן"}
