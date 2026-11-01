@@ -702,11 +702,12 @@ export async function detectAndListCustomers(
 
   let allCustomers: CustomerFolder[] = [];
 
-  // 1. Fetch document libraries: GET /sites/{siteId}/drives (1 subrequest)
+  // 1. Fetch document libraries: GET /sites/{siteId}/drives with pagination
   try {
-    const drivesUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/drives?$top=999`;
-    const drivesRes = await fetchGraph(drivesUrl, { method: "GET" }, env);
-    if (drivesRes.ok) {
+    let drivesUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${siteId}/drives?$top=200`;
+    while (drivesUrl) {
+      const drivesRes = await fetchGraph(drivesUrl, { method: "GET" }, env);
+      if (!drivesRes.ok) break;
       const drivesData: any = await drivesRes.json();
       const allDrives: any[] = (drivesData.value || []).filter(
         (d: any) =>
@@ -717,23 +718,28 @@ export async function detectAndListCustomers(
       );
 
       for (const drive of allDrives) {
-        allCustomers.push({
-          id: drive.id,
-          name: drive.name,
-          webUrl: drive.webUrl,
-          driveId: drive.id,
-          type: "library" as const,
-        });
+        if (!allCustomers.some((c) => c.name.toLowerCase() === drive.name.toLowerCase())) {
+          allCustomers.push({
+            id: drive.id,
+            name: drive.name,
+            webUrl: drive.webUrl,
+            driveId: drive.id,
+            type: "library" as const,
+          });
+        }
       }
+      drivesUrl = drivesData["@odata.nextLink"] || null;
     }
   } catch (err) {
     console.warn("[detectAndListCustomers] Error checking document libraries:", err);
   }
 
-  // 2. Also fetch folders in default document library: GET /root/children (1 subrequest)
+  // 2. Also fetch folders in default document library: GET /root/children with pagination
   try {
-    const res = await fetchGraph(childrenUrl, { method: "GET" }, env);
-    if (res.ok) {
+    let currentChildrenUrl: string | null = childrenUrl;
+    while (currentChildrenUrl) {
+      const res = await fetchGraph(currentChildrenUrl, { method: "GET" }, env);
+      if (!res.ok) break;
       const data: any = await res.json();
       const rootFolders: any[] = (data.value || []).filter((item: any) => Boolean(item.folder));
       for (const folder of rootFolders) {
@@ -748,6 +754,7 @@ export async function detectAndListCustomers(
           });
         }
       }
+      currentChildrenUrl = data["@odata.nextLink"] || null;
     }
   } catch (err) {
     console.warn("[detectAndListCustomers] Error checking default document library:", err);
@@ -935,6 +942,17 @@ export const BILINGUAL_CUSTOMER_DICTIONARY: Record<string, string[]> = {
   "נס": ["ness", "ness technologies"],
   "bynet": ["בינת", "בינת תקשורת"],
   "בינת": ["bynet", "bynet communications"],
+  "ubeya": ["אוביה", "אובייה", "יוביה", "יובייה", "וביה", "ובייה", "ubeya ltd", "ubeya tech", "ubeya technologies"],
+  "ubeya ltd": ["אוביה", "אובייה", "ubeya"],
+  "ubeya tech": ["אוביה", "ubeya"],
+  "אוביה": ["ubeya", "obeya", "ubia", "ubeya ltd", "ubeya tech", "ubeya technologies", "אובייה", "יוביה", "יובייה"],
+  "אובייה": ["ubeya", "obeya", "ubia", "ubeya ltd", "אוביה"],
+  "יוביה": ["ubeya", "obeya", "אוביה"],
+  "יובייה": ["ubeya", "obeya", "אוביה"],
+  "וביה": ["ubeya", "obeya", "אוביה"],
+  "ובייה": ["ubeya", "obeya", "אוביה"],
+  "obeya": ["אוביה", "ubeya"],
+  "ubia": ["אוביה", "ubeya"],
 };
 
 /**
@@ -973,6 +991,7 @@ export function hebrewToPhoneticLatin(hebrew: string): string {
   let s = hebrew.toLowerCase().trim();
 
   // Multi-character digraphs & common IT prefixes
+  s = s.replace(/אוביה|אובייה|יוביה|יובייה/g, "ubeya ");
   s = s.replace(/טק[- ]?סלקט/g, "tech-select ");
   s = s.replace(/צ'ק[- ]?פוינט|צק[- ]?פוינט/g, "check-point ");
   s = s.replace(/צ'/g, "ch");
@@ -992,6 +1011,11 @@ export function hebrewToPhoneticLatin(hebrew: string): string {
   s = s.replace(/גלובל/g, "global");
   s = s.replace(/סיסטמס/g, "systems");
   s = s.replace(/סרוויסס/g, "services");
+
+  // Hebrew prefix "או" / "יו" at start of word -> "u" or "o"
+  s = s.replace(/^או(?=[בגדהוזחטיכלמנסעפצקרשת])/g, "u");
+  s = s.replace(/^יו(?=[בגדהוזחטיכלמנסעפצקרשת])/g, "u");
+  s = s.replace(/יה$|ייה$/g, "ya");
 
   // Letter by letter phonetic substitution
   const charMap: Record<string, string> = {
@@ -1041,6 +1065,7 @@ export function englishToPhoneticHebrew(english: string): string {
   let s = english.toLowerCase().trim();
 
   // Multi-character sequences
+  s = s.replace(/ubeya/g, "אוביה ");
   s = s.replace(/tech[- ]?select/g, "טק סלקט ");
   s = s.replace(/check[- ]?point/g, "צ'ק פוינט ");
   s = s.replace(/tech/g, "טק");
@@ -1057,6 +1082,7 @@ export function englishToPhoneticHebrew(english: string): string {
   s = s.replace(/services/g, "סרוויסס");
   s = s.replace(/solutions/g, "סולושנס");
   s = s.replace(/computers|computing/g, "מחשוב");
+  s = s.replace(/^u(?=[bcdfghjklmnpqrstvwxyz])/g, "או");
   s = s.replace(/ch|tch/g, "צ'");
   s = s.replace(/sh|sch/g, "ש");
   s = s.replace(/ph/g, "פ");
@@ -1786,9 +1812,10 @@ export async function findMonthTarget(
   const custData: any = await custChildrenRes.json();
   const custItems: any[] = custData.value || [];
 
-  // Locate the folder "שעות עבודה" (or folder containing "שעות")
+  // Locate the folder "שעות עבודה" (or folder containing "שעות", "hours", "timesheet", "billing", "דוחות", etc.)
+  const hoursFolderPattern = /(?:שעות|דוחות|דיווח|hours|timesheet|timesheets|billing|time\s*tracking)/i;
   const hoursFolder = custItems.find(
-    (item) => Boolean(item.folder) && (item.name === hoursFolderName || item.name.includes("שעות"))
+    (item) => Boolean(item.folder) && (item.name === hoursFolderName || hoursFolderPattern.test(item.name))
   );
 
   let targetFolderId = hoursFolder ? hoursFolder.id : null;
@@ -1807,13 +1834,13 @@ export async function findMonthTarget(
     targetFolderItems = custItems;
   }
 
-  // Collect ONLY Excel files from inside "שעות עבודה"
+  // Collect Excel files from customer folder structure
   const candidateExcelFiles: any[] = [];
   for (const item of targetFolderItems) {
     if (isExcelDriveItem(item)) {
       candidateExcelFiles.push(item);
     } else if (item.folder) {
-      // Month subfolders inside "שעות עבודה" (e.g. "2026-09" or "ספטמבר 2026")
+      // Month or year subfolders (e.g. "2026-09", "2026", "ספטמבר 2026")
       try {
         const subUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${item.id}/children?$top=50`;
         const subRes = await fetchGraph(subUrl, { method: "GET" }, env);
@@ -1832,6 +1859,24 @@ export async function findMonthTarget(
         // ignore subfolder read errors
       }
     }
+  }
+
+  // Proactively run fast recursive search for Excel files in this customer's drive/folder
+  try {
+    const custSearchUrl = customerFolder.type === "library"
+      ? `https://graph.microsoft.com/v1.0/drives/${driveId}/root/search(q='xlsx')?$top=100`
+      : `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${customerFolder.id}/search(q='xlsx')?$top=100`;
+    const searchRes = await fetchGraph(custSearchUrl, { method: "GET" }, env);
+    if (searchRes.ok) {
+      const sData: any = await searchRes.json();
+      for (const item of sData.value || []) {
+        if (isExcelDriveItem(item) && !candidateExcelFiles.some((f) => f.id === item.id)) {
+          candidateExcelFiles.push(item);
+        }
+      }
+    }
+  } catch (searchErr) {
+    // search endpoint may vary by drive type, fallback is already populated
   }
 
   // SORT candidate Excel files: NEWEST FIRST! (by lastModifiedDateTime descending)

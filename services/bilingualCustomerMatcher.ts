@@ -100,6 +100,12 @@ export const BILINGUAL_TERM_MAP: Record<string, string[]> = {
   פורטינט: ["fortinet"],
   צק: ["check"],
   פוינט: ["point"],
+  אוביה: ["ubeya", "obeya", "ubia", "ubeya ltd", "ubeya technologies", "ubeya tech"],
+  אובייה: ["ubeya", "obeya", "ubia", "ubeya ltd"],
+  יוביה: ["ubeya", "obeya"],
+  יובייה: ["ubeya", "obeya"],
+  וביה: ["ubeya", "obeya"],
+  ובייה: ["ubeya", "obeya"],
 };
 
 // Reverse dictionary: English -> Hebrew
@@ -175,6 +181,28 @@ export function phoneticHebrewToLatin(hebStr: string): string[] {
   // If word has "s", also produce "c" variant (e.g. caesar)
   if (primary.includes("s")) {
     variants.add(primary.replace(/s/g, "c"));
+  }
+
+  // If Hebrew word starts with "או" or "יו" (e.g. אוביה, יוביה, אאוטבריין), produce "u..." and "o..." variants
+  if (clean.startsWith("או") || clean.startsWith("יו")) {
+    const rest = clean.slice(2);
+    let restLatin = "";
+    for (const char of rest) {
+      restLatin += charMap[char] ? charMap[char][0] : char;
+    }
+    variants.add("u" + restLatin);
+    variants.add("o" + restLatin);
+    if (clean.includes("יה") || clean.includes("ייה")) {
+      const stem = rest.replace(/י?יה$/, "");
+      let stemLatin = "";
+      for (const char of stem) {
+        stemLatin += charMap[char] ? charMap[char][0] : char;
+      }
+      variants.add("u" + stemLatin + "eya");
+      variants.add("u" + stemLatin + "ya");
+      variants.add("o" + stemLatin + "eya");
+      variants.add("ubeya");
+    }
   }
 
   return Array.from(variants);

@@ -1459,7 +1459,7 @@ ULTRA-FAST SINGLE-STEP LOGGING WORKFLOW (הכנת כרטיס חיוב מיידי
   * Only if NO customer name was mentioned at all in the message/history, ask briefly: "עבור איזה לקוח בוצעה הפעילות?"
 
 EXTRACTION RULES FOR propose_entries:
-1. Customer: Pass the customer name in customerName (supports Hebrew or English).
+1. Customer: Pass the customer name in customerName (supports Hebrew or English). For example, "אוביה" / "אובייה" / "יוביה" maps to Ubeya / UBEYA, "קיסר" maps to Caesar Digum, "מטריקס" to Matrix, etc.
 2. Date: default today (${jCtx.todayIso}, Asia/Jerusalem). Understand "אתמול" (${jCtx.yesterdayIso}), "ביום ראשון", "שלשום", or explicit dates.
 3. Duration / משך זמן (רציף ומהיר - ללא עצירות מיותרות):
    - Round to 15 minutes (0.25, 0.5, 0.75, 1, 1.5, 2...).
