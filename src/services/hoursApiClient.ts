@@ -107,12 +107,20 @@ export async function apiSearchCustomer(query: string): Promise<any[]> {
 }
 
 /**
- * 3. Find Month Target (month folder -> xlsx inside OR direct xlsx)
+ * 3. Find Month Target (month folder -> xlsx inside OR direct xlsx, plus optional workbook inspection)
  */
-export async function apiFindMonthTarget(customer: string, date: string): Promise<any> {
-  return fetchHoursApi<any>(
-    `/api/hours/month-target?customer=${encodeURIComponent(customer)}&date=${encodeURIComponent(date)}`
-  );
+export async function apiFindMonthTarget(
+  customer: string,
+  date: string,
+  options?: { inspect?: boolean; workType?: string }
+): Promise<any> {
+  const params = new URLSearchParams({
+    customer,
+    date,
+  });
+  if (options?.inspect) params.set("inspect", "true");
+  if (options?.workType) params.set("workType", options.workType);
+  return fetchHoursApi<any>(`/api/hours/month-target?${params.toString()}`);
 }
 
 /**

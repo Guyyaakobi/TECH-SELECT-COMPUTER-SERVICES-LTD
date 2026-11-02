@@ -25,11 +25,13 @@ import {
   User,
   Users,
   Plus,
+  Search,
 } from "lucide-react";
 import {
   HoursAssistantEntryDraft,
   WrittenEntryResult,
   apiFindMonthTarget,
+  apiListCustomers,
 } from "../../services/hoursApiClient";
 
 interface HoursEntryCardProps {
@@ -72,18 +74,80 @@ const PRESET_TEAM_MEMBERS = [
   "ודים",
   "ניב בורו",
   "תבור כהן",
-  "רועי",
   "אירית יעקובי",
   "יוסף",
-  "עומר",
   "אולג",
   "אריאל",
   "אוריאל",
   "ולד",
   "אמיר",
   "שי",
-  "אירנה",
 ];
+
+const PRESET_EMPLOYEE_ALIASES: Array<{ canonical: string; aliases: string[] }> = [
+  { canonical: "גיא יעקובי", aliases: ["גיא יעקובי", "גיא", "guy yaakobi", "guy"] },
+  { canonical: "ודים", aliases: ["ודים", "ואדים", "vadim"] },
+  { canonical: "ניב בורו", aliases: ["ניב בורו", "ניב", "niv boro", "niv"] },
+  { canonical: "תבור כהן", aliases: ["תבור כהן", "תבור", "tavor cohen", "tavor"] },
+  { canonical: "אירית יעקובי", aliases: ["אירית יעקובי", "אירית", "irit yaakobi", "irit"] },
+  { canonical: "יוסף", aliases: ["יוסף", "יוסי", "yosef", "yossi"] },
+  { canonical: "אולג", aliases: ["אולג", "oleg"] },
+  { canonical: "אריאל", aliases: ["אריאל", "ariel"] },
+  { canonical: "אוריאל", aliases: ["אוריאל", "uriel", "oriel"] },
+  { canonical: "ולד", aliases: ["ולד", "ולאד", "ולדיסלב", "ולדימיר", "vlad", "vladislav", "vladimir"] },
+  { canonical: "אמיר", aliases: ["אמיר", "amir"] },
+  { canonical: "שי", aliases: ["שי", "shai", "shay"] },
+];
+
+export function matchPresetTeamMember(rawInput?: string): string | null {
+  const clean = String(rawInput || "")
+    .trim()
+    .toLowerCase()
+    .replace(/["'״׳]/g, "");
+  if (!clean) return null;
+
+  for (const item of PRESET_EMPLOYEE_ALIASES) {
+    if (
+      item.canonical.toLowerCase() === clean ||
+      item.aliases.some((a) => a.toLowerCase() === clean)
+    ) {
+      return item.canonical;
+    }
+  }
+
+  for (const item of PRESET_EMPLOYEE_ALIASES) {
+    if (
+      item.canonical.toLowerCase().includes(clean) ||
+      item.aliases.some((a) => a.toLowerCase().includes(clean) || clean.includes(a.toLowerCase()))
+    ) {
+      return item.canonical;
+    }
+  }
+
+  return null;
+}
+
+function sanitizePresetEmployees(
+  list: string[] | undefined,
+  fallbackUser?: string
+): string[] {
+  const matched: string[] = [];
+  if (Array.isArray(list)) {
+    for (const item of list) {
+      const canonical = matchPresetTeamMember(item);
+      if (canonical && !matched.includes(canonical)) {
+        matched.push(canonical);
+      }
+    }
+  }
+  if (matched.length === 0) {
+    const fallbackCanonical = matchPresetTeamMember(fallbackUser) || PRESET_TEAM_MEMBERS[0];
+    matched.push(fallbackCanonical);
+  }
+  return matched;
+}
+
+let cachedSharePointCustomers: Array<{ id: string; name: string; webUrl?: string }> | null = null;
 
 // Helper to compute exact 24h times and duration
 export function computeTimesAndDuration(
@@ -169,6 +233,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [isEditingWritten, setIsEditingWritten] = useState(false);
+  const [writtenEditCustomer, setWrittenEditCustomer] = useState(written?.customerName || "");
   const [writtenEditStart, setWrittenEditStart] = useState(written?.startTime || "09:00");
   const [writtenEditEnd, setWrittenEditEnd] = useState(written?.endTime || "10:00");
   const [writtenEditDuration, setWrittenEditDuration] = useState(written?.durationFormatted || "1 שעה");
@@ -178,6 +243,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
 
   useEffect(() => {
     if (!written) return;
+    setWrittenEditCustomer(written.customerName || "");
     setWrittenEditStart(written.startTime || "09:00");
     setWrittenEditEnd(written.endTime || "10:00");
     setWrittenEditDuration(written.durationFormatted || "1 שעה");
@@ -185,6 +251,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
     setWrittenEditDate(written.date || "");
     setWrittenEditWorkType(written.workType || "טיקטים");
   }, [
+    written?.customerName,
     written?.startTime,
     written?.endTime,
     written?.durationFormatted,
@@ -204,13 +271,46 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
     draft?.activityType || (draft?.workType && !["שעות", "Sheet1"].includes(draft.workType) ? draft.workType : "טיקטים")
   );
   const [editDescription, setEditDescription] = useState(draft?.description || "");
-  const defaultEmployee = currentUser?.name || "עובד";
-  const [editEmployees, setEditEmployees] = useState<string[]>(
-    draft?.assignedEmployees && draft.assignedEmployees.length > 0
-      ? draft.assignedEmployees
-      : [defaultEmployee]
+  const defaultEmployee = matchPresetTeamMember(currentUser?.name) || PRESET_TEAM_MEMBERS[0];
+  const [editEmployees, setEditEmployees] = useState<string[]>(() =>
+    sanitizePresetEmployees(draft?.assignedEmployees, defaultEmployee)
   );
   const [customEmployeeInput, setCustomEmployeeInput] = useState("");
+  const [employeeLookupMessage, setEmployeeLookupMessage] = useState<string | null>(null);
+
+  // Customer picker state
+  const [customerList, setCustomerList] = useState<Array<{ id: string; name: string; webUrl?: string }>>(
+    cachedSharePointCustomers || []
+  );
+  const [isLoadingCustomers, setIsLoadingCustomers] = useState(false);
+  const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
+  const [customerSearchQuery, setCustomerSearchQuery] = useState("");
+  const [isResolvingCustomerFile, setIsResolvingCustomerFile] = useState(false);
+
+  const loadSharePointCustomers = async (force = false) => {
+    if (!force && cachedSharePointCustomers && cachedSharePointCustomers.length > 0) {
+      setCustomerList(cachedSharePointCustomers);
+      return;
+    }
+    setIsLoadingCustomers(true);
+    try {
+      const res = await apiListCustomers();
+      if (res.customers && Array.isArray(res.customers)) {
+        cachedSharePointCustomers = res.customers;
+        setCustomerList(res.customers);
+      }
+    } catch (err) {
+      console.warn("Failed to load SharePoint customers:", err);
+    } finally {
+      setIsLoadingCustomers(false);
+    }
+  };
+
+  useEffect(() => {
+    if ((isEditing || isEditingWritten) && customerList.length === 0 && !isLoadingCustomers) {
+      loadSharePointCustomers();
+    }
+  }, [isEditing, isEditingWritten]);
 
   // Sync state when draft updates from assistant (e.g. voice corrections)
   useEffect(() => {
@@ -226,11 +326,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       (draft.workType && !["שעות", "Sheet1"].includes(draft.workType) ? draft.workType : "טיקטים");
     setEditActivityType(initialActivityType);
     setEditDescription(draft.description || "");
-    if (draft.assignedEmployees && draft.assignedEmployees.length > 0) {
-      setEditEmployees(draft.assignedEmployees);
-    } else {
-      setEditEmployees([currentUser?.name || "עובד"]);
-    }
+    setEditEmployees(sanitizePresetEmployees(draft.assignedEmployees, currentUser?.name));
   }, [
     draft?.customerName,
     draft?.date,
@@ -271,38 +367,121 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
     }
   }, [draft?.availableFiles]);
 
-  // Load customer files from SharePoint
-  const loadCustomerFiles = async () => {
-    if (!draft?.customerName) return;
+  // Resolve and switch the Excel file when the user selects or changes the customer
+  const resolveCustomerExcelFile = async (
+    targetCustomerName: string,
+    targetDate?: string,
+    baseDraft?: HoursAssistantEntryDraft
+  ): Promise<Partial<HoursAssistantEntryDraft>> => {
+    const cleanCustomer = targetCustomerName.trim();
+    if (!cleanCustomer) return {};
+    const currentDraft = baseDraft || draft;
+    const dateToUse = (targetDate || editDate || currentDraft?.date || "").trim();
+
+    setIsResolvingCustomerFile(true);
     setIsLoadingFiles(true);
     try {
-      const res = await apiFindMonthTarget(draft.customerName, draft.date || "");
-      if (res.availableFiles && Array.isArray(res.availableFiles)) {
-        setFileList(res.availableFiles);
-      }
-      if (res.found && res.fileId && !draft.fileId && onUpdateDraft) {
-        onUpdateDraft({
-          ...draft,
+      const res = await apiFindMonthTarget(cleanCustomer, dateToUse, {
+        inspect: true,
+        workType: editActivityType || currentDraft?.activityType || currentDraft?.workType,
+      });
+
+      const resolvedName = res.customerName || cleanCustomer;
+      const availFiles = Array.isArray(res.availableFiles) ? res.availableFiles : [];
+      setFileList(availFiles);
+
+      if (res.found && res.fileId) {
+        const nextTabName =
+          res.targetTabName || editWorkType || currentDraft?.targetTabName || "טיקטים";
+        setEditWorkType(nextTabName);
+        setIsSelectingFile(false);
+
+        const patch: Partial<HoursAssistantEntryDraft> = {
+          customerName: resolvedName,
           fileId: res.fileId,
           fileName: res.fileName,
-          filePath: res.filePath,
+          filePath: res.filePath || `${resolvedName}/שעות עבודה/${res.fileName || ""}`,
           webUrl: res.webUrl,
-        });
+          driveId: res.driveId || currentDraft?.driveId,
+          availableFiles: availFiles,
+          targetTabName: nextTabName,
+          detectedTabType: res.detectedTabType || currentDraft?.detectedTabType,
+          availableTabs: res.availableTabs || currentDraft?.availableTabs,
+          targetRow: res.targetRow || currentDraft?.targetRow,
+        };
+
+        if (currentDraft && onUpdateDraft) {
+          onUpdateDraft({
+            ...currentDraft,
+            ...patch,
+            mappedRow: {
+              ...(currentDraft.mappedRow || {}),
+              לקוח: resolvedName,
+            },
+          });
+        }
+        return patch;
+      } else {
+        // Customer has no auto-matched file yet: clear old customer's file and show file selector if files exist
+        const fallbackFile = availFiles.length === 1 ? availFiles[0] : undefined;
+        const patch: Partial<HoursAssistantEntryDraft> = {
+          customerName: resolvedName,
+          fileId: fallbackFile?.fileId || "",
+          fileName: fallbackFile?.fileName || "",
+          filePath: fallbackFile
+            ? `${resolvedName}/שעות עבודה/${fallbackFile.fileName}`
+            : "",
+          webUrl: fallbackFile?.webUrl || "",
+          availableFiles: availFiles,
+          targetRow: undefined,
+        };
+        if (!fallbackFile) {
+          setIsSelectingFile(true);
+        }
+        if (currentDraft && onUpdateDraft) {
+          onUpdateDraft({
+            ...currentDraft,
+            ...patch,
+            mappedRow: {
+              ...(currentDraft.mappedRow || {}),
+              לקוח: resolvedName,
+            },
+          });
+        }
+        return patch;
       }
     } catch (err) {
-      console.warn("Failed to load customer files:", err);
+      console.warn("Failed to resolve Excel file for customer:", cleanCustomer, err);
+      return { customerName: cleanCustomer };
     } finally {
+      setIsResolvingCustomerFile(false);
       setIsLoadingFiles(false);
     }
   };
 
+  const handleSelectCustomerInEdit = async (selectedCustomerName: string) => {
+    setEditCustomer(selectedCustomerName);
+    setCustomerSearchQuery("");
+    setIsCustomerDropdownOpen(false);
+    await resolveCustomerExcelFile(selectedCustomerName, editDate || draft?.date);
+  };
+
+  // Load customer files from SharePoint
+  const loadCustomerFiles = async () => {
+    const cust = (editCustomer || draft?.customerName || "").trim();
+    if (!cust) return;
+    await resolveCustomerExcelFile(cust, editDate || draft?.date);
+  };
+
   const handleSelectFile = (file: { fileId: string; fileName: string; webUrl?: string }) => {
     if (!draft || !onUpdateDraft) return;
+    const custName = editCustomer.trim() || draft.customerName || "";
     onUpdateDraft({
       ...draft,
+      customerName: custName,
       fileId: file.fileId,
       fileName: file.fileName,
-      filePath: `${draft.customerName || ""}/שעות עבודה/${file.fileName}`,
+      filePath: `${custName}/שעות עבודה/${file.fileName}`,
       webUrl: file.webUrl,
     });
     setIsSelectingFile(false);
@@ -323,7 +502,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   }, [written]);
 
   // Handle saving manual edits
-  const handleSaveEdit = () => {
+  const handleSaveEdit = async () => {
     if (!draft || !onUpdateDraft) return;
 
     const timeCalcs = computeTimesAndDuration(
@@ -332,13 +511,27 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       draft.durationMinutes || 30
     );
 
-    const finalEmployees =
-      editEmployees.length > 0 ? editEmployees : [currentUser?.name || "עובד"];
+    const finalEmployees = sanitizePresetEmployees(editEmployees, currentUser?.name);
+    const trimmedCustomer = editCustomer.trim();
+    const trimmedDate = editDate.trim();
+
+    let filePatch: Partial<HoursAssistantEntryDraft> = {};
+    if (
+      trimmedCustomer &&
+      (trimmedCustomer !== (draft.customerName || "").trim() ||
+        trimmedDate !== (draft.date || "").trim() ||
+        !draft.fileId)
+    ) {
+      filePatch = await resolveCustomerExcelFile(trimmedCustomer, trimmedDate, draft);
+    }
+
+    const finalCustomerName = filePatch.customerName || trimmedCustomer;
 
     const updated: HoursAssistantEntryDraft = {
       ...draft,
-      customerName: editCustomer.trim(),
-      date: editDate.trim(),
+      ...filePatch,
+      customerName: finalCustomerName,
+      date: trimmedDate,
       startTime: timeCalcs.startTime,
       endTime: timeCalcs.endTime,
       durationMinutes: timeCalcs.durationMinutes,
@@ -347,7 +540,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       isTimeSuggested: false,
       workType: editActivityType,
       activityType: editActivityType,
-      targetTabName: editWorkType,
+      targetTabName: filePatch.targetTabName || editWorkType,
       description: editDescription.trim(),
       assignedEmployees: finalEmployees,
       mappedRow: {
@@ -358,15 +551,15 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
         שעות: timeCalcs.durationHours,
         "סה״כ שעות": timeCalcs.durationHours,
         "סה\"כ שעות": timeCalcs.durationHours,
-        תאריך: editDate.trim(),
-        לקוח: editCustomer.trim(),
+        תאריך: trimmedDate,
+        לקוח: finalCustomerName,
         תיאור: editDescription.trim(),
         עובד: finalEmployees[0],
         "שם עובד": finalEmployees[0],
         employeeName: finalEmployees[0],
       },
       isReadyForConfirmation: Boolean(
-        editCustomer.trim() && editDate.trim() && editDescription.trim()
+        finalCustomerName && trimmedDate && editDescription.trim()
       ),
     };
     onUpdateDraft(updated);
@@ -734,10 +927,28 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   if (!draft) return null;
 
   const draftWorkTypeBadge = getListsWorkTypeBadge(draft?.targetTabName || draft?.workType);
-  const assignedList =
-    Array.isArray(draft?.assignedEmployees) && draft.assignedEmployees.length > 0
-      ? draft.assignedEmployees
-      : [currentUser?.name || "עובד"];
+  const assignedList = sanitizePresetEmployees(draft?.assignedEmployees, currentUser?.name);
+
+  const filteredCustomersForEdit = customerList.filter((c) => {
+    const q = (customerSearchQuery || editCustomer || "").trim().toLowerCase();
+    if (!q || q === (draft.customerName || "").trim().toLowerCase()) return true;
+    return c.name.toLowerCase().includes(q);
+  });
+
+  const handleLookupExistingEmployee = () => {
+    const q = customEmployeeInput.trim();
+    if (!q) return;
+    const matched = matchPresetTeamMember(q);
+    if (matched) {
+      if (!editEmployees.includes(matched)) {
+        setEditEmployees((prev) => [...prev, matched]);
+      }
+      setCustomEmployeeInput("");
+      setEmployeeLookupMessage(null);
+    } else {
+      setEmployeeLookupMessage(`השם "${q}" אינו מופיע ברשימת העובדים הקיימים`);
+    }
+  };
 
   return (
     <div className="relative overflow-hidden rounded-2xl bg-white border border-[#DBEAFE] p-3.5 sm:p-5 shadow-2xs text-right my-2 text-[#172B4D]">
@@ -805,14 +1016,144 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       {isEditing ? (
         <div className="space-y-3 mb-4 p-3.5 rounded-xl bg-[#F8FAFC] border border-[#DBEAFE]">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <div>
-              <label className="block text-[11px] text-slate-500 font-medium mb-1">שם לקוח</label>
-              <input
-                type="text"
-                value={editCustomer}
-                onChange={(e) => setEditCustomer(e.target.value)}
-                className="w-full px-3 py-1.5 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
-              />
+            <div className="relative">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[11px] text-slate-500 font-medium">
+                  שם לקוח (בחירה מהרשימה תעדכן את קובץ ה-Excel)
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextOpen = !isCustomerDropdownOpen;
+                    setIsCustomerDropdownOpen(nextOpen);
+                    if (nextOpen && customerList.length === 0) {
+                      loadSharePointCustomers(true);
+                    }
+                  }}
+                  className="text-[11px] text-[#2563EB] hover:text-[#1D4ED8] font-semibold inline-flex items-center gap-0.5 cursor-pointer"
+                >
+                  <span>{isCustomerDropdownOpen ? "סגור רשימה" : "בחר לקוח אחר"}</span>
+                  {isCustomerDropdownOpen ? (
+                    <ChevronUp className="w-3 h-3" />
+                  ) : (
+                    <ChevronDown className="w-3 h-3" />
+                  )}
+                </button>
+              </div>
+
+              <div className="relative flex items-center">
+                <input
+                  type="text"
+                  value={editCustomer}
+                  onFocus={() => {
+                    setIsCustomerDropdownOpen(true);
+                    if (customerList.length === 0) {
+                      loadSharePointCustomers();
+                    }
+                  }}
+                  onChange={(e) => {
+                    setEditCustomer(e.target.value);
+                    setCustomerSearchQuery(e.target.value);
+                    setIsCustomerDropdownOpen(true);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && editCustomer.trim()) {
+                      e.preventDefault();
+                      handleSelectCustomerInEdit(editCustomer.trim());
+                    }
+                  }}
+                  placeholder="חפש או בחר לקוח..."
+                  className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs font-semibold text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextOpen = !isCustomerDropdownOpen;
+                    setIsCustomerDropdownOpen(nextOpen);
+                    if (nextOpen && customerList.length === 0) {
+                      loadSharePointCustomers(true);
+                    }
+                  }}
+                  className="absolute left-2 text-[#2563EB] hover:text-[#1D4ED8] p-0.5 cursor-pointer"
+                  title="פתח רשימת לקוחות"
+                >
+                  {isLoadingCustomers ? (
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#06B6D4]" />
+                  ) : isCustomerDropdownOpen ? (
+                    <ChevronUp className="w-4 h-4" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+
+              {isCustomerDropdownOpen && (
+                <div className="mt-1.5 p-2 rounded-xl bg-white border border-[#DBEAFE] shadow-md z-20 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2 pb-1 border-b border-[#DBEAFE]/60">
+                    <div className="relative flex-1">
+                      <Search className="w-3 h-3 text-slate-400 absolute right-2.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={customerSearchQuery}
+                        onChange={(e) => setCustomerSearchQuery(e.target.value)}
+                        placeholder="סינון לקוחות..."
+                        className="w-full pr-7 pl-2 py-1 rounded-md bg-[#F8FAFC] border border-[#DBEAFE] text-xs text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => loadSharePointCustomers(true)}
+                      disabled={isLoadingCustomers}
+                      className="text-[10px] text-[#2563EB] hover:text-[#1D4ED8] inline-flex items-center gap-1 px-1.5 py-1 rounded-md hover:bg-[#EFF6FF] cursor-pointer shrink-0"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${isLoadingCustomers ? "animate-spin" : ""}`} />
+                      <span>רענן</span>
+                    </button>
+                  </div>
+
+                  {isLoadingCustomers ? (
+                    <div className="py-3 text-center text-xs text-slate-500 flex items-center justify-center gap-1.5">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#06B6D4]" />
+                      <span>טוען רשימת לקוחות מ-SharePoint...</span>
+                    </div>
+                  ) : filteredCustomersForEdit.length > 0 ? (
+                    <div className="max-h-44 overflow-y-auto space-y-1">
+                      {filteredCustomersForEdit.map((cust) => {
+                        const isSelected =
+                          editCustomer.trim().toLowerCase() === cust.name.trim().toLowerCase();
+                        return (
+                          <button
+                            key={cust.id || cust.name}
+                            type="button"
+                            onClick={() => handleSelectCustomerInEdit(cust.name)}
+                            className={`w-full text-right px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                              isSelected
+                                ? "bg-[#2563EB] text-white font-semibold"
+                                : "bg-[#F8FAFC] hover:bg-[#EFF6FF] text-[#172B4D]"
+                            }`}
+                          >
+                            <span className="truncate">{cust.name}</span>
+                            {isSelected && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="py-2 text-center text-xs text-slate-500 space-y-1.5">
+                      <p>לא נמצא לקוח תואם בסינון</p>
+                      {editCustomer.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => handleSelectCustomerInEdit(editCustomer.trim())}
+                          className="px-2.5 py-1 rounded-lg bg-[#EFF6FF] text-[#2563EB] border border-[#DBEAFE] text-[11px] font-semibold cursor-pointer"
+                        >
+                          חפש קובץ אקסל עבור "{editCustomer.trim()}"
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div>
@@ -821,10 +1162,97 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                 type="text"
                 value={editDate}
                 onChange={(e) => setEditDate(e.target.value)}
+                onBlur={() => {
+                  if (editCustomer.trim() && editDate.trim() && editDate.trim() !== draft.date) {
+                    resolveCustomerExcelFile(editCustomer.trim(), editDate.trim());
+                  }
+                }}
                 className="w-full px-3 py-1.5 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
                 placeholder="YYYY-MM-DD"
               />
             </div>
+          </div>
+
+          {/* Target Excel File status inside Edit Mode (auto-updates when customer changes) */}
+          <div className="p-2.5 rounded-xl bg-white border border-[#DBEAFE] space-y-1.5">
+            <div className="flex items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                {isResolvingCustomerFile ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 text-[#06B6D4] animate-spin shrink-0" />
+                    <span className="text-[11px] text-[#2563EB] font-medium truncate">
+                      מאתר קובץ Excel מתאים עבור {editCustomer}...
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-[#2563EB] shrink-0" />
+                    <span className="text-[11px] text-slate-500 shrink-0">קובץ אקסל:</span>
+                    <span className="font-mono text-[#172B4D] font-semibold text-[11px] truncate" dir="ltr">
+                      {draft.fileName || "לא זוהה קובץ יעד — בחר מהרשימה"}
+                    </span>
+                  </>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !isSelectingFile;
+                  setIsSelectingFile(next);
+                  if (next && fileList.length === 0) {
+                    loadCustomerFiles();
+                  }
+                }}
+                className="text-[11px] text-[#2563EB] hover:text-[#1D4ED8] font-medium inline-flex items-center gap-1 cursor-pointer shrink-0"
+              >
+                <span>{isSelectingFile ? "סגור קבצים" : "החלף קובץ"}</span>
+                {isSelectingFile ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+              </button>
+            </div>
+
+            {isSelectingFile && (
+              <div className="pt-1.5 border-t border-[#DBEAFE]/60 space-y-1">
+                {isLoadingFiles ? (
+                  <div className="py-2 text-center text-xs text-slate-500 flex items-center justify-center gap-1.5">
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#06B6D4]" />
+                    <span>טוען קבצי Excel של {editCustomer || draft.customerName}...</span>
+                  </div>
+                ) : fileList.length > 0 ? (
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {fileList.map((f) => {
+                      const isSelected = draft.fileId === f.fileId || draft.fileName === f.fileName;
+                      return (
+                        <button
+                          key={f.fileId}
+                          type="button"
+                          onClick={() => handleSelectFile(f)}
+                          className={`w-full text-right px-2.5 py-1 rounded-lg text-xs font-mono flex items-center justify-between transition-colors cursor-pointer border ${
+                            isSelected
+                              ? "bg-[#2563EB] border-[#2563EB] text-white font-semibold"
+                              : "bg-[#F8FAFC] border-[#DBEAFE] text-[#172B4D] hover:bg-[#EFF6FF]"
+                          }`}
+                          dir="ltr"
+                        >
+                          <span className="truncate">{f.fileName}</span>
+                          {isSelected && <Check className="w-3.5 h-3.5 text-white shrink-0 ml-1" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="py-1.5 text-center text-xs text-slate-500">
+                    <button
+                      type="button"
+                      onClick={loadCustomerFiles}
+                      className="text-[#2563EB] underline text-[11px] cursor-pointer"
+                    >
+                      סרוק קבצי Excel עבור {editCustomer || draft.customerName}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Time Fields: משעה, עד שעה, משך זמן */}
@@ -1015,7 +1443,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             </div>
           )}
 
-          {/* Field: מי עבד על המשימה */}
+          {/* Field: מי עבד על המשימה (רק מרשימת העובדים הקיימים) */}
           <div className="p-2.5 rounded-xl bg-white border border-[#DBEAFE]">
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-[11px] text-[#172B4D] font-semibold flex items-center gap-1.5">
@@ -1030,13 +1458,19 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             </div>
 
             <div className="flex flex-wrap gap-1 mb-2">
-              {PRESET_TEAM_MEMBERS.map((memberName) => {
+              {PRESET_TEAM_MEMBERS.filter((memberName) => {
+                const q = customEmployeeInput.trim().toLowerCase();
+                if (!q) return true;
+                const matched = matchPresetTeamMember(q);
+                return memberName.toLowerCase().includes(q) || matched === memberName;
+              }).map((memberName) => {
                 const isSelected = editEmployees.includes(memberName);
                 return (
                   <button
                     key={memberName}
                     type="button"
                     onClick={() => {
+                      setEmployeeLookupMessage(null);
                       setEditEmployees((prev) => {
                         if (prev.includes(memberName)) {
                           if (prev.length === 1) return prev;
@@ -1063,37 +1497,31 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
               <input
                 type="text"
                 value={customEmployeeInput}
-                onChange={(e) => setCustomEmployeeInput(e.target.value)}
+                onChange={(e) => {
+                  setCustomEmployeeInput(e.target.value);
+                  setEmployeeLookupMessage(null);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && customEmployeeInput.trim()) {
                     e.preventDefault();
-                    const trimmed = customEmployeeInput.trim();
-                    if (!editEmployees.includes(trimmed)) {
-                      setEditEmployees((prev) => [...prev, trimmed]);
-                    }
-                    setCustomEmployeeInput("");
+                    handleLookupExistingEmployee();
                   }
                 }}
-                placeholder="הוסף שם עובד נוסף..."
+                placeholder="חפש עובד מרשימת העובדים הקיימים..."
                 className="flex-1 bg-[#F8FAFC] border border-[#DBEAFE] text-[16px] sm:text-xs px-2.5 py-1 rounded-lg text-[#172B4D] placeholder-slate-400 focus:outline-none focus:border-[#2563EB]"
               />
               <button
                 type="button"
-                onClick={() => {
-                  if (customEmployeeInput.trim()) {
-                    const trimmed = customEmployeeInput.trim();
-                    if (!editEmployees.includes(trimmed)) {
-                      setEditEmployees((prev) => [...prev, trimmed]);
-                    }
-                    setCustomEmployeeInput("");
-                  }
-                }}
+                onClick={handleLookupExistingEmployee}
                 className="bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1 cursor-pointer transition-colors"
               >
-                <Plus className="w-3 h-3" />
-                <span>הוסף</span>
+                <Search className="w-3 h-3" />
+                <span>בחר</span>
               </button>
             </div>
+            {employeeLookupMessage && (
+              <p className="text-[11px] text-amber-700 mt-1">{employeeLookupMessage}</p>
+            )}
           </div>
 
           <div>
@@ -1112,10 +1540,20 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
           <div className="flex items-center gap-2 pt-1">
             <button
               onClick={handleSaveEdit}
-              className="flex-1 py-2 px-3 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+              disabled={isResolvingCustomerFile}
+              className="flex-1 py-2 px-3 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
             >
-              <Save className="w-3.5 h-3.5" />
-              <span>שמור שינויים</span>
+              {isResolvingCustomerFile ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>מעדכן קובץ אקסל...</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-3.5 h-3.5" />
+                  <span>שמור שינויים</span>
+                </>
+              )}
             </button>
             <button
               onClick={() => setIsEditing(false)}

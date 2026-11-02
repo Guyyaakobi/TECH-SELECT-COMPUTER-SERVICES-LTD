@@ -14,6 +14,7 @@ import {
   findMonthTarget,
   readSheetStructure,
   inspectWorkbookFile,
+  chooseTargetWorksheet,
   writeRows,
   findDuplicates,
   undoRow,
@@ -4400,10 +4401,38 @@ ${!isAteraCustomer ? `
       try {
         const customer = String(req.query.customer || req.query.customerId || "").trim();
         const date = String(req.query.date || req.query.month || "").trim();
+        const workType = String(req.query.workType || "").trim();
+        const shouldInspect = req.query.inspect === "true" || Boolean(workType);
         if (!customer) {
           return res.status(400).json({ error: "חסר פרמטר חובה: customer" });
         }
-        const result = await findMonthTarget(customer, date, process.env);
+        const result: any = await findMonthTarget(customer, date, process.env);
+        if (shouldInspect && result.found && result.fileId) {
+          try {
+            const inspection = await Promise.race([
+              inspectWorkbookFile(result.fileId, process.env, result.driveId, result.customerName || customer, {
+                preferredTabName: workType,
+                quickMode: true,
+              }),
+              new Promise<null>((resolve) => setTimeout(() => resolve(null), 6500)),
+            ]);
+            if (inspection && inspection.worksheets.length > 0) {
+              const choice = chooseTargetWorksheet(inspection, {
+                preferredTabName: workType,
+                entryDescription: "",
+              });
+              const chosenTab = choice.selectedTab;
+              const offset = chosenTab.headerRowIndex !== undefined ? chosenTab.headerRowIndex + 2 : 2;
+              result.targetTabName = chosenTab.name;
+              result.detectedTabType = chosenTab.detectedType;
+              result.availableTabs = choice.availableTabs;
+              result.targetRow = chosenTab.totalDataRows + offset;
+              result.headers = chosenTab.headers;
+            }
+          } catch (inspErr) {
+            console.warn("[GET /api/hours/month-target] Workbook inspection warning:", inspErr);
+          }
+        }
         return res.json(result);
       } catch (err: any) {
         console.error("[GET /api/hours/month-target] Error:", err);

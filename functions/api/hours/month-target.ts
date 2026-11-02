@@ -1,6 +1,6 @@
 import { authenticateHoursRequest } from "./_auth";
 import { getCorsHeaders } from "../_shared/security";
-import { findMonthTarget } from "../../../services/graphHours";
+import { findMonthTarget, inspectWorkbookFile, chooseTargetWorksheet } from "../../../services/graphHours";
 
 export async function onRequestOptions(context: any): Promise<Response> {
   const request: Request = context?.request || new Request("https://localhost");
@@ -28,6 +28,8 @@ export async function onRequestGet(context: any): Promise<Response> {
   const url = new URL(request.url);
   const customer = url.searchParams.get("customer") || url.searchParams.get("customerId") || "";
   const date = url.searchParams.get("date") || url.searchParams.get("month") || "";
+  const workType = url.searchParams.get("workType") || "";
+  const shouldInspect = url.searchParams.get("inspect") === "true" || Boolean(workType);
 
   if (!customer) {
     return new Response(
@@ -37,7 +39,33 @@ export async function onRequestGet(context: any): Promise<Response> {
   }
 
   try {
-    const result = await findMonthTarget(customer, date, env);
+    const result: any = await findMonthTarget(customer, date, env);
+    if (shouldInspect && result.found && result.fileId) {
+      try {
+        const inspection = await Promise.race([
+          inspectWorkbookFile(result.fileId, env, result.driveId, result.customerName || customer, {
+            preferredTabName: workType,
+            quickMode: true,
+          }),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 6500)),
+        ]);
+        if (inspection && inspection.worksheets.length > 0) {
+          const choice = chooseTargetWorksheet(inspection, {
+            preferredTabName: workType,
+            entryDescription: "",
+          });
+          const chosenTab = choice.selectedTab;
+          const offset = chosenTab.headerRowIndex !== undefined ? chosenTab.headerRowIndex + 2 : 2;
+          result.targetTabName = chosenTab.name;
+          result.detectedTabType = chosenTab.detectedType;
+          result.availableTabs = choice.availableTabs;
+          result.targetRow = chosenTab.totalDataRows + offset;
+          result.headers = chosenTab.headers;
+        }
+      } catch {
+        // ignore inspection warning
+      }
+    }
     return new Response(JSON.stringify(result), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

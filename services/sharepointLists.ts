@@ -153,14 +153,6 @@ export const BILINGUAL_EMPLOYEE_DICTIONARY: Record<string, string[]> = {
     "אירית יעקובי",
     "irit@tech-select.co.il",
   ],
-  "רועי": [
-    "roei",
-    "roy",
-    "רועי",
-    "רועי כהן",
-    "roy@tech-select.co.il",
-    "roei@tech-select.co.il",
-  ],
   "יוסף": [
     "יוסף",
     "יוסף איאסה",
@@ -193,11 +185,6 @@ export const BILINGUAL_EMPLOYEE_DICTIONARY: Record<string, string[]> = {
     "גברילוב",
     "vadim@tech-select.co.il",
     "vadimg@tech-select.co.il",
-  ],
-  "עומר": [
-    "omer",
-    "עומר",
-    "omer@tech-select.co.il",
   ],
   "אולג": [
     "oleg",
@@ -245,14 +232,6 @@ export const BILINGUAL_EMPLOYEE_DICTIONARY: Record<string, string[]> = {
     "shaia",
     "ShaiA@tech-select.co.il",
     "shai@tech-select.co.il",
-  ],
-  "אירנה": [
-    "irena",
-    "irina",
-    "אירנה",
-    "אירינה",
-    "irena@tech-select.co.il",
-    "irina@tech-select.co.il",
   ],
 };
 
@@ -400,17 +379,87 @@ export const KNOWN_TEAM_MEMBERS: Array<{ name: string; email: string; shortName:
   { name: "ניב בורו", email: "niv@tech-select.co.il", shortName: "ניב" },
   { name: "תבור כהן", email: "tavor@tech-select.co.il", shortName: "תבור" },
   { name: "אירית יעקובי", email: "irit@tech-select.co.il", shortName: "אירית" },
-  { name: "רועי", email: "roy@tech-select.co.il", shortName: "רועי" },
   { name: "יוסף", email: "yosef@tech-select.co.il", shortName: "יוסף" },
-  { name: "עומר", email: "omer@tech-select.co.il", shortName: "עומר" },
   { name: "אולג", email: "oleg@tech-select.co.il", shortName: "אולג" },
   { name: "אריאל", email: "ariel@tech-select.co.il", shortName: "אריאל" },
   { name: "אוריאל", email: "uriel@tech-select.co.il", shortName: "אוריאל" },
   { name: "ולד", email: "vlad@tech-select.co.il", shortName: "ולד" },
   { name: "אמיר", email: "amir@tech-select.co.il", shortName: "אמיר" },
   { name: "שי", email: "ShaiA@tech-select.co.il", shortName: "שי" },
-  { name: "אירנה", email: "irina@tech-select.co.il", shortName: "אירנה" },
 ];
+
+/**
+ * Strictly searches KNOWN_TEAM_MEMBERS & BILINGUAL_EMPLOYEE_DICTIONARY for a matching employee.
+ * Returns null if the name is NOT an existing TECH-SELECT employee (never invents new names).
+ */
+export function matchKnownTeamMember(
+  nameOrEmail?: string
+): { name: string; email: string; shortName: string } | null {
+  if (!nameOrEmail) return null;
+  const clean = nameOrEmail
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\u00A0]/g, "")
+    .trim();
+  if (!clean) return null;
+
+  const lower = clean.toLowerCase();
+  const norm = normalizeColString(clean);
+  const firstWordNorm = normalizeColString(clean.split(/\s+/)[0]);
+
+  for (const tm of KNOWN_TEAM_MEMBERS) {
+    const aliases = BILINGUAL_EMPLOYEE_DICTIONARY[tm.name] || [];
+    const tmNorm = normalizeColString(tm.name);
+    const tmShortNorm = normalizeColString(tm.shortName);
+
+    if (
+      tm.name.toLowerCase() === lower ||
+      tm.shortName.toLowerCase() === lower ||
+      tm.email.toLowerCase() === lower ||
+      tmNorm === norm ||
+      tmShortNorm === norm ||
+      (firstWordNorm.length >= 2 && (tmShortNorm === firstWordNorm || tmNorm === firstWordNorm)) ||
+      aliases.some((a) => {
+        const aLower = a.toLowerCase().trim();
+        const aNorm = normalizeColString(a);
+        const aFwNorm = normalizeColString(a.trim().split(/\s+/)[0]);
+        return (
+          aLower === lower ||
+          aNorm === norm ||
+          (!aLower.includes("@") && firstWordNorm.length >= 2 && aFwNorm === firstWordNorm)
+        );
+      })
+    ) {
+      return tm;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Filters a list of candidate employee names strictly against KNOWN_TEAM_MEMBERS.
+ * Never adds unknown names from user input. Falls back to the signed-in employee.
+ */
+export function resolveKnownEmployeeList(
+  candidateNames: string[] | undefined,
+  fallbackUserName?: string
+): string[] {
+  const verified: string[] = [];
+  if (Array.isArray(candidateNames)) {
+    for (const raw of candidateNames) {
+      const matched = matchKnownTeamMember(String(raw || ""));
+      if (matched && !verified.includes(matched.name)) {
+        verified.push(matched.name);
+      }
+    }
+  }
+
+  if (verified.length === 0) {
+    const fallbackMatched = matchKnownTeamMember(fallbackUserName);
+    verified.push(fallbackMatched ? fallbackMatched.name : fallbackUserName || "גיא יעקובי");
+  }
+
+  return verified;
+}
 
 export function resolveEmployeeEmail(name?: string, fallbackEmail?: string): string {
   if (!name) return fallbackEmail || "g@tech-select.co.il";
@@ -2786,16 +2835,10 @@ export async function getUserListsDailySummary(
     };
   });
 
-  // Collect available employees from KNOWN_TEAM_MEMBERS + any extra names seen in Lists
+  // Collect available employees strictly from KNOWN_TEAM_MEMBERS (never add unrecognized names from user input)
   const empMap = new Map<string, { name: string; email: string }>();
   for (const tm of KNOWN_TEAM_MEMBERS) {
     empMap.set(tm.name, { name: tm.name, email: tm.email });
-  }
-  for (const e of allEntries) {
-    const canon = resolveEffectiveName(e.employeeName, e.employeeEmail);
-    if (canon && canon !== "עובד" && !empMap.has(canon)) {
-      empMap.set(canon, { name: canon, email: e.employeeEmail || "" });
-    }
   }
 
   let listWebUrl = "https://techselectltd.sharepoint.com/sites/Customers/Lists/List/AllItems.aspx";

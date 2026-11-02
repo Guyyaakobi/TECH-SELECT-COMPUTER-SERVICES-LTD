@@ -27,7 +27,13 @@ import {
   listCustomers,
 } from "./graphHours";
 import { AuthenticatedUser } from "../server/hoursAuthMiddleware";
-import { resolveEffectiveName, resolveEmployeeEmail, KNOWN_TEAM_MEMBERS } from "./sharepointLists";
+import {
+  resolveEffectiveName,
+  resolveEmployeeEmail,
+  KNOWN_TEAM_MEMBERS,
+  matchKnownTeamMember,
+  resolveKnownEmployeeList,
+} from "./sharepointLists";
 
 export interface HoursAssistantEntryDraft {
   id: string; // card unique ID
@@ -79,17 +85,14 @@ export interface HoursAssistantEntryDraft {
 }
 
 export function extractAssignedEmployees(text: string, currentUserName: string): string[] {
-  if (!text) return [currentUserName];
+  const canonicalCurrent = matchKnownTeamMember(currentUserName)?.name || currentUserName;
+  if (!text) return [canonicalCurrent];
   const clean = text.trim();
   const found = new Set<string>();
+  found.add(canonicalCurrent);
 
-  // Check if current user is implicitly included ("אני", "עבדנו", "היינו")
-  const hasSelf = /(?:^|[\s,.;:!?()\[\]"'״׳\-])(?:אני|עבדנו|היינו|עשינו|ביקרנו|ישבנו|איתי|יחד\s*איתי|עבדתי)(?=$|[\s,.;:!?()\[\]"'״׳\-])/.test(clean);
-  if (hasSelf) {
-    found.add(currentUserName);
-  }
-
-  // Check against all known team members using Unicode-safe Hebrew boundaries (JS \b fails on Hebrew chars!)
+  // Only add additional team members from KNOWN_TEAM_MEMBERS when explicitly mentioned in a co-working phrase
+  // (never add client contact persons like "דיברתי עם X" or "טיפלתי בבעיה של X", and never add names outside KNOWN_TEAM_MEMBERS!)
   for (const tm of KNOWN_TEAM_MEMBERS) {
     const namesToCheck = Array.from(
       new Set([
@@ -99,25 +102,21 @@ export function extractAssignedEmployees(text: string, currentUserName: string):
       ])
     ).filter(Boolean);
 
-    const isMatched = namesToCheck.some((n) => {
+    const isCoWorkingMatch = namesToCheck.some((n) => {
       const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const re = new RegExp(
-        `(?:^|[\\s,.;:!?()\\[\\]"'״׳\\-]|ו|עם\\s*|יחד\\s*עם\\s*|ביחד\\s*עם\\s*)${escaped}(?=$|[\\s,.;:!?()\\[\\]"'״׳\\-])`,
+      const coWorkRegex = new RegExp(
+        `(?:אני\\s+ו|יחד\\s+עם\\s+|ביחד\\s+עם\\s+|בשיתוף\\s+עם\\s+|בשיתוף\\s+|עבדתי\\s+עם\\s+|הייתי\\s+עם\\s+|נסעתי\\s+עם\\s+|ביקרתי\\s+עם\\s+)${escaped}(?=$|[\\s,.;:!?()\\[\\]"'״׳\\-])`,
         "i"
       );
-      return re.test(clean);
+      return coWorkRegex.test(clean);
     });
 
-    if (isMatched) {
+    if (isCoWorkingMatch) {
       found.add(tm.name);
     }
   }
 
-  if (found.size === 0) {
-    found.add(currentUserName);
-  }
-
-  return Array.from(found);
+  return resolveKnownEmployeeList(Array.from(found), canonicalCurrent);
 }
 
 export function buildEnrichedRowPayload(params: {
@@ -1079,7 +1078,7 @@ export async function processAssistantChat(
           ]
     ).map((e) => String(e).trim()).filter(Boolean);
 
-    const effectiveEmployees = rawAssigned.length > 0 ? rawAssigned : [user.name];
+    const effectiveEmployees = resolveKnownEmployeeList(rawAssigned, user.name);
 
     const rowsPayload = effectiveEmployees.map((empName) => {
       const empEmail = resolveEmployeeEmail(empName, user.email);
@@ -1315,7 +1314,7 @@ export async function processAssistantChat(
                 assignedEmployees: {
                   type: Type.ARRAY,
                   items: { type: Type.STRING },
-                  description: "Optional list of employee/technician names who worked together on this task (e.g. ['גיא יעקובי', 'ודים']). Defaults to the reporting employee only.",
+                  description: `Optional list of existing TECH-SELECT employees who worked together on this task. MUST ONLY contain names from the closed employee list: [${KNOWN_TEAM_MEMBERS.map((m) => m.name).join(", ")}]. NEVER add new names or client contacts from user input! Defaults to the reporting employee only.`,
                 },
               },
               required: ["customerName", "date", "description", "workType"],
@@ -1474,8 +1473,10 @@ EXTRACTION RULES FOR propose_entries:
    - Write a clear, professional Hebrew technical description preserving all technical details, server/user names, and actions performed.
 6. Contact person & Ticket number: extract if mentioned.
 7. Start time / End time: extract if mentioned, otherwise propose_entries calculates them automatically.
-8. Multiple Employees / Team Work:
-   - Default is 1 employee ("${user.name}"). If the employee mentions working with colleagues (e.g. "אני וודים", "עם תבור"), include all names in assignedEmployees.
+8. Multiple Employees / Team Work (חוק ברזל - רשימת עובדים סגורה בלבד!):
+   - Closed list of existing TECH-SELECT employees: [${KNOWN_TEAM_MEMBERS.map((m) => m.name).join(", ")}].
+   - Default is 1 employee ("${user.name}").
+   - When a name is mentioned in the user's message, search for it ONLY in the existing employees list above. NEVER add new/unlisted names from user input to assignedEmployees! Any person mentioned who is NOT in the closed employee list above (e.g. a client user or contact person) belongs in contactPerson or description, NEVER in assignedEmployees.
 9. NEVER call write_rows before explicit user confirmation ("כן", "מאשר", "תזין").`;
 
   // Build Conversation Contents for Gemini
@@ -2062,12 +2063,12 @@ EXTRACTION RULES FOR propose_entries:
 
             const detectedAssigned =
               Array.isArray(raw.assignedEmployees) && raw.assignedEmployees.length > 0
-                ? raw.assignedEmployees
+                ? resolveKnownEmployeeList(raw.assignedEmployees, user.name)
                 : matchingActiveDraft?.assignedEmployees && matchingActiveDraft.assignedEmployees.length > 0
-                ? matchingActiveDraft.assignedEmployees
+                ? resolveKnownEmployeeList(matchingActiveDraft.assignedEmployees, user.name)
                 : extractAssignedEmployees(rawDesc + " " + effectiveUserText, user.name);
 
-            const assignedEmployees = detectedAssigned.length > 0 ? detectedAssigned : [user.name];
+            const assignedEmployees = resolveKnownEmployeeList(detectedAssigned, user.name);
 
             enriched.push({
               id: draftId,
@@ -2196,7 +2197,7 @@ EXTRACTION RULES FOR propose_entries:
                   ]
             ).map((e: any) => String(e).trim()).filter(Boolean);
 
-            const effectiveEmployees = rowEmployees.length > 0 ? rowEmployees : [user.name];
+            const effectiveEmployees = resolveKnownEmployeeList(rowEmployees, user.name);
 
             for (const empName of effectiveEmployees) {
               const empEmail = resolveEmployeeEmail(empName, user.email);
