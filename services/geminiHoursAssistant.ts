@@ -24,6 +24,7 @@ import {
   prefixDescriptionWithAuthor,
   getDailyHoursReport,
   BILINGUAL_CUSTOMER_DICTIONARY,
+  listCustomers,
 } from "./graphHours";
 import { AuthenticatedUser } from "../server/hoursAuthMiddleware";
 import { resolveEffectiveName, resolveEmployeeEmail, KNOWN_TEAM_MEMBERS } from "./sharepointLists";
@@ -1459,8 +1460,8 @@ ULTRA-FAST SINGLE-STEP LOGGING WORKFLOW (הכנת כרטיס חיוב מיידי
   * Only if NO customer name was mentioned at all in the message/history, ask briefly: "עבור איזה לקוח בוצעה הפעילות?"
 
 EXTRACTION RULES FOR propose_entries:
-1. Customer: Pass the customer name in customerName (supports Hebrew or English). For example, "אוביה" / "אובייה" / "יוביה" maps to Ubeya / UBEYA, "קיסר" maps to Caesar Digum, "מטריקס" to Matrix, etc.
-2. Date: default today (${jCtx.todayIso}, Asia/Jerusalem). Understand "אתמול" (${jCtx.yesterdayIso}), "ביום ראשון", "שלשום", or explicit dates.
+1. Customer: Pass the customer name in customerName (supports Hebrew or English). For example, "וט מגן" / "ווט מגן" maps to Vet Magen / Vet-Magen, "אוביה" / "אובייה" / "יוביה" maps to Ubeya / UBEYA, "קיסר" maps to Caesar Digum, "מטריקס" to Matrix, "הייספ לאב" to HSL / HiSep, etc.
+2. Date: default today (${jCtx.todayIso}, Asia/Jerusalem). Understand "אתמול" (${jCtx.yesterdayIso}), "ביום ראשון", "שלשום", or explicit dates/months (e.g. if the user says "נובמבר" or specifies a month, pass the appropriate YYYY-MM-DD in that month).
 3. Duration / משך זמן (רציף ומהיר - ללא עצירות מיותרות):
    - Round to 15 minutes (0.25, 0.5, 0.75, 1, 1.5, 2...).
    - If the employee did NOT specify duration, default to "1 שעה" (60 minutes, isTimeSuggested = true) and call propose_entries immediately without asking!
@@ -1790,19 +1791,12 @@ EXTRACTION RULES FOR propose_entries:
 
             const date = String(raw.date || jCtx.todayIso).trim();
 
-            // Run customer verification AND initial month target lookup in parallel
-            const [customerCheck, initialMt] = await Promise.all([
-              withSafeTimeout(
-                checkCustomerExistsInSharePoint(rawCustomerName, activeEnv),
-                8000,
-                { exists: false, bestMatch: null, score: 0, checkedLanguages: ["hebrew", "english"] }
-              ),
-              withSafeTimeout(
-                findMonthTarget(rawCustomerName, date, activeEnv),
-                8000,
-                { found: false, availableFiles: [] } as any
-              ),
-            ]);
+            // 1. Verify & resolve customer in SharePoint (bilingual Hebrew/English + phonetic + consonant skeleton + Gemini fallback)
+            const customerCheck = await withSafeTimeout(
+              checkCustomerExistsInSharePoint(rawCustomerName, activeEnv),
+              8500,
+              { exists: false, bestMatch: null, score: 0, checkedLanguages: ["hebrew", "english"] }
+            );
 
             if (!customerCheck.exists || !customerCheck.bestMatch) {
               if (rawCustomerName.length >= 2) {
@@ -1814,9 +1808,23 @@ EXTRACTION RULES FOR propose_entries:
             }
 
             const customerName =
-              customerCheck.exists && customerCheck.score >= 0.88 && customerCheck.customerName
+              customerCheck.exists && customerCheck.score >= 0.65 && customerCheck.customerName
                 ? customerCheck.customerName
                 : rawCustomerName;
+
+            // 2. Locate the monthly Excel file using the resolved SharePoint CustomerFolder (if live folder matched) or resolved customer name
+            const targetCustomerInput =
+              customerCheck.bestMatch?.customer?.id &&
+              !String(customerCheck.bestMatch.customer.id).startsWith("dict_") &&
+              !String(customerCheck.bestMatch.customer.id).startsWith("cust_")
+                ? customerCheck.bestMatch.customer
+                : customerName;
+
+            const initialMt = await withSafeTimeout(
+              findMonthTarget(targetCustomerInput, date, activeEnv),
+              9000,
+              { found: false, availableFiles: [] } as any
+            );
 
             const rawDuration = raw.duration || "";
             const parsedDuration = roundToQuarterHour(rawDuration);

@@ -106,6 +106,19 @@ export const BILINGUAL_TERM_MAP: Record<string, string[]> = {
   יובייה: ["ubeya", "obeya"],
   וביה: ["ubeya", "obeya"],
   ובייה: ["ubeya", "obeya"],
+  "וט מגן": ["vet magen", "vet-magen", "vetmagen", "vet magen ltd", "vetmagen ltd", "vm"],
+  "וט-מגן": ["vet magen", "vet-magen", "vetmagen"],
+  וטמגן: ["vet magen", "vet-magen", "vetmagen"],
+  "ווט מגן": ["vet magen", "vet-magen", "vetmagen"],
+  וט: ["vet", "vat", "wet"],
+  ווט: ["vet", "vat", "wet"],
+  וטרינרי: ["veterinary", "vet"],
+  וטרינרית: ["veterinary", "vet"],
+  מגן: ["magen", "mgn", "shield"],
+  "הייספ לאב": ["hisep lab", "highsep lab", "hsl", "hisep", "highsep"],
+  הייספ: ["hisep", "highsep", "hsl"],
+  לאב: ["lab", "labs", "laboratory"],
+  אסיו: ["asio", "asio software"],
 };
 
 // Reverse dictionary: English -> Hebrew
@@ -120,6 +133,86 @@ for (const [heb, engList] of Object.entries(BILINGUAL_TERM_MAP)) {
       REVERSE_BILINGUAL_MAP[cleanEng].push(heb);
     }
   }
+}
+
+/**
+ * Converts any Hebrew or English customer name into a canonical phonetic consonant skeleton.
+ * This allows "וט מגן" (vt mgn) and "Vet Magen" / "Vetmagen" (vt mgn) to match directly
+ * even when short vowels (a, e, i) are omitted in Hebrew.
+ */
+export function toConsonantSkeletonBilingual(str: string): string {
+  if (!str) return "";
+  let s = str
+    .toLowerCase()
+    .replace(/(?:^|\s)(?:בעמ|בע"מ|בע״מ|בע\s*מ|ltd|limited|llc|inc|corp|co|company|group|holdings)(?:$|\s)/gi, " ")
+    .replace(/["'״׳`.,\-_/\\()\[\]{}|:;!?@#$%^&*+=]/g, " ")
+    .trim();
+
+  const words = s.split(/\s+/).filter(Boolean);
+  const skelWords = words.map((w) => {
+    if (/[\u0590-\u05FF]/.test(w)) {
+      // Normalize Hebrew final letters
+      const normHeb = w
+        .replace(/ם/g, "מ")
+        .replace(/ן/g, "נ")
+        .replace(/ץ/g, "צ")
+        .replace(/ף/g, "פ")
+        .replace(/ך/g, "כ");
+      const hebConsMap: Record<string, string> = {
+        א: "",
+        ב: "v",
+        ג: "g",
+        ד: "d",
+        ה: "",
+        ו: "v",
+        ז: "z",
+        ח: "h",
+        ט: "t",
+        י: "",
+        כ: "k",
+        ל: "l",
+        מ: "m",
+        נ: "n",
+        ס: "s",
+        ע: "",
+        פ: "f",
+        צ: "tz",
+        ק: "k",
+        ר: "r",
+        ש: "s",
+        ת: "t",
+      };
+      let out = "";
+      for (let i = 0; i < normHeb.length; i++) {
+        const ch = normHeb[i];
+        // Keep initial או / יו as u, otherwise skip internal vowel ו unless at word start (like וט)
+        if (ch === "ו" && i > 0 && normHeb[i - 1] !== "ו") {
+          continue;
+        }
+        out += hebConsMap[ch] !== undefined ? hebConsMap[ch] : ch;
+      }
+      return out.replace(/(.)\1+/g, "$1");
+    } else {
+      // Latin word -> phonetic consonant skeleton
+      let lat = w
+        .replace(/ph/g, "f")
+        .replace(/tch|ch/g, "h")
+        .replace(/sch|sh/g, "s")
+        .replace(/tz|ts/g, "tz")
+        .replace(/ck|qu|q/g, "k")
+        .replace(/c(?=[eiy])/g, "s")
+        .replace(/c/g, "k")
+        .replace(/b/g, "v")
+        .replace(/p/g, "f")
+        .replace(/w/g, "v")
+        .replace(/x/g, "ks");
+      // Strip all vowels
+      lat = lat.replace(/[aeiouy]/g, "");
+      return lat.replace(/(.)\1+/g, "$1");
+    }
+  });
+
+  return skelWords.filter(Boolean).join(" ");
 }
 
 /**
@@ -173,6 +266,18 @@ export function phoneticHebrewToLatin(hebStr: string): string[] {
   // Specialized known rules for Hebrew IT names
   const variants = new Set<string>();
   if (primary) variants.add(primary);
+
+  // For 2-letter and 3-letter pure consonant Latin outputs (e.g. "vt" -> "vet", "vat"; "mgn" -> "magen", "megan")
+  if (/^[bcdfghjklmnpqrstvwxz]{2}$/.test(primary)) {
+    variants.add(`${primary[0]}e${primary[1]}`);
+    variants.add(`${primary[0]}a${primary[1]}`);
+    variants.add(`${primary[0]}o${primary[1]}`);
+  } else if (/^[bcdfghjklmnpqrstvwxz]{3}$/.test(primary)) {
+    variants.add(`${primary[0]}a${primary[1]}e${primary[2]}`);
+    variants.add(`${primary[0]}e${primary[1]}e${primary[2]}`);
+    variants.add(`${primary[0]}a${primary[1]}a${primary[2]}`);
+    variants.add(`${primary[0]}o${primary[1]}a${primary[2]}`);
+  }
 
   // If word has "k" at start, also produce "c" variant
   if (primary.startsWith("k")) {
@@ -273,6 +378,12 @@ export function expandBilingualCustomerQueries(query: string): string[] {
     variants.add(stripped.toLowerCase());
   }
 
+  // Also include joined (space-free) version
+  const noSpaceRaw = (stripped || raw).toLowerCase().replace(/\s+/g, "");
+  if (noSpaceRaw.length >= 2) {
+    variants.add(noSpaceRaw);
+  }
+
   const isHebrew = /[\u0590-\u05FF]/.test(raw);
 
   if (isHebrew) {
@@ -280,6 +391,7 @@ export function expandBilingualCustomerQueries(query: string): string[] {
     const directEng = BILINGUAL_TERM_MAP[raw] || BILINGUAL_TERM_MAP[stripped] || [];
     for (const eng of directEng) {
       variants.add(eng);
+      variants.add(eng.replace(/\s+/g, ""));
     }
 
     // 2. Token-by-token expansion
@@ -295,13 +407,14 @@ export function expandBilingualCustomerQueries(query: string): string[] {
     });
 
     // Generate combinations of tokens
-    const maxCombinations = 16;
+    const maxCombinations = 24;
     let combCount = 0;
     const generateCombos = (idx: number, cur: string[]) => {
       if (combCount >= maxCombinations) return;
       if (idx >= expandedTokens.length) {
         if (cur.length > 0) {
           variants.add(cur.join(" "));
+          variants.add(cur.join(""));
           combCount++;
         }
         return;
@@ -312,9 +425,9 @@ export function expandBilingualCustomerQueries(query: string): string[] {
     };
     generateCombos(0, []);
 
-    // Also add individual significant tokens (e.g. "קיסר", "caesar", "keisar")
+    // Also add individual significant tokens (including 2-letter prefixes like "וט")
     for (const tok of tokens) {
-      if (tok.length >= 3) {
+      if (tok.length >= 2) {
         variants.add(tok);
         const dList = BILINGUAL_TERM_MAP[tok] || [];
         for (const d of dList) variants.add(d);
@@ -327,6 +440,7 @@ export function expandBilingualCustomerQueries(query: string): string[] {
     const directHeb = REVERSE_BILINGUAL_MAP[raw.toLowerCase()] || REVERSE_BILINGUAL_MAP[stripped.toLowerCase()] || [];
     for (const heb of directHeb) {
       variants.add(heb);
+      variants.add(heb.replace(/\s+/g, ""));
     }
 
     const tokens = (stripped || raw).toLowerCase().split(/\s+/).filter(Boolean);
@@ -338,13 +452,14 @@ export function expandBilingualCustomerQueries(query: string): string[] {
       return Array.from(candidates);
     });
 
-    const maxCombinations = 16;
+    const maxCombinations = 24;
     let combCount = 0;
     const generateCombos = (idx: number, cur: string[]) => {
       if (combCount >= maxCombinations) return;
       if (idx >= expandedTokens.length) {
         if (cur.length > 0) {
           variants.add(cur.join(" "));
+          variants.add(cur.join(""));
           combCount++;
         }
         return;
@@ -356,7 +471,7 @@ export function expandBilingualCustomerQueries(query: string): string[] {
     generateCombos(0, []);
 
     for (const tok of tokens) {
-      if (tok.length >= 3) {
+      if (tok.length >= 2) {
         variants.add(tok);
         const hList = REVERSE_BILINGUAL_MAP[tok] || [];
         for (const h of hList) variants.add(h);
@@ -427,7 +542,7 @@ function levenshteinDistance(a: string, b: string): number {
 
 /**
  * Scores the match between a candidate customer name and the user's query
- * across all generated bilingual variants.
+ * across all generated bilingual variants and phonetic consonant skeletons.
  */
 export function scoreBilingualCustomerMatch(
   customerName: string,
@@ -435,28 +550,61 @@ export function scoreBilingualCustomerMatch(
   expandedVariants?: string[]
 ): { score: number; matchReason: string; matchedVariant: string } {
   const normCustomer = normalizeCustomerStringBilingual(customerName);
+  const normCustomerNoSpace = normCustomer.replace(/\s+/g, "");
+  const skelCustomer = toConsonantSkeletonBilingual(customerName);
+  const skelCustomerNoSpace = skelCustomer.replace(/\s+/g, "");
+  const skelQuery = toConsonantSkeletonBilingual(query);
+  const skelQueryNoSpace = skelQuery.replace(/\s+/g, "");
+
+  // Direct consonant skeleton check between query and customerName (e.g. "וט מגן" == "Vet Magen" / "Vetmagen" -> "vtmgn")
+  if (
+    skelCustomerNoSpace.length >= 3 &&
+    skelQueryNoSpace.length >= 3 &&
+    (skelCustomer === skelQuery || skelCustomerNoSpace === skelQueryNoSpace)
+  ) {
+    return {
+      score: 0.96,
+      matchReason: `התאמה פונטית דו-לשונית מלאה (${skelCustomer})`,
+      matchedVariant: skelQuery,
+    };
+  }
+
   const variants = expandedVariants || expandBilingualCustomerQueries(query);
 
   let bestScore = 0;
   let bestReason = "התאמה חלקית";
   let bestVariant = query;
 
+  // Check if consonant skeleton of customer contains or starts with query skeleton
+  if (skelCustomerNoSpace.length >= 4 && skelQueryNoSpace.length >= 4) {
+    if (skelCustomerNoSpace.startsWith(skelQueryNoSpace) || skelQueryNoSpace.startsWith(skelCustomerNoSpace)) {
+      bestScore = 0.91;
+      bestReason = `התאמה פונטית של תחילית שם הלקוח (${skelQuery})`;
+      bestVariant = skelQuery;
+    } else if (skelCustomerNoSpace.includes(skelQueryNoSpace) || skelQueryNoSpace.includes(skelCustomerNoSpace)) {
+      bestScore = 0.88;
+      bestReason = `התאמה פונטית של רכיבי שם הלקוח (${skelQuery})`;
+      bestVariant = skelQuery;
+    }
+  }
+
   for (const variant of variants) {
     const normVar = normalizeCustomerStringBilingual(variant);
     if (!normVar) continue;
+    const normVarNoSpace = normVar.replace(/\s+/g, "");
 
     // 1. Exact raw match
     if (customerName.toLowerCase() === variant.toLowerCase()) {
       return { score: 1.0, matchReason: "התאמה מלאה מדויקת", matchedVariant: variant };
     }
 
-    // 2. Normalized exact match
-    if (normCustomer === normVar) {
+    // 2. Normalized exact match (spaced or unspaced)
+    if (normCustomer === normVar || (normCustomerNoSpace.length >= 3 && normCustomerNoSpace === normVarNoSpace)) {
       return { score: 0.98, matchReason: "התאמה מלאה לאחר נירמול ותרגום", matchedVariant: variant };
     }
 
     // 3. Name starts with variant
-    if (normCustomer.startsWith(normVar)) {
+    if (normCustomer.startsWith(normVar) || (normVarNoSpace.length >= 3 && normCustomerNoSpace.startsWith(normVarNoSpace))) {
       if (0.94 > bestScore) {
         bestScore = 0.94;
         bestReason = `שם הלקוח ב-SharePoint מתחיל ב-'${variant}'`;
@@ -465,7 +613,7 @@ export function scoreBilingualCustomerMatch(
     }
 
     // 4. Variant starts with name
-    if (normVar.startsWith(normCustomer)) {
+    if (normVar.startsWith(normCustomer) || (normCustomerNoSpace.length >= 3 && normVarNoSpace.startsWith(normCustomerNoSpace))) {
       if (0.92 > bestScore) {
         bestScore = 0.92;
         bestReason = `השאילתה מתחילה בשם הלקוח '${customerName}'`;
@@ -474,13 +622,13 @@ export function scoreBilingualCustomerMatch(
     }
 
     // 5. Substring containment
-    if (normCustomer.includes(normVar) && normVar.length >= 3) {
+    if ((normCustomer.includes(normVar) || normCustomerNoSpace.includes(normVarNoSpace)) && normVarNoSpace.length >= 3) {
       if (0.90 > bestScore) {
         bestScore = 0.90;
         bestReason = `שם הלקוח ב-SharePoint מכיל '${variant}'`;
         bestVariant = variant;
       }
-    } else if (normVar.includes(normCustomer) && normCustomer.length >= 3) {
+    } else if ((normVar.includes(normCustomer) || normVarNoSpace.includes(normCustomerNoSpace)) && normCustomerNoSpace.length >= 3) {
       if (0.88 > bestScore) {
         bestScore = 0.88;
         bestReason = `השאילתה מכילה את שם הלקוח '${customerName}'`;
@@ -505,7 +653,7 @@ export function scoreBilingualCustomerMatch(
         }
         const dist = levenshteinDistance(vTok, cTok);
         const maxL = Math.max(vTok.length, cTok.length);
-        if (maxL > 3 && dist <= 1) {
+        if ((maxL >= 3 && dist <= 1) || (maxL >= 5 && dist <= 2)) {
           matchedTokens += 0.8;
           break;
         }
@@ -521,13 +669,16 @@ export function scoreBilingualCustomerMatch(
       }
     }
 
-    // 7. Levenshtein on whole string
-    const dist = levenshteinDistance(normVar, normCustomer);
-    const maxLen = Math.max(normVar.length, normCustomer.length);
-    if (maxLen > 3) {
+    // 7. Levenshtein on whole string (spaced and unspaced)
+    const dist = Math.min(
+      levenshteinDistance(normVar, normCustomer),
+      levenshteinDistance(normVarNoSpace, normCustomerNoSpace)
+    );
+    const maxLen = Math.max(normVarNoSpace.length, normCustomerNoSpace.length);
+    if (maxLen >= 3) {
       const sim = 1 - dist / maxLen;
-      if (sim > 0.65 && sim * 0.88 > bestScore) {
-        bestScore = sim * 0.88;
+      if (sim > 0.62 && sim * 0.90 > bestScore) {
+        bestScore = sim * 0.90;
         bestReason = `התאמה פונטית / איות קרוב (${variant})`;
         bestVariant = variant;
       }
@@ -540,6 +691,9 @@ export function scoreBilingualCustomerMatch(
     matchedVariant: bestVariant,
   };
 }
+
+// In-memory cache for Gemini semantic customer matching
+const geminiCustomerMatchCache = new Map<string, { match: CustomerMatch | null; timestamp: number }>();
 
 /**
  * Gemini LLM Semantic Customer Matcher
@@ -556,6 +710,12 @@ export async function matchCustomerWithGemini(
     return null;
   }
 
+  const cacheKey = `${query.trim().toLowerCase()}__${customers.length}`;
+  const cached = geminiCustomerMatchCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < 15 * 60 * 1000) {
+    return cached.match;
+  }
+
   try {
     const ai = new GoogleGenAI({
       apiKey: effectiveKey,
@@ -570,7 +730,7 @@ ${JSON.stringify(candidateNames)}
 
 Task: Identify the EXACT SharePoint folder name that matches the technician's mentioned customer "${query}".
 Take into account:
-1. Hebrew to English transliteration (e.g., "קיסר דיגום" = "Caesar Digum" or "Keisar" or "Caesar Sampling").
+1. Hebrew to English transliteration (e.g., "וט מגן" = "Vet Magen" or "Vetmagen", "אוביה" = "Ubeya", "קיסר דיגום" = "Caesar Digum").
 2. English to Hebrew transliteration (e.g., "Tech Select" = "טק סלקט").
 3. Common Israeli business terms and abbreviations.
 
@@ -591,16 +751,19 @@ Respond with ONLY a raw JSON object (no markdown, no backticks):
 
     if (parsed && parsed.matchedName) {
       const matchedCustomer = customers.find(
-        (c) => c.name.toLowerCase() === String(parsed.matchedName).toLowerCase().trim()
+        (c) => c.name.toLowerCase().trim() === String(parsed.matchedName).toLowerCase().trim()
       );
       if (matchedCustomer) {
-        return {
+        const result: CustomerMatch = {
           customer: matchedCustomer,
           score: Number(parsed.confidence) || 0.95,
           matchReason: parsed.reason || "התאמה בילינגוואלית חכמה (Gemini AI)",
         };
+        geminiCustomerMatchCache.set(cacheKey, { match: result, timestamp: Date.now() });
+        return result;
       }
     }
+    geminiCustomerMatchCache.set(cacheKey, { match: null, timestamp: Date.now() });
   } catch (err: any) {
     console.warn("[matchCustomerWithGemini] Semantic matching error:", err?.message || err);
   }

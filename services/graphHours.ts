@@ -524,6 +524,8 @@ import {
 import {
   expandBilingualCustomerQueries,
   scoreBilingualCustomerMatch,
+  toConsonantSkeletonBilingual,
+  matchCustomerWithGemini,
 } from "./bilingualCustomerMatcher";
 
 /**
@@ -658,6 +660,8 @@ export async function resolveSharePointDrive(env?: any): Promise<{ siteId: strin
  *    "שעות עבודה" as a customer (customer name = library name).
  * 3. Use whichever structure is found, and cache it.
  */
+let customersInFlightPromise: Promise<CustomersDetectionInfo> | null = null;
+
 export async function detectAndListCustomers(
   env?: any,
   forceRefresh = false
@@ -677,120 +681,172 @@ export async function detectAndListCustomers(
     };
   }
 
-  const { siteId, driveId } = await resolveSharePointDrive(env);
-  const { customersRootPath, hoursFolderName } = getGraphHoursConfig(env);
-
-  // Normalize path
-  let cleanPath = customersRootPath.trim();
-  if (cleanPath === "/" || cleanPath === "") {
-    cleanPath = "";
-  } else {
-    if (cleanPath.startsWith("/")) cleanPath = cleanPath.slice(1);
-    if (cleanPath.endsWith("/")) cleanPath = cleanPath.slice(0, -1);
+  if (!forceRefresh && customersInFlightPromise) {
+    return customersInFlightPromise;
   }
 
-  // =========================================================================
-  // 1. Check default document library root: GET /sites/{siteId}/drive/root/children
-  // =========================================================================
-  let childrenUrl = "";
-  if (!cleanPath) {
-    // Strictly no "root:/:" syntax when path is "/"
-    childrenUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root/children?$top=999`;
-  } else {
-    childrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/root:/${encodeURIComponent(cleanPath)}:/children?$top=999`;
-  }
+  customersInFlightPromise = (async () => {
+    try {
+      const { siteId, driveId } = await resolveSharePointDrive(env);
+      const { customersRootPath } = getGraphHoursConfig(env);
 
-  let allCustomers: CustomerFolder[] = [];
-
-  // 1. Fetch document libraries: GET /sites/{siteId}/drives with pagination
-  try {
-    let drivesUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${siteId}/drives?$top=200`;
-    while (drivesUrl) {
-      const drivesRes = await fetchGraph(drivesUrl, { method: "GET" }, env);
-      if (!drivesRes.ok) break;
-      const drivesData: any = await drivesRes.json();
-      const allDrives: any[] = (drivesData.value || []).filter(
-        (d: any) =>
-          !d.system &&
-          d.name !== "Preservation Hold Library" &&
-          d.name !== "Site Assets" &&
-          d.name !== "Style Library"
-      );
-
-      for (const drive of allDrives) {
-        if (!allCustomers.some((c) => c.name.toLowerCase() === drive.name.toLowerCase())) {
-          allCustomers.push({
-            id: drive.id,
-            name: drive.name,
-            webUrl: drive.webUrl,
-            driveId: drive.id,
-            type: "library" as const,
-          });
-        }
+      // Normalize path
+      let cleanPath = customersRootPath.trim();
+      if (cleanPath === "/" || cleanPath === "") {
+        cleanPath = "";
+      } else {
+        if (cleanPath.startsWith("/")) cleanPath = cleanPath.slice(1);
+        if (cleanPath.endsWith("/")) cleanPath = cleanPath.slice(0, -1);
       }
-      drivesUrl = drivesData["@odata.nextLink"] || null;
-    }
-  } catch (err) {
-    console.warn("[detectAndListCustomers] Error checking document libraries:", err);
-  }
 
-  // 2. Also fetch folders in default document library: GET /root/children with pagination
-  try {
-    let currentChildrenUrl: string | null = childrenUrl;
-    while (currentChildrenUrl) {
-      const res = await fetchGraph(currentChildrenUrl, { method: "GET" }, env);
-      if (!res.ok) break;
-      const data: any = await res.json();
-      const rootFolders: any[] = (data.value || []).filter((item: any) => Boolean(item.folder));
-      for (const folder of rootFolders) {
-        // avoid duplicating if drive already has this name
-        if (!allCustomers.some((c) => c.name.toLowerCase() === folder.name.toLowerCase())) {
-          allCustomers.push({
-            id: folder.id,
-            name: folder.name,
-            webUrl: folder.webUrl,
-            driveId,
-            type: "folder" as const,
-          });
-        }
+      let childrenUrl = "";
+      if (!cleanPath) {
+        childrenUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/drive/root/children?$top=999`;
+      } else {
+        childrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/root:/${encodeURIComponent(cleanPath)}:/children?$top=999`;
       }
-      currentChildrenUrl = data["@odata.nextLink"] || null;
+
+      const allCustomers: CustomerFolder[] = [];
+      const SYSTEM_DRIVE_NAMES = new Set([
+        "preservation hold library",
+        "site assets",
+        "style library",
+        "site pages",
+        "form templates",
+        "נכסי אתר",
+        "דפי אתר",
+      ]);
+
+      // 1. Fetch document libraries AND root folders in parallel
+      const fetchLibrariesPromise = (async () => {
+        try {
+          let drivesUrl: string | null = `https://graph.microsoft.com/v1.0/sites/${siteId}/drives?$top=200`;
+          while (drivesUrl) {
+            const drivesRes = await fetchGraph(drivesUrl, { method: "GET" }, env);
+            if (!drivesRes.ok) break;
+            const drivesData: any = await drivesRes.json();
+            const allDrives: any[] = (drivesData.value || []).filter(
+              (d: any) =>
+                !d.system &&
+                !SYSTEM_DRIVE_NAMES.has(String(d.name || "").trim().toLowerCase())
+            );
+
+            for (const drive of allDrives) {
+              if (!allCustomers.some((c) => c.id === drive.id)) {
+                allCustomers.push({
+                  id: drive.id,
+                  name: drive.name,
+                  webUrl: drive.webUrl,
+                  driveId: drive.id,
+                  type: "library" as const,
+                });
+              }
+            }
+            drivesUrl = drivesData["@odata.nextLink"] || null;
+          }
+        } catch (err) {
+          console.warn("[detectAndListCustomers] Error checking document libraries:", err);
+        }
+      })();
+
+      const containerFoldersToInspect: Array<{ id: string; driveId: string }> = [];
+
+      const fetchRootFoldersPromise = (async () => {
+        try {
+          let currentChildrenUrl: string | null = childrenUrl;
+          while (currentChildrenUrl) {
+            const res = await fetchGraph(currentChildrenUrl, { method: "GET" }, env);
+            if (!res.ok) break;
+            const data: any = await res.json();
+            const rootFolders: any[] = (data.value || []).filter((item: any) => Boolean(item.folder));
+            for (const folder of rootFolders) {
+              const lowerName = String(folder.name || "").trim().toLowerCase();
+              if (["לקוחות", "customers", "clients", "תיקיות לקוחות"].includes(lowerName)) {
+                containerFoldersToInspect.push({ id: folder.id, driveId });
+              }
+              if (!allCustomers.some((c) => c.id === folder.id)) {
+                allCustomers.push({
+                  id: folder.id,
+                  name: folder.name,
+                  webUrl: folder.webUrl,
+                  driveId,
+                  type: "folder" as const,
+                });
+              }
+            }
+            currentChildrenUrl = data["@odata.nextLink"] || null;
+          }
+        } catch (err) {
+          console.warn("[detectAndListCustomers] Error checking default document library:", err);
+        }
+      })();
+
+      await Promise.all([fetchLibrariesPromise, fetchRootFoldersPromise]);
+
+      // If there is a container folder like "לקוחות" / "Customers", also list its child folders
+      if (containerFoldersToInspect.length > 0) {
+        await Promise.all(
+          containerFoldersToInspect.map(async (container) => {
+            try {
+              const subUrl = `https://graph.microsoft.com/v1.0/drives/${container.driveId}/items/${container.id}/children?$top=999`;
+              const subRes = await fetchGraph(subUrl, { method: "GET" }, env);
+              if (subRes.ok) {
+                const subData: any = await subRes.json();
+                for (const subItem of subData.value || []) {
+                  if (subItem.folder && !allCustomers.some((c) => c.id === subItem.id)) {
+                    allCustomers.push({
+                      id: subItem.id,
+                      name: subItem.name,
+                      webUrl: subItem.webUrl,
+                      driveId: container.driveId,
+                      type: "folder" as const,
+                    });
+                  }
+                }
+              }
+            } catch {
+              // ignore container subfolder errors
+            }
+          })
+        );
+      }
+
+      if (allCustomers.length > 0) {
+        customersCache = {
+          timestamp: Date.now(),
+          siteId,
+          detectedStructure: "libraries",
+          items: allCustomers,
+        };
+        return {
+          siteId,
+          detectedStructure: "libraries",
+          totalCustomers: allCustomers.length,
+          first10Customers: allCustomers.slice(0, 10).map((c) => c.name),
+          customers: allCustomers,
+        };
+      }
+
+      customersCache = {
+        timestamp: Date.now(),
+        siteId,
+        detectedStructure: "folders",
+        items: [],
+      };
+
+      return {
+        siteId,
+        detectedStructure: "folders",
+        totalCustomers: 0,
+        first10Customers: [],
+        customers: [],
+      };
+    } finally {
+      customersInFlightPromise = null;
     }
-  } catch (err) {
-    console.warn("[detectAndListCustomers] Error checking default document library:", err);
-  }
+  })();
 
-  if (allCustomers.length > 0) {
-    customersCache = {
-      timestamp: now,
-      siteId,
-      detectedStructure: "libraries",
-      items: allCustomers,
-    };
-    return {
-      siteId,
-      detectedStructure: "libraries",
-      totalCustomers: allCustomers.length,
-      first10Customers: allCustomers.slice(0, 10).map((c) => c.name),
-      customers: allCustomers,
-    };
-  }
-
-  // 3. Fallback: if no folder/library has "שעות עבודה" yet, default to folders
-  customersCache = {
-    timestamp: now,
-    siteId,
-    detectedStructure: "folders",
-    items: [],
-  };
-
-  return {
-    siteId,
-    detectedStructure: "folders",
-    totalCustomers: 0,
-    first10Customers: [],
-    customers: [],
-  };
+  return customersInFlightPromise;
 }
 
 /**
@@ -953,12 +1009,29 @@ export const BILINGUAL_CUSTOMER_DICTIONARY: Record<string, string[]> = {
   "ובייה": ["ubeya", "obeya", "אוביה"],
   "obeya": ["אוביה", "ubeya"],
   "ubia": ["אוביה", "ubeya"],
+  "וט מגן": ["vet magen", "vet-magen", "vetmagen", "vat magen", "וט-מגן", "וטמגן", "ווט מגן", "ווט-מגן", "וט מגן בע\"מ", "vet magen ltd"],
+  "וט-מגן": ["vet magen", "vet-magen", "vetmagen", "וט מגן", "וטמגן", "ווט מגן"],
+  "וטמגן": ["vet magen", "vet-magen", "vetmagen", "וט מגן", "וט-מגן", "ווט מגן"],
+  "ווט מגן": ["vet magen", "vet-magen", "vetmagen", "וט מגן", "וט-מגן", "וטמגן"],
+  "ווט-מגן": ["vet magen", "vet-magen", "vetmagen", "וט מגן", "וט-מגן", "ווט מגן"],
+  "vet magen": ["וט מגן", "וט-מגן", "וטמגן", "ווט מגן", "vet-magen", "vetmagen"],
+  "vet-magen": ["וט מגן", "וט-מגן", "וטמגן", "ווט מגן", "vet magen", "vetmagen"],
+  "vetmagen": ["וט מגן", "וט-מגן", "וטמגן", "ווט מגן", "vet magen", "vet-magen"],
+  "הייספ לאב": ["hsl", "hisep", "hisep lab", "hisep labs", "hi-sep", "הייספ"],
+  "הייספ": ["hsl", "hisep", "hisep lab", "hisep labs", "הייספ לאב"],
+  "hsl": ["הייספ לאב", "הייספ", "hisep", "hisep lab"],
+  "hisep": ["הייספ לאב", "הייספ", "hsl", "hisep lab"],
 };
 
 /**
  * Generic IT & Business vocabulary (used for compound word translation, NOT as standalone customer names)
  */
 export const GENERIC_BUSINESS_TERMS: Record<string, string[]> = {
+  "וט": ["vet", "vat"],
+  "ווט": ["vet", "vat"],
+  "מגן": ["magen", "megan", "shield"],
+  "לאב": ["lab", "labs"],
+  "מעבדות": ["labs", "laboratories"],
   "מחשוב": ["computers", "computing", "it"],
   "מחשבים": ["computers", "computing", "it"],
   "שירותים": ["services"],
@@ -1066,8 +1139,11 @@ export function englishToPhoneticHebrew(english: string): string {
 
   // Multi-character sequences
   s = s.replace(/ubeya/g, "אוביה ");
+  s = s.replace(/vet[- ]?magen/g, "וט מגן ");
   s = s.replace(/tech[- ]?select/g, "טק סלקט ");
   s = s.replace(/check[- ]?point/g, "צ'ק פוינט ");
+  s = s.replace(/magen/g, "מגן");
+  s = s.replace(/\bvet\b/g, "וט");
   s = s.replace(/tech/g, "טק");
   s = s.replace(/select/g, "סלקט");
   s = s.replace(/point/g, "פוינט");
@@ -1093,13 +1169,13 @@ export function englishToPhoneticHebrew(english: string): string {
   s = s.replace(/ee/g, "י");
   s = s.replace(/tz|ts/g, "צ");
 
-  // Single letter substitution
+  // Single letter substitution (standard Israeli Hebrew spelling omits internal short a/e vowels)
   const charMap: Record<string, string> = {
-    a: "א",
+    a: "",
     b: "ב",
     c: "ק",
     d: "ד",
-    e: "א",
+    e: "",
     f: "פ",
     g: "ג",
     h: "ה",
@@ -1126,7 +1202,15 @@ export function englishToPhoneticHebrew(english: string): string {
   let out = "";
   for (let i = 0; i < s.length; i++) {
     const ch = s[i];
-    out += charMap[ch] !== undefined ? charMap[ch] : ch;
+    const isWordStart = i === 0 || /[\s\-_.]/.test(s[i - 1]);
+    const isWordEnd = i === s.length - 1 || /[\s\-_.]/.test(s[i + 1]);
+    if (ch === "a") {
+      out += isWordStart ? "א" : isWordEnd ? "ה" : "";
+    } else if (ch === "e") {
+      out += isWordStart ? "א" : "";
+    } else {
+      out += charMap[ch] !== undefined ? charMap[ch] : ch;
+    }
   }
 
   return normalizeCustomerString(out);
@@ -1140,20 +1224,39 @@ export function generateCustomerVariants(raw: string): string[] {
   const normalized = normalizeCustomerString(raw);
   const variants = new Set<string>();
 
-  if (normalized) variants.add(normalized);
+  if (normalized) {
+    variants.add(normalized);
+    const noSpace = normalized.replace(/\s+/g, "");
+    if (noSpace.length >= 2) variants.add(noSpace);
+  }
+
+  const skeleton = toConsonantSkeletonBilingual(raw);
+  if (skeleton && skeleton.length >= 2) {
+    variants.add(skeleton);
+    const skelNoSpace = skeleton.replace(/\s+/g, "");
+    if (skelNoSpace.length >= 2) variants.add(skelNoSpace);
+  }
 
   // Add all intelligent bilingual queries & transliterations from bilingualCustomerMatcher
   const bilingualExpanded = expandBilingualCustomerQueries(raw);
   for (const b of bilingualExpanded) {
     const normB = normalizeCustomerString(b);
-    if (normB) variants.add(normB);
+    if (normB) {
+      variants.add(normB);
+      const normBNoSpace = normB.replace(/\s+/g, "");
+      if (normBNoSpace.length >= 2) variants.add(normBNoSpace);
+    }
   }
 
   // Check dictionary for exact full customer names
   const lower = raw.toLowerCase().trim();
   if (BILINGUAL_CUSTOMER_DICTIONARY[lower]) {
     for (const d of BILINGUAL_CUSTOMER_DICTIONARY[lower]) {
-      variants.add(normalizeCustomerString(d));
+      const nd = normalizeCustomerString(d);
+      if (nd) {
+        variants.add(nd);
+        variants.add(nd.replace(/\s+/g, ""));
+      }
     }
   }
 
@@ -1161,22 +1264,34 @@ export function generateCustomerVariants(raw: string): string[] {
   for (const [key, syns] of Object.entries(BILINGUAL_CUSTOMER_DICTIONARY)) {
     if (lower === key) {
       for (const syn of syns) {
-        variants.add(normalizeCustomerString(syn));
+        const ns = normalizeCustomerString(syn);
+        if (ns) {
+          variants.add(ns);
+          variants.add(ns.replace(/\s+/g, ""));
+        }
       }
-    } else if (lower.includes(key) && key.length >= 3) {
+    } else if (lower.includes(key) && key.length >= 2) {
       for (const syn of syns) {
         const replaced = lower.replace(key, syn);
-        variants.add(normalizeCustomerString(replaced));
+        const nr = normalizeCustomerString(replaced);
+        if (nr) {
+          variants.add(nr);
+          variants.add(nr.replace(/\s+/g, ""));
+        }
       }
     }
   }
 
-  // Check generic business terms for compound translations (e.g. "טכנולוגיות" -> "technologies")
+  // Check generic business terms for compound translations (e.g. "וט מגן" -> "vet magen")
   for (const [term, syns] of Object.entries(GENERIC_BUSINESS_TERMS)) {
-    if (lower.includes(term) && term.length >= 3) {
+    if (lower.includes(term) && term.length >= 2) {
       for (const syn of syns) {
         const replaced = lower.replace(term, syn);
-        variants.add(normalizeCustomerString(replaced));
+        const nr = normalizeCustomerString(replaced);
+        if (nr) {
+          variants.add(nr);
+          variants.add(nr.replace(/\s+/g, ""));
+        }
       }
     }
   }
@@ -1185,11 +1300,13 @@ export function generateCustomerVariants(raw: string): string[] {
   const latinPhonetic = hebrewToPhoneticLatin(raw);
   if (latinPhonetic && latinPhonetic !== normalized) {
     variants.add(latinPhonetic);
+    variants.add(latinPhonetic.replace(/\s+/g, ""));
   }
 
   const hebrewPhonetic = englishToPhoneticHebrew(raw);
   if (hebrewPhonetic && hebrewPhonetic !== normalized) {
     variants.add(hebrewPhonetic);
+    variants.add(hebrewPhonetic.replace(/\s+/g, ""));
   }
 
   return Array.from(variants).filter((v) => v.length > 0);
@@ -1277,14 +1394,32 @@ export async function findCustomer(
 
   const rawQuery = query.trim();
   const queryVariants = generateCustomerVariants(rawQuery);
+  const querySkeleton = toConsonantSkeletonBilingual(rawQuery);
+  const querySkeletonNoSpace = querySkeleton.replace(/\s+/g, "");
   const scored: CustomerMatch[] = [];
 
   for (const customer of customers) {
     const rawName = customer.name.trim();
     const customerVariants = generateCustomerVariants(rawName);
+    const custSkeleton = toConsonantSkeletonBilingual(rawName);
+    const custSkeletonNoSpace = custSkeleton.replace(/\s+/g, "");
 
     let bestPairScore = 0;
     let bestPairReason = "";
+
+    // Check consonant skeleton match first (handles Hebrew without vowels vs English with vowels, e.g., "וט מגן" <-> "Vet Magen" / "Vetmagen")
+    if (querySkeletonNoSpace.length >= 3 && custSkeletonNoSpace.length >= 3) {
+      if (querySkeleton === custSkeleton || querySkeletonNoSpace === custSkeletonNoSpace) {
+        bestPairScore = 0.96;
+        bestPairReason = "התאמת שלד עיצורים דו-לשונית מלאה (עברית ↔ אנגלית)";
+      } else if (
+        custSkeletonNoSpace.includes(querySkeletonNoSpace) ||
+        querySkeletonNoSpace.includes(custSkeletonNoSpace)
+      ) {
+        bestPairScore = 0.89;
+        bestPairReason = "התאמת שלד עיצורים דו-לשונית (הכלה)";
+      }
+    }
 
     // Test all pairs of query variants and customer variants
     for (const qVar of queryVariants) {
@@ -1394,6 +1529,39 @@ export async function findCustomer(
   // Sort descending by score
   scored.sort((a, b) => b.score - a.score);
 
+  // If no strong deterministic match (< 0.85) and we have SharePoint customers, use Gemini semantic bilingual matcher as fallback
+  if ((scored.length === 0 || scored[0].score < 0.85) && customers.length > 0) {
+    try {
+      const candidateNames = Array.from(new Set(customers.map((c) => c.name)));
+      const geminiMatch = await Promise.race([
+        matchCustomerWithGemini(rawQuery, candidateNames, env),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 3500)),
+      ]);
+      if (geminiMatch && geminiMatch.matchedName && geminiMatch.confidence >= 0.7) {
+        const matchedFolders = customers.filter(
+          (c) => c.name.trim().toLowerCase() === geminiMatch.matchedName!.trim().toLowerCase()
+        );
+        for (const mf of matchedFolders) {
+          const existingIdx = scored.findIndex((s) => s.customer.id === mf.id);
+          const newScore = Math.max(0.92, Math.round(geminiMatch.confidence * 100) / 100);
+          if (existingIdx >= 0) {
+            scored[existingIdx].score = Math.max(scored[existingIdx].score, newScore);
+            scored[existingIdx].matchReason = geminiMatch.reason || "התאמה סמנטית דו-לשונית חכמה";
+          } else {
+            scored.push({
+              customer: mf,
+              score: newScore,
+              matchReason: geminiMatch.reason || "התאמה סמנטית דו-לשונית חכמה",
+            });
+          }
+        }
+        scored.sort((a, b) => b.score - a.score);
+      }
+    } catch {
+      // ignore Gemini fallback error
+    }
+  }
+
   return scored.slice(0, maxResults);
 }
 
@@ -1426,16 +1594,19 @@ export async function checkCustomerExistsInSharePoint(
 
   // 1. Try finding in live SharePoint structure
   try {
-    const matches = await findCustomer(cleanQuery, env, { minScore: 0.50, maxResults: 3 });
-    if (matches.length > 0 && matches[0].score >= 0.50) {
+    const matches = await findCustomer(cleanQuery, env, { minScore: 0.45, maxResults: 3 });
+    if (matches.length > 0 && matches[0].score >= 0.45) {
       const topMatch = matches[0];
       const queryNorm = normalizeCustomerString(cleanQuery);
       const topNorm = normalizeCustomerString(topMatch.customer.name);
+      const querySkel = toConsonantSkeletonBilingual(cleanQuery).replace(/\s+/g, "");
+      const topSkel = toConsonantSkeletonBilingual(topMatch.customer.name).replace(/\s+/g, "");
 
-      // Only adopt SharePoint folder name if confidence is very high (>= 0.88) or direct substring/prefix match
+      // Adopt SharePoint folder name if confidence >= 0.72 or consonant skeleton/substring match
       const isStrongMatch =
-        topMatch.score >= 0.88 ||
+        topMatch.score >= 0.72 ||
         queryNorm === topNorm ||
+        (querySkel.length >= 3 && querySkel === topSkel) ||
         topNorm.startsWith(queryNorm) ||
         queryNorm.startsWith(topNorm);
 
@@ -1662,77 +1833,129 @@ export function matchMonthItem(
   if (!items || items.length === 0) return null;
 
   const mm = month < 10 ? `0${month}` : `${month}`;
+  const mSingle = String(month);
   const yy = String(year).slice(-2);
-  const targetHebrewAliases = HEBREW_MONTHS[month] || [];
+  const prevYear = year - 1;
+  const prevYy = String(prevYear).slice(-2);
+  const targetHebrewAliases = (HEBREW_MONTHS[month] || []).map((a) => a.toLowerCase());
 
-  // Identify all other Hebrew month aliases to prevent cross-month false positives
-  const otherMonthHebrewAliases: string[] = [];
+  // Identify other months' full & abbreviated names to prevent cross-month false positives
+  const otherMonthAliases: string[] = [];
   for (let m = 1; m <= 12; m++) {
     if (m !== month) {
       const aliases = HEBREW_MONTHS[m] || [];
       for (const a of aliases) {
-        if (a.length >= 3) otherMonthHebrewAliases.push(a.toLowerCase());
+        if (a.length >= 3) otherMonthAliases.push(a.toLowerCase());
       }
     }
   }
 
   // Pre-filter items to exclude temp Excel lock files
-  const validItems = items.filter((i) => !i.name.startsWith("~$"));
+  const validItems = items.filter((i) => i && i.name && !String(i.name).startsWith("~$"));
 
   let bestItem: any = null;
   let bestScore = 0;
 
   for (const item of validItems) {
-    const rawName = (item.name || "").toLowerCase();
-    const cleanName = rawName.replace(/\.xlsx$/i, "").trim();
+    const rawItemName = String(item.name || "").toLowerCase();
+    const cleanFileName = rawItemName.replace(/\.(xlsx|xlsm|xls|xlsb)$/i, "").trim();
+    const cleanParentName = String(item.parentFolderName || "").toLowerCase().trim();
+    const combinedText = cleanParentName ? `${cleanParentName} ${cleanFileName}` : cleanFileName;
 
-    // 1. Negative check: if this file explicitly contains ANOTHER month name, REJECT!
-    const hasOtherHebrewMonth = otherMonthHebrewAliases.some((other) => {
-      const regex = new RegExp(`(^|[\\s._-])${other}([\\s._-]|$)`, "i");
-      return regex.test(cleanName) || cleanName.includes(other);
+    // Check if the file or its parent folder explicitly mentions the TARGET month name
+    const hasTargetMonthName = targetHebrewAliases.some((alias) => {
+      if (alias.length >= 4) {
+        // Full month names like "נובמבר", "november", "ספטמבר", "אוקטובר" can appear anywhere (even attached like "וט מגן-נובמבר25")
+        return combinedText.includes(alias);
+      }
+      // 3-letter abbreviations ("נוב", "nov", "ספט") require token boundary or adjacent digits
+      const abbrRegex = new RegExp(`(^|[\\s._\\-/()])${alias}([\\s._\\-/()0-9]|$)`, "i");
+      return abbrRegex.test(combinedText);
     });
-    if (hasOtherHebrewMonth) {
-      continue; // Skip! Belongs to a different month!
+
+    // 1. Negative check: if this file explicitly contains ANOTHER month name as a distinct token (and does NOT have the target month name), REJECT!
+    if (!hasTargetMonthName) {
+      const hasOtherMonthName = otherMonthAliases.some((other) => {
+        if (other.length >= 5) {
+          // Full month names (e.g. "אוקטובר", "דצמבר", "ספטמבר", "ינואר", "פברואר", "אוגוסט")
+          return cleanFileName.includes(other);
+        }
+        // Short month names/abbreviations ("מאי", "יונ", "יול", "אפר", "מרץ", "נוב") MUST match strict token boundaries, NEVER substring!
+        const tokenRegex = new RegExp(`(^|[\\s._\\-/()])${other}([\\s._\\-/()0-9]|$)`, "i");
+        return tokenRegex.test(cleanFileName);
+      });
+      if (hasOtherMonthName) {
+        continue;
+      }
+
+      // Also check if the file explicitly has a DIFFERENT numeric month paired with a year (e.g. "10.2026", "10.25", "2026-10")
+      let hasOtherNumericMonth = false;
+      for (let m = 1; m <= 12; m++) {
+        if (m === month) continue;
+        const otherMm = m < 10 ? `0${m}` : `${m}`;
+        const otherNumericRegex = new RegExp(
+          `(?:^|[\\s._\\-/()🇺])${otherMm}[-._/](?:202[4-9]|2[4-9])(?:$|[\\s._\\-/()])|(?:^|[\\s._\\-/()])(?:202[4-9])[-._/]${otherMm}(?:$|[\\s._\\-/()])`
+        );
+        if (otherNumericRegex.test(cleanFileName)) {
+          hasOtherNumericMonth = true;
+          break;
+        }
+      }
+      if (hasOtherNumericMonth) {
+        continue;
+      }
     }
 
     let score = 0;
 
-    // 2. Target Hebrew month name match (e.g. "ספטמבר", "ספט")
-    const hasTargetHebrew = targetHebrewAliases.some((alias) => {
-      return cleanName.includes(alias.toLowerCase());
-    });
-    if (hasTargetHebrew) {
-      score += 100;
+    // 2. Target Hebrew/English month name match (e.g. "נובמבר", "נוב", "november", "nov")
+    if (hasTargetMonthName) {
+      // Higher score if the filename itself has the month name, slightly lower if only the parent folder has it
+      const inFileName = targetHebrewAliases.some((alias) =>
+        alias.length >= 4
+          ? cleanFileName.includes(alias)
+          : new RegExp(`(^|[\\s._\\-/()])${alias}([\\s._\\-/()0-9]|$)`, "i").test(cleanFileName)
+      );
+      score += inFileName ? 110 : 95;
     }
 
-    // 3. Target numeric month pattern match (e.g. "09.2026", "2026-09", "09-2026", "09-26", "09")
-    const monthPatterns = [
-      new RegExp(`(^|[\\s._-])${mm}([\\s._-]|$)`),
-      new RegExp(`\\b${year}[-.]${mm}\\b`),
-      new RegExp(`\\b${mm}[-.]${year}\\b`),
-      new RegExp(`\\b${mm}[-.]${yy}\\b`),
+    // 3. Target numeric month pattern match (e.g. "11.2026", "11.25", "2026-11", "11-26", "11_2025", "11")
+    const numericMonthWithAnyYearPatterns = [
+      new RegExp(`(?:^|[\\s._\\-/()])${mm}[-._/](?:202[0-9]|2[0-9])(?:$|[\\s._\\-/()])`),
+      new RegExp(`(?:^|[\\s._\\-/()])(?:202[0-9])[-._/]${mm}(?:$|[\\s._\\-/()])`),
+      new RegExp(`(?:^|[\\s._\\-/()])${mSingle}[-._/](?:202[0-9]|2[0-9])(?:$|[\\s._\\-/()])`),
+      new RegExp(`(^|[\\s._\\-/()])${mm}([\\s._\\-/()]|$)`),
     ];
-    for (const pat of monthPatterns) {
-      if (pat.test(cleanName)) {
-        score += 80;
+    for (const pat of numericMonthWithAnyYearPatterns) {
+      if (pat.test(combinedText)) {
+        score += 85;
         break;
       }
     }
 
-    // 4. Target year match bonus (e.g. "2026" or "26")
-    if (cleanName.includes(String(year)) || cleanName.includes(` ${yy} `) || cleanName.endsWith(` ${yy}`) || cleanName.includes(`-${yy}-`)) {
-      score += 30;
+    // 4. Target year match bonus (e.g. "2026" or "26", and also support previous year "2025" / "25" when logging November/recent months)
+    const exactYearRegex = new RegExp(`(?:^|[\\s._\\-/()א-תa-z])${year}(?:$|[\\s._\\-/()])|(?:^|[\\s._\\-/()])${yy}(?:$|[\\s._\\-/()])`);
+    const prevYearRegex = new RegExp(`(?:^|[\\s._\\-/()א-תa-z])${prevYear}(?:$|[\\s._\\-/()])|(?:^|[\\s._\\-/()])${prevYy}(?:$|[\\s._\\-/()])`);
+    if (exactYearRegex.test(combinedText)) {
+      score += 40;
+    } else if (prevYearRegex.test(combinedText)) {
+      score += 20;
     }
 
-    // 5. Customer name match bonus (e.g. "אסיו")
+    // 5. Customer name or variant match bonus (e.g. "וט מגן" or "Vet Magen")
     if (customerName) {
-      const custNorm = customerName.toLowerCase().trim();
-      if (custNorm && cleanName.includes(custNorm)) {
+      const custVariants = generateCustomerVariants(customerName);
+      if (custVariants.some((v) => v.length >= 2 && combinedText.includes(v))) {
         score += 20;
       }
     }
 
-    // 6. Direct Excel file bonus (.xlsx, file facet) or folder
+    // 6. Generic hours file name bonus (if the customer only has a single general hours file like "שעות עבודה וט מגן.xlsx" with no month in its name)
+    if (score === 0 && /(?:שעות|דיווח|hours|timesheet)/i.test(cleanFileName)) {
+      score += 50;
+    }
+
+    // 7. Direct Excel file bonus (.xlsx, file facet) or folder
     if (isExcelDriveItem(item)) {
       score += 10;
     } else if (item.folder) {
@@ -1745,7 +1968,7 @@ export function matchMonthItem(
     }
   }
 
-  // Only accept if score passed significant threshold
+  // Accept if score passed threshold (80+ means it matched either the target month name or target month number)
   if (bestScore >= 80) {
     return bestItem;
   }
@@ -1754,11 +1977,10 @@ export function matchMonthItem(
 }
 
 /**
- * 3. findMonthTarget(customer, date) – list children of "{customer}/שעות עבודה".
- * DETECT the existing month naming pattern from existing names (e.g. "2026-09", "09.2026",
- * "ספטמבר 2026", "09-26"...) and select the item for the requested month.
+ * 3. findMonthTarget(customer, date) – list children of "{customer}/שעות עבודה" (and sibling/root folders).
+ * DETECT the existing month naming pattern from existing names (e.g. "2026-11", "11.2026",
+ * "נובמבר 2026", "נובמבר 2025", "11-26"...) and select the item for the requested month.
  * Handle both: month folder -> the .xlsx inside, or .xlsx per month.
- * If not found -> return a clear "not found" with the names that do exist. NEVER create files.
  */
 export async function findMonthTarget(
   customerInput: string | CustomerFolder,
@@ -1766,130 +1988,274 @@ export async function findMonthTarget(
   env?: any
 ): Promise<MonthTargetResult> {
   const { year, month, ym } = parseYearMonth(dateInput);
-  const mm = month < 10 ? `0${month}` : `${month}`;
-  const yy = String(year).slice(-2);
-  const hebrewNames = HEBREW_MONTHS[month] || [];
 
-  // 1. Resolve customer folder
-  let customerFolder: CustomerFolder | null = null;
+  // 1. Resolve candidate customer folders (if a customer has both a library and a folder, or close matches, inspect them!)
+  let candidateCustomers: CustomerFolder[] = [];
   if (typeof customerInput === "object" && customerInput.id) {
-    customerFolder = customerInput;
+    candidateCustomers = [customerInput];
+    // Also include any other folder/library with the same or bilingual name from cache
+    try {
+      const extraMatches = await findCustomer(customerInput.name, env, { minScore: 0.75, maxResults: 3 });
+      for (const m of extraMatches) {
+        if (!candidateCustomers.some((c) => c.id === m.customer.id)) {
+          candidateCustomers.push(m.customer);
+        }
+      }
+    } catch {
+      // ignore
+    }
   } else {
-    const query = typeof customerInput === "string" ? customerInput : "";
-    const matches = await findCustomer(query, env, { minScore: 0.5, maxResults: 1 });
-    if (matches.length > 0) {
-      customerFolder = matches[0].customer;
+    const query = typeof customerInput === "string" ? customerInput.trim() : "";
+    const matches = await findCustomer(query, env, { minScore: 0.42, maxResults: 3 });
+    candidateCustomers = matches.map((m) => m.customer);
+  }
+
+  const { driveId: defaultDriveId, siteId } = await resolveSharePointDrive(env);
+  const { hoursFolderName } = getGraphHoursConfig(env);
+
+  // Helper to collect all Excel files for a single CustomerFolder
+  const collectExcelFilesForCustomer = async (
+    custFolder: CustomerFolder
+  ): Promise<{ files: any[]; rootItems: any[]; driveId: string }> => {
+    const driveId = custFolder.driveId || defaultDriveId;
+    const files: any[] = [];
+    const addFile = (item: any, parentFolderName?: string) => {
+      if (!isExcelDriveItem(item)) return;
+      const existing = files.find((f) => f.id === item.id);
+      if (!existing) {
+        files.push(parentFolderName ? { ...item, parentFolderName } : item);
+      } else if (parentFolderName && !existing.parentFolderName) {
+        existing.parentFolderName = parentFolderName;
+      }
+    };
+
+    const custChildrenUrl =
+      custFolder.type === "library"
+        ? `https://graph.microsoft.com/v1.0/drives/${driveId}/root/children?$top=200`
+        : `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${custFolder.id}/children?$top=200`;
+
+    let custItems: any[] = [];
+    try {
+      const custChildrenRes = await fetchGraph(custChildrenUrl, { method: "GET" }, env);
+      if (custChildrenRes.ok) {
+        const custData: any = await custChildrenRes.json();
+        custItems = custData.value || [];
+      }
+    } catch (err) {
+      console.warn(`[findMonthTarget] Failed reading children of ${custFolder.name}:`, err);
+    }
+
+    // Always add any Excel files sitting directly in the customer's root folder!
+    for (const item of custItems) {
+      if (isExcelDriveItem(item)) {
+        addFile(item, "");
+      }
+    }
+
+    // Find ALL relevant subfolders inside the customer root:
+    // Priority 1: exact "שעות עבודה"
+    // Priority 2: any folder containing "שעות", "hours", "timesheet", "דיווח", "דוחות", "billing"
+    // Priority 3: year folders ("2026", "2025") or month folders ("נובמבר", "11", etc.)
+    const hoursFolderPattern = /(?:שעות|דוחות|דיווח|hours|timesheet|timesheets|billing|time\s*tracking)/i;
+    const yearOrMonthFolderPattern = /(?:^|[\s._\-\/])(?:202[3-9]|0?[1-9]|1[0-2]|ינואר|פברואר|מרץ|מרס|אפריל|מאי|יוני|יולי|אוגוסט|ספטמבר|אוקטובר|נובמבר|דצמבר|jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(?:$|[\s._\-\/])/i;
+
+    const candidateSubfolders = custItems
+      .filter(
+        (item) =>
+          Boolean(item.folder) &&
+          (item.name === hoursFolderName ||
+            hoursFolderPattern.test(item.name) ||
+            yearOrMonthFolderPattern.test(item.name))
+      )
+      .sort((a, b) => {
+        const aExact = a.name === hoursFolderName ? 0 : /שעות|hours|timesheet/i.test(a.name) ? 1 : 2;
+        const bExact = b.name === hoursFolderName ? 0 : /שעות|hours|timesheet/i.test(b.name) ? 1 : 2;
+        return aExact - bExact;
+      });
+
+    // If no subfolder matched the pattern, inspect up to 5 general subfolders in case the customer named a subfolder after themselves or a project
+    const foldersToInspect =
+      candidateSubfolders.length > 0
+        ? candidateSubfolders
+        : custItems.filter((item) => Boolean(item.folder)).slice(0, 5);
+
+    // Fetch level-1 subfolders in parallel
+    const level2FoldersToInspect: Array<{ id: string; name: string }> = [];
+    await Promise.all(
+      foldersToInspect.map(async (folderItem) => {
+        try {
+          const subUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${folderItem.id}/children?$top=200`;
+          const subRes = await fetchGraph(subUrl, { method: "GET" }, env);
+          if (subRes.ok) {
+            const subData: any = await subRes.json();
+            for (const subItem of subData.value || []) {
+              if (isExcelDriveItem(subItem)) {
+                addFile(subItem, folderItem.name);
+              } else if (subItem.folder) {
+                level2FoldersToInspect.push({
+                  id: subItem.id,
+                  name: `${folderItem.name}/${subItem.name}`,
+                });
+              }
+            }
+          }
+        } catch {
+          // ignore subfolder read errors
+        }
+      })
+    );
+
+    // Fetch level-2 subfolders (e.g. "שעות עבודה/2026" or "שעות עבודה/נובמבר 2026") in parallel
+    if (level2FoldersToInspect.length > 0) {
+      await Promise.all(
+        level2FoldersToInspect.slice(0, 12).map(async (subFolder) => {
+          try {
+            const sub2Url = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${subFolder.id}/children?$top=100`;
+            const sub2Res = await fetchGraph(sub2Url, { method: "GET" }, env);
+            if (sub2Res.ok) {
+              const sub2Data: any = await sub2Res.json();
+              for (const sub2Item of sub2Data.value || []) {
+                if (isExcelDriveItem(sub2Item)) {
+                  addFile(sub2Item, subFolder.name);
+                }
+              }
+            }
+          } catch {
+            // ignore level-2 read errors
+          }
+        })
+      );
+    }
+
+    // Also run recursive search inside this customer's library/folder for any .xlsx or .xls files
+    try {
+      const custSearchUrl =
+        custFolder.type === "library"
+          ? `https://graph.microsoft.com/v1.0/drives/${driveId}/root/search(q='xlsx')?$top=100`
+          : `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${custFolder.id}/search(q='xlsx')?$top=100`;
+      const searchRes = await fetchGraph(custSearchUrl, { method: "GET" }, env);
+      if (searchRes.ok) {
+        const sData: any = await searchRes.json();
+        const custNameNorm = normalizeCustomerString(custFolder.name);
+        for (const item of sData.value || []) {
+          if (!isExcelDriveItem(item)) continue;
+          // Note: Graph's /items/{id}/search sometimes searches the entire drive if folder-scoped search is unsupported.
+          // Verify parentReference.path if custFolder is a folder so we don't mix other customers' files!
+          if (custFolder.type === "folder" && item.parentReference?.path) {
+            const decodedPath = decodeURIComponent(String(item.parentReference.path)).toLowerCase();
+            if (
+              !decodedPath.includes(custFolder.name.toLowerCase()) &&
+              (!custNameNorm || !decodedPath.includes(custNameNorm))
+            ) {
+              continue;
+            }
+          }
+          const parentPath = item.parentReference?.path
+            ? decodeURIComponent(String(item.parentReference.path)).split(":").pop() || ""
+            : "";
+          addFile(item, parentPath);
+        }
+      }
+    } catch {
+      // ignore search error
+    }
+
+    return { files, rootItems: custItems, driveId };
+  };
+
+  let chosenCustomerFolder: CustomerFolder | null = candidateCustomers[0] || null;
+  let candidateExcelFiles: any[] = [];
+  let targetFolderItems: any[] = [];
+  let activeDriveId = defaultDriveId;
+
+  // Inspect candidate customer folders in order until we find one that has Excel files (or a month match)
+  for (const cand of candidateCustomers) {
+    const res = await collectExcelFilesForCustomer(cand);
+    if (res.files.length > 0) {
+      chosenCustomerFolder = cand;
+      candidateExcelFiles = res.files;
+      targetFolderItems = res.rootItems;
+      activeDriveId = res.driveId;
+      // If we found an exact month match in this candidate, stop immediately; otherwise check if a sibling folder/library has the exact month match
+      const mMatch = matchMonthItem(res.files, year, month, cand.name);
+      if (mMatch) {
+        break;
+      }
+    } else if (!chosenCustomerFolder) {
+      chosenCustomerFolder = cand;
+      targetFolderItems = res.rootItems;
+      activeDriveId = res.driveId;
     }
   }
 
-  if (!customerFolder) {
+  // Fallback: if no Excel files were found via folder traversal (or customer folder wasn't found in root),
+  // search the SharePoint default drive directly for Excel files matching the customer queryvariants!
+  const rawQueryStr =
+    typeof customerInput === "string"
+      ? customerInput.trim()
+      : chosenCustomerFolder?.name || "";
+  if (candidateExcelFiles.length === 0 && rawQueryStr.length >= 2) {
+    try {
+      const variantsToSearch = Array.from(
+        new Set([rawQueryStr, ...generateCustomerVariants(rawQueryStr).slice(0, 4)])
+      ).filter((v) => v.length >= 2);
+
+      for (const qTerm of variantsToSearch.slice(0, 3)) {
+        const directSearchUrl = `https://graph.microsoft.com/v1.0/drives/${defaultDriveId}/root/search(q='${encodeURIComponent(qTerm)}')?$top=50`;
+        const dRes = await fetchGraph(directSearchUrl, { method: "GET" }, env);
+        if (dRes.ok) {
+          const dData: any = await dRes.json();
+          for (const item of dData.value || []) {
+            if (isExcelDriveItem(item) && !candidateExcelFiles.some((f) => f.id === item.id)) {
+              const parentPath = item.parentReference?.path
+                ? decodeURIComponent(String(item.parentReference.path)).split(":").pop() || ""
+                : "";
+              candidateExcelFiles.push({ ...item, parentFolderName: parentPath });
+            }
+          }
+          if (candidateExcelFiles.length > 0) {
+            activeDriveId = defaultDriveId;
+            if (!chosenCustomerFolder) {
+              chosenCustomerFolder = {
+                id: `search_${Date.now()}`,
+                name: rawQueryStr,
+                driveId: defaultDriveId,
+                type: "folder",
+              };
+            }
+            break;
+          }
+        }
+      }
+    } catch {
+      // ignore direct search fallback error
+    }
+  }
+
+  if (!chosenCustomerFolder) {
     return {
       found: false,
-      message: `לא נמצאה תיקיית לקוח תואמת עבור "${typeof customerInput === "string" ? customerInput : ""}"`,
-      customerName: typeof customerInput === "string" ? customerInput : "",
+      message: `לא נמצאה תיקיית לקוח תואמת עבור "${rawQueryStr}"`,
+      customerName: rawQueryStr,
       requestedMonth: ym,
     };
   }
 
-  const { driveId: defaultDriveId } = await resolveSharePointDrive(env);
-  const { hoursFolderName } = getGraphHoursConfig(env);
-  const driveId = customerFolder.driveId || defaultDriveId;
-
-  // 2. Read children of customer folder / library
-  let custChildrenUrl = "";
-  if (customerFolder.type === "library") {
-    custChildrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/root/children?$top=100`;
-  } else {
-    custChildrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${customerFolder.id}/children?$top=100`;
-  }
-
-  const custChildrenRes = await fetchGraph(custChildrenUrl, { method: "GET" }, env);
-  if (!custChildrenRes.ok) {
-    const err = await custChildrenRes.text().catch(() => "");
-    throw new Error(`שגיאה בקריאת תוכן תיקיית הלקוח ${customerFolder.name}: ${err}`);
-  }
-
-  const custData: any = await custChildrenRes.json();
-  const custItems: any[] = custData.value || [];
-
-  // Locate the folder "שעות עבודה" (or folder containing "שעות", "hours", "timesheet", "billing", "דוחות", etc.)
-  const hoursFolderPattern = /(?:שעות|דוחות|דיווח|hours|timesheet|timesheets|billing|time\s*tracking)/i;
-  const hoursFolder = custItems.find(
-    (item) => Boolean(item.folder) && (item.name === hoursFolderName || hoursFolderPattern.test(item.name))
-  );
-
-  let targetFolderId = hoursFolder ? hoursFolder.id : null;
-  let targetFolderItems: any[] = [];
-
-  if (targetFolderId) {
-    // Read ONLY inside "שעות עבודה"
-    const hoursChildrenUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${targetFolderId}/children?$top=200`;
-    const hoursChildrenRes = await fetchGraph(hoursChildrenUrl, { method: "GET" }, env);
-    if (hoursChildrenRes.ok) {
-      const hoursData: any = await hoursChildrenRes.json();
-      targetFolderItems = hoursData.value || [];
-    }
-  } else {
-    // Fallback: if no explicit subfolder found, inspect customer items directly
-    targetFolderItems = custItems;
-  }
-
-  // Collect Excel files from customer folder structure
-  const candidateExcelFiles: any[] = [];
-  for (const item of targetFolderItems) {
-    if (isExcelDriveItem(item)) {
-      candidateExcelFiles.push(item);
-    } else if (item.folder) {
-      // Month or year subfolders (e.g. "2026-09", "2026", "ספטמבר 2026")
-      try {
-        const subUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${item.id}/children?$top=50`;
-        const subRes = await fetchGraph(subUrl, { method: "GET" }, env);
-        if (subRes.ok) {
-          const subData: any = await subRes.json();
-          for (const subItem of subData.value || []) {
-            if (isExcelDriveItem(subItem)) {
-              candidateExcelFiles.push({
-                ...subItem,
-                parentFolderName: item.name,
-              });
-            }
-          }
-        }
-      } catch (err) {
-        // ignore subfolder read errors
-      }
-    }
-  }
-
-  // Proactively run fast recursive search for Excel files in this customer's drive/folder
-  try {
-    const custSearchUrl = customerFolder.type === "library"
-      ? `https://graph.microsoft.com/v1.0/drives/${driveId}/root/search(q='xlsx')?$top=100`
-      : `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${customerFolder.id}/search(q='xlsx')?$top=100`;
-    const searchRes = await fetchGraph(custSearchUrl, { method: "GET" }, env);
-    if (searchRes.ok) {
-      const sData: any = await searchRes.json();
-      for (const item of sData.value || []) {
-        if (isExcelDriveItem(item) && !candidateExcelFiles.some((f) => f.id === item.id)) {
-          candidateExcelFiles.push(item);
-        }
-      }
-    }
-  } catch (searchErr) {
-    // search endpoint may vary by drive type, fallback is already populated
-  }
-
-  // SORT candidate Excel files: NEWEST FIRST! (by lastModifiedDateTime descending)
+  // SORT candidate Excel files:
+  // Prioritize files inside "שעות עבודה" / hours folders, and by newest lastModifiedDateTime!
   candidateExcelFiles.sort((a, b) => {
+    const aInHours = /שעות|hours|timesheet/i.test(String(a.parentFolderName || "")) ? 1 : 0;
+    const bInHours = /שעות|hours|timesheet/i.test(String(b.parentFolderName || "")) ? 1 : 0;
+    if (aInHours !== bInHours) return bInHours - aInHours;
     const timeA = a.lastModifiedDateTime ? new Date(a.lastModifiedDateTime).getTime() : 0;
     const timeB = b.lastModifiedDateTime ? new Date(b.lastModifiedDateTime).getTime() : 0;
     return timeB - timeA;
   });
 
-  // Populate availableFiles with all files from "שעות עבודה" (ordered newest to oldest) for manual selection
+  // Populate availableFiles with all discovered Excel files for this customer
   const availableFiles: Array<{ fileId: string; fileName: string; webUrl?: string }> = [];
   for (const f of candidateExcelFiles) {
-    recordFileDrive(f.id, driveId);
+    recordFileDrive(f.id, activeDriveId);
     if (!availableFiles.some((x) => x.fileId === f.id)) {
       availableFiles.push({
         fileId: f.id,
@@ -1901,41 +2267,39 @@ export async function findMonthTarget(
 
   const existingNames = candidateExcelFiles.map((i) => i.name);
 
-  // If no Excel files found inside "שעות עבודה"
   if (candidateExcelFiles.length === 0) {
     return {
       found: false,
-      message: `לא נמצאו קבצי Excel בתיקיית "${hoursFolderName}" של ${customerFolder.name}.`,
-      customerName: customerFolder.name,
+      message: `לא נמצאו קבצי Excel בתיקיית "${hoursFolderName}" של ${chosenCustomerFolder.name}.`,
+      customerName: chosenCustomerFolder.name,
       requestedMonth: ym,
       existingItems: targetFolderItems.map((i) => i.name),
       availableFiles: [],
     };
   }
 
-  // "ותמיד שיקח את הקובץ הכי חדש":
-  // Check if a file specifically matches the current target month; otherwise take the absolute newest file!
-  const monthMatch = matchMonthItem(candidateExcelFiles, year, month, customerFolder.name);
+  // Match the target month (e.g. November / 11); if no file specifically matches that month, fallback to newest file
+  const monthMatch = matchMonthItem(candidateExcelFiles, year, month, chosenCustomerFolder.name);
   const chosenFile = monthMatch || candidateExcelFiles[0];
 
-  recordFileDrive(chosenFile.id, driveId);
+  recordFileDrive(chosenFile.id, activeDriveId);
 
   const folderPrefix = chosenFile.parentFolderName
-    ? `${customerFolder.name}/${hoursFolderName}/${chosenFile.parentFolderName}`
-    : `${customerFolder.name}/${hoursFolderName}`;
+    ? `${chosenCustomerFolder.name}/${chosenFile.parentFolderName.replace(/^\/+/, "")}`
+    : `${chosenCustomerFolder.name}/${hoursFolderName}`;
 
   return {
     found: true,
-    customerName: customerFolder.name,
+    customerName: chosenCustomerFolder.name,
     requestedMonth: ym,
     targetType: "file",
     fileId: chosenFile.id,
     fileName: chosenFile.name,
     filePath: `${folderPrefix}/${chosenFile.name}`,
     webUrl: chosenFile.webUrl,
-    driveId,
+    driveId: activeDriveId,
     existingItems: existingNames,
-    availableFiles, // All files from "שעות עבודה" sorted newest to oldest!
+    availableFiles,
   };
 }
 
