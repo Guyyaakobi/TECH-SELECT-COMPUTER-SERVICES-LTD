@@ -1187,6 +1187,28 @@ export async function resolveSharePointList(env?: any): Promise<SharePointListIn
 /**
  * Format and write an entry into Microsoft Lists according to the exact 9 columns
  */
+const recentListsWritesCache = new Map<string, { timestamp: number; result: ListItemWriteResult }>();
+
+function getIsraelNowHoursMinutes(): { hours: number; minutes: number } {
+  try {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Jerusalem",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(new Date());
+    const h = parseInt(parts.find((p) => p.type === "hour")?.value || "12", 10);
+    const m = parseInt(parts.find((p) => p.type === "minute")?.value || "0", 10);
+    return {
+      hours: isNaN(h) ? 12 : h % 24,
+      minutes: isNaN(m) ? 0 : m,
+    };
+  } catch {
+    const now = new Date();
+    return { hours: now.getHours(), minutes: now.getMinutes() };
+  }
+}
+
 export async function writeEntryToSharePointList(
   entryData: {
     customerName: string;
@@ -1345,7 +1367,7 @@ export async function writeEntryToSharePointList(
     // Connected user display name
     const handlerUserDisplay = handlerName;
 
-    // 5 & 6. שעת התחלה ושעת סיום (HH:MM)
+    // 5 & 6. שעת התחלה ושעת סיום (HH:MM) לפי שעון ישראל (Asia/Jerusalem)
     let startTimeStr = String(entryData.startTime || "").trim();
     let endTimeStr = String(entryData.endTime || "").trim();
 
@@ -1354,16 +1376,16 @@ export async function writeEntryToSharePointList(
     } else if (startTimeStr && !endTimeStr) {
       endTimeStr = addHoursToTime(startTimeStr, durationHours);
     } else if (!startTimeStr && !endTimeStr) {
-      // Default: realistic daytime hours
-      const now = new Date();
-      const endH = Math.max(9, Math.min(now.getHours(), 19));
-      const endM = Math.floor(now.getMinutes() / 15) * 15;
+      // Default: realistic daytime hours in Asia/Jerusalem timezone
+      const ilNow = getIsraelNowHoursMinutes();
+      const endH = Math.max(9, Math.min(ilNow.hours, 19));
+      const endM = Math.floor(ilNow.minutes / 15) * 15;
       endTimeStr = `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
       startTimeStr = subtractHoursFromTime(endTimeStr, durationHours);
     }
 
     // 7. תאריך (Date)
-    const rawDate = entryData.date || new Date().toISOString().split("T")[0];
+    const rawDate = entryData.date || getIsraelDateIso(0);
     let isoDate = rawDate;
     const matchIso = rawDate.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
     if (matchIso) {
@@ -1375,6 +1397,27 @@ export async function writeEntryToSharePointList(
 
     // 9. מה נעשה (Description)
     const whatWasDone = desc;
+
+    // Idempotency / Anti-Duplicate Guard (60 seconds window)
+    const dedupKey = [
+      normalizeColString(handlerName || handlerEmail),
+      normalizeColString(customerVal),
+      isoDate,
+      String(durationVal),
+      normalizeColString(whatWasDone).slice(0, 60),
+    ].join("|");
+
+    const nowTs = Date.now();
+    for (const [k, v] of recentListsWritesCache.entries()) {
+      if (nowTs - v.timestamp > 60_000) {
+        recentListsWritesCache.delete(k);
+      }
+    }
+    const recentCached = recentListsWritesCache.get(dedupKey);
+    if (recentCached && nowTs - recentCached.timestamp < 60_000) {
+      console.log(`[SharePoint Lists] Prevented duplicate write within 60s for key: ${dedupKey}`);
+      return recentCached.result;
+    }
 
     // Build the fields object based on mapped column names
     const fields: Record<string, any> = {
@@ -1894,7 +1937,7 @@ export async function writeEntryToSharePointList(
     const createdId = String(createdItem.id || "");
     const itemUrl = createdItem.webUrl || `${listWebUrl}/DispForm.aspx?ID=${createdId}`;
 
-    return {
+    const writeSuccessResult: ListItemWriteResult = {
       success: true,
       listItemId: createdId,
       webUrl: itemUrl,
@@ -1910,6 +1953,13 @@ export async function writeEntryToSharePointList(
         "מה נעשה": whatWasDone,
       },
     };
+
+    recentListsWritesCache.set(dedupKey, {
+      timestamp: Date.now(),
+      result: writeSuccessResult,
+    });
+
+    return writeSuccessResult;
   } catch (err: any) {
     const errMsg = err?.message || String(err);
     console.warn("[SharePoint Lists] Exception in writeEntryToSharePointList:", errMsg);
@@ -2605,7 +2655,22 @@ export async function fetchSharePointListEntries(
       return (Number(b.id) || 0) - (Number(a.id) || 0);
     });
 
-    return result;
+    // Deduplicate identical list entries recorded on the same day for the same employee, customer, duration & description
+    const deduplicatedResult: SharePointListEntry[] = [];
+    const seenFingerprints = new Set<string>();
+    for (const item of result) {
+      const normEmp = normalizeColString(resolveEffectiveName(item.employeeName, item.employeeEmail));
+      const normCust = normalizeColString(item.customerName);
+      const normDesc = normalizeColString(item.description).slice(0, 50);
+      const fingerprint = `${item.date}|${normEmp}|${normCust}|${item.durationHours}|${normDesc}`;
+      if (seenFingerprints.has(fingerprint)) {
+        continue;
+      }
+      seenFingerprints.add(fingerprint);
+      deduplicatedResult.push(item);
+    }
+
+    return deduplicatedResult;
   } catch (err: any) {
     console.warn("[fetchSharePointListEntries] Error:", err);
     return [];
@@ -2718,26 +2783,48 @@ export async function getUserListsDailySummary(
     top: options.top || 400,
   });
 
-  // Also merge any dual-write entries from Central Log that might not yet be indexed by SharePoint Lists
+  // Also merge any dual-write entries from Central Log ONLY if they were not already synced to SharePoint Lists
   try {
     const centralRecords = queryCentralLog({ includeCancelled: false });
     for (const r of centralRecords) {
       const rId = r.sharepointListItemId || r.id;
-      const alreadyExists = allEntries.some(
-        (ae) =>
-          ae.id === String(rId) ||
-          (ae.date === r.date &&
-            ae.customerName === r.customerName &&
-            ae.description === r.description &&
-            Math.abs(ae.durationHours - r.durationHours) < 0.05)
-      );
+      const rEmp = resolveEffectiveName(r.employeeName, r.employeeEmail);
+      const rCustNorm = normalizeColString(r.customerName || "");
+      const rDescNorm = normalizeColString(r.description || "").slice(0, 35);
+
+      const alreadyExists = allEntries.some((ae) => {
+        if (ae.id === String(rId)) return true;
+        if (r.sharepointListItemId && ae.id === String(r.sharepointListItemId)) return true;
+        if (ae.date !== r.date) return false;
+        if (!doesEmployeeMatchQuery(ae.employeeName, ae.employeeEmail, rEmp, r.employeeEmail)) return false;
+        if (Math.abs((Number(ae.durationHours) || 0) - (Number(r.durationHours) || 0)) >= 0.05) return false;
+
+        const aeCustNorm = normalizeColString(ae.customerName || "");
+        const aeDescNorm = normalizeColString(ae.description || "").slice(0, 35);
+        const custMatch =
+          !rCustNorm ||
+          !aeCustNorm ||
+          aeCustNorm === rCustNorm ||
+          aeCustNorm.includes(rCustNorm) ||
+          rCustNorm.includes(aeCustNorm) ||
+          scoreBilingualCustomerMatch(ae.customerName, r.customerName).score >= 0.65;
+        const descMatch =
+          !rDescNorm ||
+          !aeDescNorm ||
+          aeDescNorm === rDescNorm ||
+          aeDescNorm.includes(rDescNorm.slice(0, 15)) ||
+          rDescNorm.includes(aeDescNorm.slice(0, 15));
+
+        return custMatch || descMatch;
+      });
+
       if (!alreadyExists) {
         allEntries.push({
           id: String(rId),
           webUrl: r.sharepointListWebUrl || "https://techselectltd.sharepoint.com/sites/Customers/Lists/List/AllItems.aspx",
           customerName: r.customerName,
           workType: r.workType,
-          employeeName: resolveEffectiveName(r.employeeName, r.employeeEmail),
+          employeeName: rEmp,
           employeeEmail: r.employeeEmail || "",
           startTime: r.startTime,
           endTime: r.endTime,

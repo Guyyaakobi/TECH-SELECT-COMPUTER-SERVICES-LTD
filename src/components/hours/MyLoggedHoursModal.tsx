@@ -601,6 +601,15 @@ export const MyLoggedHoursModal: React.FC<MyLoggedHoursModalProps> = ({
                                   <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-[#EFF6FF] text-[#2563EB] border border-[#DBEAFE]">
                                     {entry.workType || "טיקטים"}
                                   </span>
+
+                                  {(entry.startTime || entry.endTime) && (
+                                    <span
+                                      className="text-[11px] font-mono font-medium px-2 py-0.5 rounded-full bg-white text-[#172B4D] border border-[#DBEAFE]"
+                                      dir="ltr"
+                                    >
+                                      {entry.startTime || "09:00"} – {entry.endTime || "10:00"}
+                                    </span>
+                                  )}
                                 </div>
 
                                 <p className="text-xs text-[#172B4D] leading-relaxed whitespace-pre-line">
@@ -644,11 +653,39 @@ export const MyLoggedHoursModal: React.FC<MyLoggedHoursModalProps> = ({
 
                             {editingEntryId === entry.id && (
                               <div className="p-3 rounded-xl bg-[#EFF6FF]/60 border border-[#DBEAFE] space-y-2.5 mt-1">
-                                <div>
-                                  <label className="block text-[11px] text-[#172B4D] font-semibold mb-1.5">
-                                    היקף שעות לחיוב:
-                                  </label>
-                                  <div className="flex flex-wrap items-center gap-1.5">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                  <div>
+                                    <label className="block text-[11px] text-[#172B4D] font-semibold mb-1">
+                                      משעה:
+                                    </label>
+                                    <input
+                                      type="time"
+                                      lang="en-GB"
+                                      step="60"
+                                      value={editStartVal}
+                                      onChange={(e) => setEditStartVal(e.target.value)}
+                                      className="w-full px-2.5 py-1 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs font-mono text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
+                                      dir="ltr"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] text-[#172B4D] font-semibold mb-1">
+                                      עד שעה:
+                                    </label>
+                                    <input
+                                      type="time"
+                                      lang="en-GB"
+                                      step="60"
+                                      value={editEndVal}
+                                      onChange={(e) => setEditEndVal(e.target.value)}
+                                      className="w-full px-2.5 py-1 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs font-mono text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
+                                      dir="ltr"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] text-[#172B4D] font-semibold mb-1">
+                                      היקף שעות לחיוב:
+                                    </label>
                                     <input
                                       type="number"
                                       step="0.25"
@@ -656,24 +693,26 @@ export const MyLoggedHoursModal: React.FC<MyLoggedHoursModalProps> = ({
                                       max="12"
                                       value={editHoursVal}
                                       onChange={(e) => setEditHoursVal(e.target.value)}
-                                      className="w-20 px-2.5 py-1 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs font-bold text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
+                                      className="w-full px-2.5 py-1 rounded-lg bg-white border border-[#DBEAFE] text-[16px] sm:text-xs font-bold text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
                                     />
-                                    <div className="flex flex-wrap gap-1">
-                                      {[0.25, 0.5, 1, 1.5, 2, 3, 4].map((h) => (
-                                        <button
-                                          key={h}
-                                          type="button"
-                                          onClick={() => setEditHoursVal(String(h))}
-                                          className={`px-2 py-1 rounded-lg text-[11px] font-semibold border cursor-pointer transition-colors ${
-                                            Number(editHoursVal) === h
-                                              ? "bg-[#2563EB] text-white border-[#2563EB]"
-                                              : "bg-white text-[#172B4D] border-[#DBEAFE] hover:bg-[#EFF6FF]"
-                                          }`}
-                                        >
-                                          {h === 0.25 ? "15 דק׳" : h === 0.5 ? "30 דק׳" : `${h} ש׳`}
-                                        </button>
-                                      ))}
-                                    </div>
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {[0.25, 0.5, 1, 1.5, 2, 3, 4].map((h) => (
+                                      <button
+                                        key={h}
+                                        type="button"
+                                        onClick={() => setEditHoursVal(String(h))}
+                                        className={`px-2 py-1 rounded-lg text-[11px] font-semibold border cursor-pointer transition-colors ${
+                                          Number(editHoursVal) === h
+                                            ? "bg-[#2563EB] text-white border-[#2563EB]"
+                                            : "bg-white text-[#172B4D] border-[#DBEAFE] hover:bg-[#EFF6FF]"
+                                        }`}
+                                      >
+                                        {h === 0.25 ? "15 דק׳" : h === 0.5 ? "30 דק׳" : `${h} ש׳`}
+                                      </button>
+                                    ))}
                                   </div>
                                 </div>
                                 <div>

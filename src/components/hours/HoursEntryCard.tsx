@@ -502,8 +502,10 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   }, [written]);
 
   // Handle saving manual edits
-  const handleSaveEdit = async () => {
-    if (!draft || !onUpdateDraft) return;
+  const [isLocalConfirming, setIsLocalConfirming] = useState(false);
+
+  const buildAndSaveEditedDraft = async (): Promise<HoursAssistantEntryDraft | null> => {
+    if (!draft) return null;
 
     const timeCalcs = computeTimesAndDuration(
       editStartTime.trim() || draft.startTime || "",
@@ -562,8 +564,15 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
         finalCustomerName && trimmedDate && editDescription.trim()
       ),
     };
-    onUpdateDraft(updated);
+    if (onUpdateDraft) {
+      onUpdateDraft(updated);
+    }
     setIsEditing(false);
+    return updated;
+  };
+
+  const handleSaveEdit = async () => {
+    await buildAndSaveEditedDraft();
   };
 
   // Format countdown string
@@ -1978,22 +1987,35 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       {/* Primary CTA Button in Full Blue */}
       <div className="flex flex-row items-center gap-2">
         <button
-          onClick={() => {
-            if (!draft.fileId && !draft.fileName) {
-              setIsSelectingFile(true);
-              if (fileList.length === 0) {
-                loadCustomerFiles();
+          onClick={async () => {
+            if (isConfirming || isLocalConfirming) return;
+            setIsLocalConfirming(true);
+            try {
+              let effectiveDraft = draft;
+              if (isEditing) {
+                const saved = await buildAndSaveEditedDraft();
+                if (saved) effectiveDraft = saved;
               }
-              return;
+              if (!effectiveDraft.fileId && !effectiveDraft.fileName) {
+                setIsSelectingFile(true);
+                if (fileList.length === 0) {
+                  await loadCustomerFiles();
+                }
+                return;
+              }
+              if (onConfirm) {
+                await onConfirm(effectiveDraft.id, effectiveDraft);
+              }
+            } finally {
+              setIsLocalConfirming(false);
             }
-            if (onConfirm) onConfirm(draft.id, draft);
           }}
-          disabled={isConfirming || !draft.isReadyForConfirmation}
+          disabled={isConfirming || isLocalConfirming || !draft.isReadyForConfirmation}
           className="flex-1 py-2.5 px-4 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs"
         >
-          <CheckCircle2 className={`w-4 h-4 shrink-0 ${isConfirming ? "animate-spin" : ""}`} />
+          <CheckCircle2 className={`w-4 h-4 shrink-0 ${isConfirming || isLocalConfirming ? "animate-spin" : ""}`} />
           <span className="truncate">
-            {isConfirming
+            {isConfirming || isLocalConfirming
               ? assignedList.length > 1
                 ? `מזין ${assignedList.length} שורות...`
                 : "מזין תיעוד..."

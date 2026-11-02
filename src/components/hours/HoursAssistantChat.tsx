@@ -1159,8 +1159,14 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
     }
   };
 
+  const inFlightConfirmCardsRef = useRef<Set<string>>(new Set());
+
   // Direct Card Confirmation Handler (scoped to targetSessionId)
   const handleConfirmEntry = async (cardId: string, directDraft?: HoursAssistantEntryDraft) => {
+    if (inFlightConfirmCardsRef.current.has(cardId)) {
+      return;
+    }
+    inFlightConfirmCardsRef.current.add(cardId);
     const targetSessionId = currentSessionIdRef.current;
     try {
       setSessionLoading(targetSessionId, true, "רושם שורה בגיליון ה-Excel וב-Lists...");
@@ -1202,11 +1208,16 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
             id: `err_${Date.now()}`,
             role: "model",
             text: friendlyMsg,
-            timestamp: new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" }),
+            timestamp: new Date().toLocaleTimeString("he-IL", {
+              timeZone: "Asia/Jerusalem",
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
           },
         ],
       }));
     } finally {
+      inFlightConfirmCardsRef.current.delete(cardId);
       setSessionLoading(targetSessionId, false);
     }
   };
@@ -1282,8 +1293,12 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
   const handleEditWrittenEntry = async (
     cardId: string,
     updates: {
-      durationHours: number;
-      description: string;
+      customerName?: string;
+      date?: string;
+      durationHours?: number;
+      durationMinutes?: number;
+      durationFormatted?: string;
+      description?: string;
       startTime?: string;
       endTime?: string;
       workType?: string;
@@ -1332,11 +1347,13 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
           sheetName: targetEntry?.sheetName,
           rowAddress: targetEntry?.rowAddress,
           targetRow: targetEntry?.targetRow,
-          customerName: targetEntry?.customerName,
-          date: targetEntry?.date,
+          customerName: updates.customerName ?? targetEntry?.customerName,
+          date: updates.date ?? targetEntry?.date,
           employeeName: targetEntry?.employeeName || currentUser.name,
-          durationHours: updates.durationHours,
-          description: updates.description,
+          durationHours: updates.durationHours ?? targetEntry?.durationHours,
+          durationMinutes: updates.durationMinutes ?? targetEntry?.durationMinutes,
+          durationFormatted: updates.durationFormatted ?? targetEntry?.durationFormatted,
+          description: updates.description ?? targetEntry?.description,
           startTime: updates.startTime ?? targetEntry?.startTime,
           endTime: updates.endTime ?? targetEntry?.endTime,
           workType: updates.workType ?? targetEntry?.workType,
@@ -1481,7 +1498,20 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
   };
 
   const getTimeBasedGreeting = () => {
-    const hour = new Date().getHours();
+    let hour = new Date().getHours();
+    try {
+      const hPart = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Jerusalem",
+        hour: "2-digit",
+        hour12: false,
+      })
+        .formatToParts(new Date())
+        .find((p) => p.type === "hour")?.value;
+      if (hPart !== undefined) {
+        const parsed = parseInt(hPart, 10);
+        if (!isNaN(parsed)) hour = parsed % 24;
+      }
+    } catch {}
     if (hour >= 5 && hour < 12) {
       return "בוקר טוב";
     } else if (hour >= 12 && hour < 17) {
@@ -1574,10 +1604,18 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
     yesterday.setDate(now.getDate() - 1);
     const isYesterday = date.toDateString() === yesterday.toDateString();
 
-    const timeStr = date.toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
+    const timeStr = date.toLocaleTimeString("he-IL", {
+      timeZone: "Asia/Jerusalem",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
     if (isToday) return `היום, ${timeStr}`;
     if (isYesterday) return `אתמול, ${timeStr}`;
-    return `${date.toLocaleDateString("he-IL", { day: "2-digit", month: "2-digit" })}, ${timeStr}`;
+    return `${date.toLocaleDateString("he-IL", {
+      timeZone: "Asia/Jerusalem",
+      day: "2-digit",
+      month: "2-digit",
+    })}, ${timeStr}`;
   };
 
   const firstName = (currentUser.name || "").split(" ")[0] || currentUser.name || "עובד";
@@ -2235,7 +2273,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
                                       written={w}
                                       currentUser={currentUser}
                                       onUndo={(id, entry) => handleUndoEntry(id, entry || w)}
-                                      onEditWritten={(cardId, updates, entry) =>
+                                      onEditWritten={(cardId, entry, updates) =>
                                         handleEditWrittenEntry(cardId, updates, entry || w)
                                       }
                                       isSavingWrittenEdit={savingEditCardId === w.id}

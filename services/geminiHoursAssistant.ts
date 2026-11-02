@@ -879,6 +879,8 @@ export async function processAssistantChat(
             date: effectiveDate || w.date,
             startTime: effectiveStartTime ?? w.startTime,
             endTime: effectiveEndTime ?? w.endTime,
+            durationHours: durationHours ?? w.durationHours,
+            durationMinutes: durationHours ? Math.round(durationHours * 60) : w.durationMinutes,
             durationFormatted: durationFormatted || w.durationFormatted,
             description: effectiveDescription || w.description,
             workType: effectiveWorkType || w.workType,
@@ -936,18 +938,28 @@ export async function processAssistantChat(
       if (matchStart && matchEnd) {
         const sMins = parseInt(matchStart[1], 10) * 60 + parseInt(matchStart[2], 10);
         let eMins = parseInt(matchEnd[1], 10) * 60 + parseInt(matchEnd[2], 10);
-        if (eMins < sMins) eMins += 24 * 60;
+        if (eMins <= sMins) eMins += 24 * 60;
         const diffM = Math.max(15, eMins - sMins);
         targetDraft.durationMinutes = diffM;
         targetDraft.durationHours = +(diffM / 60).toFixed(2);
         const dh = Math.floor(diffM / 60);
         const dm = diffM % 60;
-        targetDraft.durationFormatted = `${dh}:${String(dm).padStart(2, "0")}`;
+        if (dh > 0 && dm > 0) {
+          targetDraft.durationFormatted = `${dh}:${String(dm).padStart(2, "0")} שעות`;
+        } else if (dh > 0) {
+          targetDraft.durationFormatted = `${dh} ${dh === 1 ? "שעה" : "שעות"}`;
+        } else {
+          targetDraft.durationFormatted = `${dm} דקות`;
+        }
       }
-    } else if (targetDraft.startTime && (!targetDraft.endTime || targetDraft.isTimeSuggested)) {
-      if (targetDraft.durationMinutes) {
-        targetDraft.endTime = calculateEndTime(targetDraft.startTime, targetDraft.durationMinutes);
-      }
+    } else if (targetDraft.startTime && !targetDraft.endTime) {
+      targetDraft.endTime = calculateEndTime(targetDraft.startTime, targetDraft.durationMinutes || 60);
+    } else if (!targetDraft.startTime && targetDraft.endTime) {
+      targetDraft.startTime = calculateStartTime(targetDraft.endTime, targetDraft.durationMinutes || 60);
+    } else if (!targetDraft.startTime && !targetDraft.endTime) {
+      const suggested = suggestStartEndTimes(targetDraft.durationMinutes || 60);
+      targetDraft.startTime = suggested.startTime;
+      targetDraft.endTime = suggested.endTime;
     }
 
     if (!targetDraft.fileId) {
@@ -1142,6 +1154,10 @@ export async function processAssistantChat(
         entryId: `${writeRes.entryId || targetDraft.id}_${idx}`,
         customerName: targetDraft.customerName,
         date: targetDraft.date,
+        startTime: targetDraft.startTime,
+        endTime: targetDraft.endTime,
+        durationHours: targetDraft.durationHours,
+        durationMinutes: targetDraft.durationMinutes,
         durationFormatted: targetDraft.durationFormatted,
         description: targetDraft.description,
         workType: semanticActivityType,
@@ -2262,6 +2278,11 @@ EXTRACTION RULES FOR propose_entries:
             const r = rows[i];
             const targetRow = baseTargetRow + i;
             const itemId = writeRes.listItemIds?.[i] || (i === 0 ? writeRes.listItemId : undefined);
+            const rowHours = Number(r.hours ?? r.משך ?? r.שעות ?? matchingDraft?.durationHours ?? 1);
+            const rowMins = Number(r.durationMinutes ?? matchingDraft?.durationMinutes ?? Math.round(rowHours * 60));
+            const rowStart = String(r.startTime || r["שעת התחלה"] || matchingDraft?.startTime || "").trim();
+            const rowEnd = String(r.endTime || r["שעת סיום"] || matchingDraft?.endTime || "").trim();
+            const fallbackTimes = (!rowStart || !rowEnd) ? suggestStartEndTimes(rowMins) : null;
             const writtenItem: WrittenEntryResult = {
               id: i === 0 ? (matchingDraft?.id || `written_${Date.now()}_${i}`) : `${matchingDraft?.id || `written_${Date.now()}`}_emp_${i}`,
               fileId,
@@ -2277,7 +2298,11 @@ EXTRACTION RULES FOR propose_entries:
               entryId: `${writeRes.entryId || `entry_${Date.now()}`}_${i}`,
               customerName: r.customer || r.לקוח || matchingDraft?.customerName || "לקוח",
               date: r.date || r.תאריך || jCtx.todayIso,
-              durationFormatted: `${r.hours || r.משך || r.שעות || ""} שעות`,
+              startTime: rowStart || fallbackTimes?.startTime,
+              endTime: rowEnd || fallbackTimes?.endTime,
+              durationHours: rowHours,
+              durationMinutes: rowMins,
+              durationFormatted: matchingDraft?.durationFormatted || `${rowHours} שעות`,
               description: r.description || r.תיאור || "",
               workType: rawActivity,
               employeeName: r.userName || r.employeeName || r.עובד || user.name,

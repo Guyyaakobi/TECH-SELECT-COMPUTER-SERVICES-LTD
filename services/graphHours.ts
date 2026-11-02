@@ -3570,15 +3570,34 @@ export function calculateStartTime(endTime: string, durationMinutes: number): st
 }
 
 /**
- * Suggest start and end times based on report time and duration rounded to 15 minutes.
+ * Suggest start and end times based on report time in Israel timezone (Asia/Jerusalem)
+ * and duration rounded to 15 minutes.
  * e.g. end = current report time rounded to 15 min, start = end - duration.
  */
 export function suggestStartEndTimes(durationMinutes: number): {
   startTime: string;
   endTime: string;
 } {
-  const now = new Date();
-  const currentTotalM = now.getHours() * 60 + now.getMinutes();
+  let israelHour = 12;
+  let israelMin = 0;
+  try {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: "Asia/Jerusalem",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(new Date());
+    const h = parseInt(parts.find((p) => p.type === "hour")?.value || "12", 10);
+    const m = parseInt(parts.find((p) => p.type === "minute")?.value || "0", 10);
+    israelHour = isNaN(h) ? 12 : h % 24;
+    israelMin = isNaN(m) ? 0 : m;
+  } catch {
+    const now = new Date();
+    israelHour = now.getHours();
+    israelMin = now.getMinutes();
+  }
+
+  const currentTotalM = israelHour * 60 + israelMin;
   const roundedEndM = Math.round(currentTotalM / 15) * 15;
   const clampedEndM = Math.max(15, Math.min(23 * 60 + 45, roundedEndM));
   const effectiveMinutes = durationMinutes || 15;
@@ -4359,6 +4378,8 @@ export async function findSafeEmptyRowRange(
  * - Retry 409/423/429 up to 3 times with backoff, then return a clear Hebrew error.
  * - Return the written row address and a web link to the file.
  */
+const recentExcelWritesCache = new Map<string, { timestamp: number; result: WriteRowsResult }>();
+
 export async function writeRows(
   fileId: string,
   rows: Record<string, any>[],
@@ -4377,6 +4398,32 @@ export async function writeRows(
 ): Promise<WriteRowsResult> {
   if (!rows || rows.length === 0) {
     throw new Error("לא סופקו שורות לכתיבה");
+  }
+
+  // Idempotency / Anti-Duplicate Guard (60 seconds window)
+  const writeDeduplicationKey = [
+    fileId,
+    explicitWorkType || "",
+    ...rows.map((r) =>
+      [
+        normalizeCustomerString(String(r.employeeName || r["עובד"] || r.userName || userContext?.name || "")),
+        String(r.date || r["תאריך"] || ""),
+        String(r.hours ?? r["שעות"] ?? r.durationHours ?? ""),
+        normalizeCustomerString(String(r.description || r["תיאור"] || "")).slice(0, 60),
+      ].join(":")
+    ),
+  ].join("|");
+
+  const nowCheck = Date.now();
+  for (const [k, v] of recentExcelWritesCache.entries()) {
+    if (nowCheck - v.timestamp > 60_000) {
+      recentExcelWritesCache.delete(k);
+    }
+  }
+  const cachedWrite = recentExcelWritesCache.get(writeDeduplicationKey);
+  if (cachedWrite && nowCheck - cachedWrite.timestamp < 60_000) {
+    console.log(`[writeRows] Prevented duplicate Excel + Lists write within 60s for key: ${writeDeduplicationKey}`);
+    return cachedWrite.result;
   }
 
   // Stage 4 Safety Validations: date within range (allow up to +48h for timezone differences like Israel UTC+3 and night shifts), duration 0.25-12 hours
@@ -4784,11 +4831,17 @@ export async function writeRows(
         userContext,
         now,
         listItemId: createdListItemIds[0],
+        listItemIds: createdListItemIds,
         listItemWebUrl: createdListItemWebUrls[0],
       });
     } catch (auditErr) {
       console.warn("[writeRows] Failed to record in audit store:", auditErr);
     }
+
+    recentExcelWritesCache.set(writeDeduplicationKey, {
+      timestamp: Date.now(),
+      result: writeResultObj,
+    });
 
     return writeResultObj;
   } finally {
@@ -5456,6 +5509,7 @@ export interface LoggedHourEntry {
   fileId: string;
   driveId?: string;
   rowAddress?: string;
+  listItemId?: string;
   customerName: string;
   employeeName: string;
   employeeEmail?: string;
@@ -5556,15 +5610,23 @@ export function recordWrittenHoursEntries(
     userContext?: { name?: string; email?: string };
     now?: number;
     listItemId?: string;
+    listItemIds?: string[];
     listItemWebUrl?: string;
   }
 ) {
   const loggedAt = meta.now || Date.now();
-  const employeeName = meta.userContext?.name || meta.userContext?.email || "עובד Tech-Select";
-  const employeeEmail = meta.userContext?.email || "";
+  const fallbackEmployeeName = meta.userContext?.name || meta.userContext?.email || "עובד Tech-Select";
+  const fallbackEmployeeEmail = meta.userContext?.email || "";
 
   for (let idx = 0; idx < rows.length; idx++) {
     const r = rows[idx];
+    const employeeName = String(
+      r.employeeName || r["עובד"] || r["שם עובד"] || r.userName || fallbackEmployeeName
+    ).trim();
+    const employeeEmail = String(
+      r.employeeEmail || r.userEmail || fallbackEmployeeEmail
+    ).trim();
+    const rowListItemId = meta.listItemIds?.[idx] || (idx === 0 ? meta.listItemId : undefined);
     const customer = String(r.customer || r["לקוח"] || r.customerName || meta.sheetName || "").trim();
 
     // Determine normalized date YYYY-MM-DD
@@ -5610,6 +5672,7 @@ export function recordWrittenHoursEntries(
       fileId: meta.fileId,
       driveId: meta.driveId,
       rowAddress: meta.rowAddress,
+      listItemId: rowListItemId,
       customerName: customer || "כללי",
       employeeName,
       employeeEmail,
@@ -5649,7 +5712,7 @@ export function recordWrittenHoursEntries(
         sharepointTargetFile: meta.fileId,
         sharepointTargetRow: meta.rowAddress,
         sharepointTargetSheet: meta.sheetName,
-        sharepointListItemId: meta.listItemId,
+        sharepointListItemId: rowListItemId,
         sharepointListWebUrl: meta.listItemWebUrl,
       });
     } catch (centralLogErr) {
@@ -6623,6 +6686,7 @@ export async function getDailyHoursReport(
       id: r.id,
       fileId: r.sharepointTargetFile || "",
       rowAddress: r.sharepointTargetRow,
+      listItemId: r.sharepointListItemId,
       customerName: r.customerName,
       employeeName: r.employeeName,
       employeeEmail: r.employeeEmail,
@@ -6654,6 +6718,50 @@ export async function getDailyHoursReport(
     return true;
   });
 
+  // Helper to accurately detect whether a Central Log or Store entry is already represented in knownEntries (e.g. from Microsoft Lists)
+  const isEntryAlreadyPresent = (existingList: LoggedHourEntry[], cand: LoggedHourEntry): boolean => {
+    const candEmp = normalizeCustomerString(resolveEffectiveName(cand.employeeName, cand.employeeEmail));
+    const candCust = normalizeCustomerString(cand.customerName || "");
+    const candDesc = normalizeCustomerString(cand.description || "").slice(0, 35);
+
+    return existingList.some((ke) => {
+      if (ke.id === cand.id) return true;
+      if (cand.listItemId && (ke.id === String(cand.listItemId) || ke.listItemId === String(cand.listItemId))) return true;
+      if (ke.listItemId && cand.id === String(ke.listItemId)) return true;
+      if (ke.rowAddress && cand.rowAddress && ke.rowAddress === cand.rowAddress && ke.source !== "lists" && cand.source !== "lists") {
+        return true;
+      }
+      if (ke.date !== cand.date) return false;
+
+      const keEmp = normalizeCustomerString(resolveEffectiveName(ke.employeeName, ke.employeeEmail));
+      if (keEmp && candEmp && keEmp !== candEmp && !keEmp.includes(candEmp) && !candEmp.includes(keEmp)) {
+        return false;
+      }
+
+      if (Math.abs((Number(ke.durationHours) || 0) - (Number(cand.durationHours) || 0)) >= 0.05) {
+        return false;
+      }
+
+      const keCust = normalizeCustomerString(ke.customerName || "");
+      const keDesc = normalizeCustomerString(ke.description || "").slice(0, 35);
+
+      const custSimilar =
+        !candCust ||
+        !keCust ||
+        keCust === candCust ||
+        keCust.includes(candCust) ||
+        candCust.includes(keCust);
+      const descSimilar =
+        !candDesc ||
+        !keDesc ||
+        keDesc === candDesc ||
+        keDesc.includes(candDesc.slice(0, 15)) ||
+        candDesc.includes(keDesc.slice(0, 15));
+
+      return custSimilar || descSimilar;
+    });
+  };
+
   // Determine final list of entries:
   let allEntries: LoggedHourEntry[] = [];
 
@@ -6661,12 +6769,12 @@ export async function getDailyHoursReport(
     // Microsoft Lists mode: Draw insights exclusively from Microsoft Lists and dual-write log!
     const knownEntries: LoggedHourEntry[] = [...listsEntries];
     for (const ce of centralEntries) {
-      if (!knownEntries.some((ke) => ke.id === ce.id || (ke.description === ce.description && ke.customerName === ce.customerName))) {
+      if (!isEntryAlreadyPresent(knownEntries, ce)) {
         knownEntries.push(ce);
       }
     }
     for (const se of storeEntries) {
-      if (!knownEntries.some((ke) => ke.id === se.id || (ke.rowAddress && ke.rowAddress === se.rowAddress))) {
+      if (!isEntryAlreadyPresent(knownEntries, se)) {
         knownEntries.push(se);
       }
     }
@@ -6675,12 +6783,12 @@ export async function getDailyHoursReport(
     // SharePoint requested explicitly
     const knownEntries: LoggedHourEntry[] = [...listsEntries];
     for (const ce of centralEntries) {
-      if (!knownEntries.some((ke) => ke.id === ce.id || (ke.description === ce.description && ke.customerName === ce.customerName))) {
+      if (!isEntryAlreadyPresent(knownEntries, ce)) {
         knownEntries.push(ce);
       }
     }
     for (const se of storeEntries) {
-      if (!knownEntries.some((ke) => ke.id === se.id || (ke.rowAddress && ke.rowAddress === se.rowAddress))) {
+      if (!isEntryAlreadyPresent(knownEntries, se)) {
         knownEntries.push(se);
       }
     }
