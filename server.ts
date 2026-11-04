@@ -5065,9 +5065,11 @@ ${!isAteraCustomer ? `
     // 10.9 Manager Directory Endpoints (/api/hours/manage: list & add customers/employees)
     hoursRouter.get("/manage", async (req, res) => {
       try {
-        const requestEnv = { ...process.env, userToken: (req as any).rawToken };
+        const forceRefresh = req.query.refresh === "true";
+        const graphUserToken = String(req.headers["x-graph-token"] || "").trim();
+        const requestEnv = { ...process.env, userToken: (req as any).rawToken, graphUserToken };
         const [customersDetection, employees] = await Promise.all([
-          detectAndListCustomers(requestEnv, false).catch(() => ({
+          detectAndListCustomers(requestEnv, forceRefresh).catch(() => ({
             customers: [],
             totalCustomers: 0,
           })),
@@ -5089,7 +5091,8 @@ ${!isAteraCustomer ? `
       try {
         const body = req.body || {};
         const entityType = String(body.entityType || body.type || "").trim();
-        const requestEnv = { ...process.env, userToken: (req as any).rawToken };
+        const graphUserToken = String(req.headers["x-graph-token"] || "").trim();
+        const requestEnv = { ...process.env, userToken: (req as any).rawToken, graphUserToken };
 
         if (entityType === "customer") {
           const result = await registerCustomCustomer(

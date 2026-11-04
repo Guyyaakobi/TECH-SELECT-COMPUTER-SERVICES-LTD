@@ -103,9 +103,10 @@ const PRESET_EMPLOYEE_ALIASES: Array<{ canonical: string; aliases: string[] }> =
 function getAllTeamMembersList(): string[] {
   const custom = getCustomStoredEmployees();
   const merged = [...PRESET_TEAM_MEMBERS];
-  for (const c of custom) {
-    if (c && !merged.includes(c)) {
-      merged.push(c);
+  for (const item of custom) {
+    const name = typeof item === "string" ? item : item?.name;
+    if (name && !merged.includes(name)) {
+      merged.push(name);
     }
   }
   return merged;
@@ -122,10 +123,15 @@ export function matchPresetTeamMember(rawInput?: string): string | null {
   const dynamicAliases = [
     ...PRESET_EMPLOYEE_ALIASES,
     ...customMembers
-      .filter((m) => !PRESET_EMPLOYEE_ALIASES.some((p) => p.canonical === m))
+      .map((m) => (typeof m === "string" ? { name: m, aliases: [] } : m))
+      .filter((m) => m?.name && !PRESET_EMPLOYEE_ALIASES.some((p) => p.canonical === m.name))
       .map((m) => ({
-        canonical: m,
-        aliases: [m.toLowerCase(), m.split(/\s+/)[0]?.toLowerCase()].filter(Boolean),
+        canonical: m.name,
+        aliases: [
+          m.name.toLowerCase(),
+          m.name.split(/\s+/)[0]?.toLowerCase(),
+          ...(Array.isArray(m.aliases) ? m.aliases.map((a) => a.toLowerCase()) : []),
+        ].filter(Boolean),
       })),
   ];
 

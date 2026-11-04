@@ -10,7 +10,7 @@ export async function onRequestOptions(context?: any): Promise<Response> {
     headers: {
       ...getCorsHeaders(request, "GET, POST, OPTIONS"),
       "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Graph-Token",
     },
   });
 }
@@ -25,12 +25,15 @@ export async function onRequestGet(context: { request: Request; env: any }): Pro
   }
 
   try {
+    const url = new URL(request.url);
+    const forceRefresh = url.searchParams.get("refresh") === "true";
     const authHeader = request.headers.get("Authorization") || request.headers.get("authorization") || "";
     const userToken = authHeader.replace(/^Bearer\s+/i, "").trim();
-    const requestEnv = { ...env, userToken };
+    const graphUserToken = (request.headers.get("X-Graph-Token") || request.headers.get("x-graph-token") || "").trim();
+    const requestEnv = { ...env, userToken, graphUserToken };
 
     const [customersDetection, employees] = await Promise.all([
-      detectAndListCustomers(requestEnv, false).catch(() => ({
+      detectAndListCustomers(requestEnv, forceRefresh).catch(() => ({
         customers: [],
         totalCustomers: 0,
       })),
@@ -73,7 +76,8 @@ export async function onRequestPost(context: { request: Request; env: any }): Pr
     const entityType = String(body.entityType || body.type || "").trim();
     const authHeader = request.headers.get("Authorization") || request.headers.get("authorization") || "";
     const userToken = authHeader.replace(/^Bearer\s+/i, "").trim();
-    const requestEnv = { ...env, userToken };
+    const graphUserToken = (request.headers.get("X-Graph-Token") || request.headers.get("x-graph-token") || "").trim();
+    const requestEnv = { ...env, userToken, graphUserToken };
 
     if (entityType === "customer") {
       const result = await registerCustomCustomer(

@@ -581,15 +581,19 @@ export async function fetchGraph(
       );
     }
 
-    if (res.status === 403 && env?.userToken && headers.get("Authorization") !== `Bearer ${env.userToken}`) {
-      console.warn(`[fetchGraph] App token returned 403 for ${url}. Trying with authenticated user token...`);
-      const userHeaders = new Headers(headers);
-      userHeaders.set("Authorization", `Bearer ${env.userToken}`);
-      const userRes = await fetch(url, { ...options, headers: userHeaders });
-      if (userRes.ok) {
-        return userRes;
+    if (res.status === 403) {
+      const candidateTokens = [env?.graphUserToken, env?.userToken].filter(
+        (t): t is string => Boolean(t && typeof t === "string" && headers.get("Authorization") !== `Bearer ${t}`)
+      );
+      for (const candToken of candidateTokens) {
+        console.warn(`[fetchGraph] App token returned 403 for ${url}. Trying with delegated token...`);
+        const userHeaders = new Headers(headers);
+        userHeaders.set("Authorization", `Bearer ${candToken}`);
+        const userRes = await fetch(url, { ...options, headers: userHeaders });
+        if (userRes.ok) {
+          return userRes;
+        }
       }
-      return userRes;
     }
 
     return res;
@@ -800,15 +804,19 @@ export async function detectAndListCustomers(
           );
           if (strayName === "קורלייט" || strayName.toLowerCase() === "correlate") {
             try {
+              let migratedOk = alreadyHasLibrary;
               if (!alreadyHasLibrary) {
-                const migrated = await createCustomerLibraryInSite(siteId, strayName, env);
-                if (migrated) {
-                  libraryCustomers.unshift(migrated);
+                const migrated = await createCustomerLibraryInSite(siteId, strayName, env, "Correlate");
+                if (migrated.library) {
+                  libraryCustomers.unshift(migrated.library);
+                  migratedOk = true;
                 }
               }
-              // Remove the stray folder from Documents so it doesn't stay under "Documents : קורלייט"
-              await cleanupStrayDocumentsFolderIfEmpty(driveId, strayFolder.id, env);
-              continue;
+              if (migratedOk) {
+                // Remove the stray folder from Documents ONLY after the Site Document Library is confirmed!
+                await cleanupStrayDocumentsFolderIfEmpty(driveId, strayFolder.id, env);
+                continue;
+              }
             } catch (migErr) {
               console.warn(`[detectAndListCustomers] Auto-migration notice for ${strayName}:`, migErr);
             }
@@ -1134,16 +1142,57 @@ async function cleanupStrayDocumentsFolderIfEmpty(
 }
 
 /**
+ * Helper: Build a clean ASCII URL slug for a SharePoint Document Library
+ * so Hebrew customer names never cause SharePoint URL slug collisions on POST /sites/{siteId}/lists.
+ */
+function buildAsciiLibrarySlug(hebrewOrRawName: string, englishName?: string): string {
+  const fromEnglish = String(englishName || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9_\-\s]/g, "")
+    .replace(/\s+/g, "_");
+  if (fromEnglish.length >= 2) {
+    return fromEnglish;
+  }
+
+  const rawAscii = String(hebrewOrRawName || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9_\-\s]/g, "")
+    .replace(/\s+/g, "_");
+  if (rawAscii.length >= 2) {
+    return rawAscii;
+  }
+
+  const phonetic = hebrewToPhoneticLatin(hebrewOrRawName)
+    .replace(/[^a-zA-Z0-9_\-\s]/g, "")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join("");
+
+  if (phonetic.length >= 2) {
+    return phonetic;
+  }
+
+  return `Customer_${Date.now().toString(36)}`;
+}
+
+/**
  * Helper: Create or resolve a Customer Document Library at the SharePoint site level (/sites/Customers)
  * and ensure its "שעות עבודה" folder exists inside that library.
  */
 async function createCustomerLibraryInSite(
   siteId: string,
   customerName: string,
-  env?: any
-): Promise<(CustomerFolder & { hoursFolderUrl?: string }) | null> {
+  env?: any,
+  englishName?: string
+): Promise<{
+  library: (CustomerFolder & { hoursFolderUrl?: string }) | null;
+  error?: string;
+}> {
   const { hoursFolderName } = getGraphHoursConfig(env);
   const cleanName = customerName.trim();
+  const asciiSlug = buildAsciiLibrarySlug(cleanName, englishName);
 
   // 1. Check if a Document Library (Drive) with this customer name already exists at the site level
   let customerDrive: { id: string; name: string; webUrl?: string } | null = null;
@@ -1155,14 +1204,15 @@ async function createCustomerLibraryInSite(
     );
     if (drivesRes.ok) {
       const drivesData: any = await drivesRes.json();
-      const found = (drivesData.value || []).find(
-        (d: any) =>
-          !d.system &&
-          String(d.name || "").trim().toLowerCase() === cleanName.toLowerCase() &&
-          !["documents", "shared documents", "מסמכים"].includes(
-            String(d.name || "").trim().toLowerCase()
-          )
-      );
+      const found = (drivesData.value || []).find((d: any) => {
+        if (d.system) return false;
+        const dName = String(d.name || "").trim().toLowerCase();
+        if (["documents", "shared documents", "מסמכים"].includes(dName)) return false;
+        return (
+          dName === cleanName.toLowerCase() ||
+          (englishName && dName === englishName.trim().toLowerCase())
+        );
+      });
       if (found) {
         customerDrive = { id: found.id, name: found.name, webUrl: found.webUrl };
       }
@@ -1171,28 +1221,99 @@ async function createCustomerLibraryInSite(
     console.warn("[createCustomerLibraryInSite] Error checking existing drives:", e);
   }
 
+  let lastGraphError = "";
+
   // 2. If not found, create a new Document Library at the site level (same place as all other customers!)
   if (!customerDrive) {
-    const createListRes = await fetchGraph(
-      `https://graph.microsoft.com/v1.0/sites/${siteId}/lists`,
+    // Try creating with ASCII internal URL name + Hebrew displayName first, then fallback to ASCII displayName + PATCH
+    const candidatePayloads = [
+      // Attempt 1: Create with ASCII displayName so SharePoint generates a clean ASCII URL (/sites/Customers/<asciiSlug>),
+      // then immediately PATCH displayName to the Hebrew customer name!
       {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          displayName: cleanName,
-          list: {
-            template: "documentLibrary",
-          },
-        }),
+        body: {
+          displayName: asciiSlug,
+          list: { template: "documentLibrary" },
+        },
+        needsDisplayNamePatch: asciiSlug.toLowerCase() !== cleanName.toLowerCase(),
       },
-      env
-    );
+      // Attempt 2: Direct displayName (if asciiSlug already exists or direct creation is preferred)
+      {
+        body: {
+          displayName: cleanName,
+          list: { template: "documentLibrary" },
+        },
+        needsDisplayNamePatch: false,
+      },
+      // Attempt 3: Unique ASCII slug + PATCH to Hebrew displayName
+      {
+        body: {
+          displayName: `${asciiSlug}_${Math.floor(100 + Math.random() * 899)}`,
+          list: { template: "documentLibrary" },
+        },
+        needsDisplayNamePatch: true,
+      },
+    ];
 
-    if (createListRes.ok) {
-      const listData: any = await createListRes.json();
-      if (listData?.id) {
+    let createdListData: any = null;
+
+    for (const attempt of candidatePayloads) {
+      const createListRes = await fetchGraph(
+        `https://graph.microsoft.com/v1.0/sites/${siteId}/lists`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(attempt.body),
+        },
+        env
+      );
+
+      if (createListRes.ok) {
+        createdListData = await createListRes.json();
+        if (createdListData?.id && attempt.needsDisplayNamePatch) {
+          try {
+            const patchRes = await fetchGraph(
+              `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${createdListData.id}`,
+              {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ displayName: cleanName }),
+              },
+              env
+            );
+            if (patchRes.ok) {
+              createdListData.displayName = cleanName;
+            }
+          } catch (patchErr) {
+            console.warn("[createCustomerLibraryInSite] PATCH displayName notice:", patchErr);
+          }
+        }
+        break;
+      } else {
+        const errText = await createListRes.text().catch(() => "");
+        lastGraphError = `HTTP ${createListRes.status}: ${errText}`;
+        console.warn(
+          `[createCustomerLibraryInSite] POST /sites/${siteId}/lists failed (${createListRes.status}):`,
+          errText
+        );
+        // If 403 Access Denied, no need to retry different slugs — it's an Azure permission issue (Sites.Manage.All)
+        if (createListRes.status === 403) {
+          return {
+            library: null,
+            error:
+              "לחיבור ה-Azure App הנוכחי (HOURS_GRAPH_CLIENT_ID) יש הרשאת Sites.ReadWrite.All אך חסרה הרשאת 'Sites.Manage.All' ב-Microsoft Graph הנדרשת להקמת ספריית לקוח חדשה (Document Library) ברמת האתר הראשי ב-SharePoint.",
+          };
+        }
+      }
+    }
+
+    if (createdListData?.id) {
+      // Fetch the underlying Drive of the newly created Document Library (with retry in case SharePoint takes 600ms to provision)
+      for (let retry = 0; retry < 3; retry++) {
+        if (retry > 0) {
+          await new Promise((r) => setTimeout(r, 700));
+        }
         const listDriveRes = await fetchGraph(
-          `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listData.id}/drive`,
+          `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${createdListData.id}/drive`,
           { method: "GET" },
           env
         );
@@ -1200,13 +1321,16 @@ async function createCustomerLibraryInSite(
           const driveData: any = await listDriveRes.json();
           customerDrive = {
             id: driveData.id,
-            name: driveData.name || cleanName,
-            webUrl: driveData.webUrl || listData.webUrl,
+            name: cleanName,
+            webUrl: driveData.webUrl || createdListData.webUrl,
           };
+          break;
         }
       }
-    } else if (createListRes.status === 409) {
-      // Already exists — re-query drives
+    }
+
+    // Fallback: re-query /sites/{siteId}/drives to locate the newly created library drive
+    if (!customerDrive) {
       const drivesRes2 = await fetchGraph(
         `https://graph.microsoft.com/v1.0/sites/${siteId}/drives?$top=200`,
         { method: "GET" },
@@ -1214,18 +1338,30 @@ async function createCustomerLibraryInSite(
       );
       if (drivesRes2.ok) {
         const drivesData2: any = await drivesRes2.json();
-        const found2 = (drivesData2.value || []).find(
-          (d: any) => String(d.name || "").trim().toLowerCase() === cleanName.toLowerCase()
-        );
+        const found2 = (drivesData2.value || []).find((d: any) => {
+          const dn = String(d.name || "").trim().toLowerCase();
+          return (
+            dn === cleanName.toLowerCase() ||
+            dn === asciiSlug.toLowerCase() ||
+            (createdListData?.webUrl && d.webUrl === createdListData.webUrl)
+          );
+        });
         if (found2) {
-          customerDrive = { id: found2.id, name: found2.name, webUrl: found2.webUrl };
+          customerDrive = {
+            id: found2.id,
+            name: cleanName,
+            webUrl: found2.webUrl,
+          };
         }
       }
     }
   }
 
   if (!customerDrive || !customerDrive.id) {
-    return null;
+    return {
+      library: null,
+      error: lastGraphError || "לא ניתן היה להקים ספריית לקוח חדשה ב-SharePoint",
+    };
   }
 
   // 3. Create "שעות עבודה" folder at the root of the customer's own Document Library
@@ -1255,13 +1391,15 @@ async function createCustomerLibraryInSite(
   }
 
   return {
-    id: customerDrive.id,
-    name: customerDrive.name || cleanName,
-    webUrl: customerDrive.webUrl,
-    driveId: customerDrive.id,
-    hoursFolderId,
-    hoursFolderUrl,
-    type: "library",
+    library: {
+      id: customerDrive.id,
+      name: cleanName,
+      webUrl: customerDrive.webUrl,
+      driveId: customerDrive.id,
+      hoursFolderId,
+      hoursFolderUrl,
+      type: "library",
+    },
   };
 }
 
@@ -1279,6 +1417,7 @@ export async function registerCustomCustomer(
   aliases: string[];
   createdInSharePoint: boolean;
   hoursFolderUrl?: string;
+  sharePointError?: string;
 }> {
   const cleanName = String(params.name || "").trim();
   const cleanEnglish = String(params.englishName || "").trim();
@@ -1316,6 +1455,7 @@ export async function registerCustomCustomer(
     type: "library",
   };
   let hoursFolderUrl: string | undefined = undefined;
+  let sharePointError: string | undefined = undefined;
 
   if (params.createSharePointFolder !== false) {
     try {
@@ -1323,8 +1463,15 @@ export async function registerCustomCustomer(
 
       // 1. Create or reuse a Customer Document Library at the SharePoint site root (/sites/Customers)
       //    so it sits alongside all existing customers (NOT inside the default "Documents" library!)
-      const libResult = await createCustomerLibraryInSite(siteId, cleanName, env);
-      if (libResult) {
+      const libOutcome = await createCustomerLibraryInSite(
+        siteId,
+        cleanName,
+        env,
+        cleanEnglish || undefined
+      );
+
+      if (libOutcome.library) {
+        const libResult = libOutcome.library;
         createdInSharePoint = true;
         hoursFolderUrl = libResult.hoursFolderUrl || libResult.webUrl;
         folderItem = {
@@ -1352,15 +1499,17 @@ export async function registerCustomCustomer(
         } catch {
           // ignore if no stray folder exists in Documents
         }
+      } else {
+        sharePointError = libOutcome.error;
       }
-    } catch (spErr) {
+    } catch (spErr: any) {
+      sharePointError = spErr?.message || String(spErr);
       console.warn("[registerCustomCustomer] SharePoint library creation warning:", spErr);
     }
   }
 
-  // Also add to in-memory customersCache immediately so UI & AI see it without waiting
+  // Update in-memory customersCache immediately so UI & AI see it without waiting
   if (customersCache && Array.isArray(customersCache.items)) {
-    // Remove any old folder entry from defaultDriveId if replaced by library
     customersCache.items = customersCache.items.filter(
       (c) => c.name.trim().toLowerCase() !== cleanName.toLowerCase()
     );
@@ -1373,6 +1522,7 @@ export async function registerCustomCustomer(
     aliases: allAliases,
     createdInSharePoint,
     hoursFolderUrl,
+    sharePointError,
   };
 }
 

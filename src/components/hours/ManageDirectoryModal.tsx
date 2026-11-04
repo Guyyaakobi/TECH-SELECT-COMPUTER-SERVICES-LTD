@@ -56,10 +56,10 @@ export const ManageDirectoryModal: React.FC<ManageDirectoryModalProps> = ({
     webUrl?: string;
   } | null>(null);
 
-  const loadDirectory = async () => {
+  const loadDirectory = async (forceRefresh = false) => {
     try {
       setLoadingList(true);
-      const data = await apiGetManagedDirectory();
+      const data = await apiGetManagedDirectory(forceRefresh);
       setCustomers(data.customers || []);
       setEmployees(data.employees || []);
     } catch (err) {
@@ -72,7 +72,7 @@ export const ManageDirectoryModal: React.FC<ManageDirectoryModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       setFeedback(null);
-      loadDirectory();
+      loadDirectory(true);
     }
   }, [isOpen]);
 
@@ -104,15 +104,23 @@ export const ManageDirectoryModal: React.FC<ManageDirectoryModalProps> = ({
       setCustomerName("");
       setCustomerEnglish("");
       setCustomerAliases("");
-      setFeedback({
-        type: "success",
-        message: res.createdInSharePoint
-          ? `הלקוח "${cleanName}" הוקם כספריית לקוח ב-SharePoint (במיקום של כל הלקוחות) יחד עם תיקיית "שעות עבודה"!`
-          : `הלקוח "${cleanName}" נוסף בהצלחה למילון הלקוחות של המערכת!`,
-        webUrl: res.hoursFolderUrl || res.customer?.webUrl,
-      });
 
-      await loadDirectory();
+      if (createSpFolder && !res.createdInSharePoint && res.sharePointError) {
+        setFeedback({
+          type: "error",
+          message: `הלקוח "${cleanName}" נוסף למערכת, אך הקמת הספרייה ב-SharePoint נכשלה: ${res.sharePointError}`,
+        });
+      } else {
+        setFeedback({
+          type: "success",
+          message: res.createdInSharePoint
+            ? `הלקוח "${cleanName}" הוקם כספריית לקוח ב-SharePoint (במיקום של כל הלקוחות) יחד עם תיקיית "שעות עבודה"!`
+            : `הלקוח "${cleanName}" נוסף בהצלחה למילון הלקוחות של המערכת!`,
+          webUrl: res.hoursFolderUrl || res.customer?.webUrl,
+        });
+      }
+
+      await loadDirectory(true);
       onDirectoryUpdated?.();
     } catch (err: any) {
       setFeedback({

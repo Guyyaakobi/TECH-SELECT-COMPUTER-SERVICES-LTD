@@ -491,6 +491,68 @@ export async function getApiToken(
 }
 
 /**
+ * Attempts to acquire a Microsoft Graph delegated accessToken (aud: graph.microsoft.com)
+ * from MSAL silent acquisition or MSAL localStorage cache for SharePoint administrative actions.
+ */
+export async function getGraphDelegatedToken(): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  try {
+    const instance = msalInstance;
+    const accounts = instance ? instance.getAllAccounts() : [];
+    const activeAccount = instance ? instance.getActiveAccount() || accounts[0] : null;
+
+    if (instance && activeAccount) {
+      for (const scopeSet of [
+        ["https://graph.microsoft.com/Sites.Manage.All"],
+        ["https://graph.microsoft.com/Sites.ReadWrite.All"],
+        ["https://graph.microsoft.com/User.Read"],
+      ]) {
+        try {
+          const res = await Promise.race([
+            instance.acquireTokenSilent({
+              scopes: scopeSet,
+              account: activeAccount,
+              redirectUri: getRedirectUri(),
+            }),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("Graph token silent timeout")), 3500)
+            ),
+          ]);
+          if (res?.accessToken && !isJwtTokenExpired(res.accessToken, 30)) {
+            return res.accessToken;
+          }
+        } catch {
+          // Try next scope set
+        }
+      }
+    }
+
+    // Fallback: inspect MSAL localStorage for an accessToken targeting graph.microsoft.com
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i) || "";
+      if (key.toLowerCase().includes("accesstoken")) {
+        const itemStr = localStorage.getItem(key);
+        if (itemStr && itemStr.startsWith("{") && itemStr.includes("secret")) {
+          const parsed = JSON.parse(itemStr);
+          const secret = parsed.secret || parsed.accessToken;
+          const target = String(parsed.target || "").toLowerCase();
+          if (
+            secret &&
+            (target.includes("graph") || target.includes("sites") || target.includes("user.read")) &&
+            !isJwtTokenExpired(secret, 30)
+          ) {
+            return secret;
+          }
+        }
+      }
+    }
+  } catch {
+    // Ignore errors
+  }
+  return null;
+}
+
+/**
  * Redirect to Microsoft 365 sign-in page
  */
 export async function loginWithMicrosoft(

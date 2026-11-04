@@ -1070,6 +1070,39 @@ export interface ManagedEmployeeItem {
 }
 
 const CUSTOM_EMPLOYEES_STORAGE_KEY = "techselect_custom_employees_v1";
+const CUSTOM_CUSTOMERS_STORAGE_KEY = "techselect_custom_customers_v1";
+
+export interface ManagedCustomerItem {
+  id: string;
+  name: string;
+  webUrl?: string;
+}
+
+export function getCustomStoredCustomers(): ManagedCustomerItem[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_CUSTOMERS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCustomStoredCustomer(cust: ManagedCustomerItem): void {
+  try {
+    const current = getCustomStoredCustomers();
+    const idx = current.findIndex((c) => c.name.trim().toLowerCase() === cust.name.trim().toLowerCase());
+    if (idx >= 0) {
+      current[idx] = { ...current[idx], ...cust };
+    } else {
+      current.push(cust);
+    }
+    localStorage.setItem(CUSTOM_CUSTOMERS_STORAGE_KEY, JSON.stringify(current));
+  } catch {
+    // ignore storage errors
+  }
+}
 
 export function getCustomStoredEmployees(): ManagedEmployeeItem[] {
   try {
@@ -1104,12 +1137,57 @@ export function saveCustomStoredEmployee(emp: ManagedEmployeeItem): void {
 /**
  * 20. Manager Directory API: Get Customers & Employees
  */
-export async function apiGetManagedDirectory(): Promise<{
+export async function apiGetManagedDirectory(forceRefresh = false): Promise<{
   customers: Array<{ id: string; name: string; webUrl?: string }>;
   totalCustomers: number;
   employees: ManagedEmployeeItem[];
 }> {
-  return fetchHoursApi(`/api/hours/manage`, { method: "GET" });
+  const { getGraphDelegatedToken } = await import("./hoursAuth");
+  const graphToken = await getGraphDelegatedToken();
+  const headers: Record<string, string> = {};
+  if (graphToken) {
+    headers["X-Graph-Token"] = graphToken;
+  }
+
+  const data = await fetchHoursApi<{
+    customers: Array<{ id: string; name: string; webUrl?: string }>;
+    totalCustomers: number;
+    employees: ManagedEmployeeItem[];
+  }>(`/api/hours/manage${forceRefresh ? "?refresh=true" : ""}`, {
+    method: "GET",
+    headers,
+  });
+
+  // Merge locally stored custom customers & employees so multi-worker isolates never lose newly added items
+  const serverCustomers = Array.isArray(data?.customers) ? [...data.customers] : [];
+  for (const localCust of getCustomStoredCustomers()) {
+    const existingIdx = serverCustomers.findIndex(
+      (sc) => sc.name.trim().toLowerCase() === localCust.name.trim().toLowerCase()
+    );
+    if (existingIdx === -1) {
+      serverCustomers.push(localCust);
+    } else if (!serverCustomers[existingIdx].webUrl && localCust.webUrl) {
+      serverCustomers[existingIdx].webUrl = localCust.webUrl;
+    }
+  }
+  serverCustomers.sort((a, b) => a.name.localeCompare(b.name, "he"));
+
+  const serverEmployees = Array.isArray(data?.employees) ? [...data.employees] : [];
+  for (const localEmp of getCustomStoredEmployees()) {
+    if (
+      !serverEmployees.some(
+        (se) => se.name.trim().toLowerCase() === localEmp.name.trim().toLowerCase()
+      )
+    ) {
+      serverEmployees.push(localEmp);
+    }
+  }
+
+  return {
+    customers: serverCustomers,
+    totalCustomers: serverCustomers.length,
+    employees: serverEmployees,
+  };
 }
 
 /**
@@ -1126,14 +1204,40 @@ export async function apiAddManagedCustomer(params: {
   aliases: string[];
   createdInSharePoint: boolean;
   hoursFolderUrl?: string;
+  sharePointError?: string;
 }> {
-  return fetchHoursApi(`/api/hours/manage`, {
+  const { getGraphDelegatedToken } = await import("./hoursAuth");
+  const graphToken = await getGraphDelegatedToken();
+  const headers: Record<string, string> = {};
+  if (graphToken) {
+    headers["X-Graph-Token"] = graphToken;
+  }
+
+  const res = await fetchHoursApi<{
+    success: boolean;
+    customer: { id: string; name: string; webUrl?: string };
+    aliases: string[];
+    createdInSharePoint: boolean;
+    hoursFolderUrl?: string;
+    sharePointError?: string;
+  }>(`/api/hours/manage`, {
     method: "POST",
+    headers,
     body: JSON.stringify({
       entityType: "customer",
       ...params,
     }),
   });
+
+  if (res?.customer?.name) {
+    saveCustomStoredCustomer({
+      id: res.customer.id || `custom_${res.customer.name}`,
+      name: res.customer.name,
+      webUrl: res.hoursFolderUrl || res.customer.webUrl,
+    });
+  }
+
+  return res;
 }
 
 /**
@@ -1163,4 +1267,5 @@ export async function apiAddManagedEmployee(params: {
   }
   return res;
 }
+
 
