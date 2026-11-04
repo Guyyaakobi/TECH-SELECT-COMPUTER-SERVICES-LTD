@@ -32,6 +32,7 @@ import {
   WrittenEntryResult,
   apiFindMonthTarget,
   apiListCustomers,
+  getCustomStoredEmployees,
 } from "../../services/hoursApiClient";
 
 interface HoursEntryCardProps {
@@ -99,6 +100,17 @@ const PRESET_EMPLOYEE_ALIASES: Array<{ canonical: string; aliases: string[] }> =
   { canonical: "שי", aliases: ["שי", "shai", "shay"] },
 ];
 
+function getAllTeamMembersList(): string[] {
+  const custom = getCustomStoredEmployees();
+  const merged = [...PRESET_TEAM_MEMBERS];
+  for (const c of custom) {
+    if (c && !merged.includes(c)) {
+      merged.push(c);
+    }
+  }
+  return merged;
+}
+
 export function matchPresetTeamMember(rawInput?: string): string | null {
   const clean = String(rawInput || "")
     .trim()
@@ -106,7 +118,18 @@ export function matchPresetTeamMember(rawInput?: string): string | null {
     .replace(/["'״׳]/g, "");
   if (!clean) return null;
 
-  for (const item of PRESET_EMPLOYEE_ALIASES) {
+  const customMembers = getCustomStoredEmployees();
+  const dynamicAliases = [
+    ...PRESET_EMPLOYEE_ALIASES,
+    ...customMembers
+      .filter((m) => !PRESET_EMPLOYEE_ALIASES.some((p) => p.canonical === m))
+      .map((m) => ({
+        canonical: m,
+        aliases: [m.toLowerCase(), m.split(/\s+/)[0]?.toLowerCase()].filter(Boolean),
+      })),
+  ];
+
+  for (const item of dynamicAliases) {
     if (
       item.canonical.toLowerCase() === clean ||
       item.aliases.some((a) => a.toLowerCase() === clean)
@@ -115,7 +138,7 @@ export function matchPresetTeamMember(rawInput?: string): string | null {
     }
   }
 
-  for (const item of PRESET_EMPLOYEE_ALIASES) {
+  for (const item of dynamicAliases) {
     if (
       item.canonical.toLowerCase().includes(clean) ||
       item.aliases.some((a) => a.toLowerCase().includes(clean) || clean.includes(a.toLowerCase()))
@@ -141,7 +164,8 @@ function sanitizePresetEmployees(
     }
   }
   if (matched.length === 0) {
-    const fallbackCanonical = matchPresetTeamMember(fallbackUser) || PRESET_TEAM_MEMBERS[0];
+    const allMembers = getAllTeamMembersList();
+    const fallbackCanonical = matchPresetTeamMember(fallbackUser) || allMembers[0];
     matched.push(fallbackCanonical);
   }
   return matched;
@@ -1473,7 +1497,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             </div>
 
             <div className="flex flex-wrap gap-1 mb-2">
-              {PRESET_TEAM_MEMBERS.filter((memberName) => {
+              {getAllTeamMembersList().filter((memberName) => {
                 const q = customEmployeeInput.trim().toLowerCase();
                 if (!q) return true;
                 const matched = matchPresetTeamMember(q);

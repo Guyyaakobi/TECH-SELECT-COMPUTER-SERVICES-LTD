@@ -20,6 +20,8 @@ import {
   apiGetCentralLog,
   apiDeleteCentralLogEntry,
   apiSyncCentralLogToSharePoint,
+  downloadEntriesAsExcel,
+  apiDownloadExportExcel,
   CentralLogItemClient,
 } from "../../services/hoursApiClient";
 
@@ -162,16 +164,21 @@ export const CentralHoursLogModal: React.FC<CentralHoursLogModalProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <a
-              href="/api/hours/export-excel"
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={() =>
+                apiDownloadExportExcel({
+                  period: dateFilter === "today" ? "day" : "month",
+                  fallbackEntries: filteredEntries.length > 0 ? filteredEntries : undefined,
+                  fileNamePrefix: "TechSelect_Lists_Report",
+                })
+              }
               className="text-xs px-3 py-1.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
               title="ייצא את כל הנתונים מ-Microsoft Lists לקובץ Excel"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
               <span>ייצוא ל-Excel מ-Lists</span>
-            </a>
+            </button>
 
             <button
               onClick={handleSyncSharePoint}
@@ -183,15 +190,15 @@ export const CentralHoursLogModal: React.FC<CentralHoursLogModalProps> = ({
               <span>{syncing ? "מסנכרן ל-SharePoint..." : "סנכרן ל-SharePoint Tools"}</span>
             </button>
 
-            <a
-              href="/api/hours/log/export"
-              download="TOOLS_LOG.xlsx"
-              className="text-xs px-3 py-1.5 rounded-xl bg-white hover:bg-[#EFF6FF] border border-[#DBEAFE] text-[#172B4D] font-medium flex items-center gap-1.5 transition-colors"
+            <button
+              type="button"
+              onClick={() => downloadEntriesAsExcel(filteredEntries, "TOOLS_LOG", "LOG")}
+              className="text-xs px-3 py-1.5 rounded-xl bg-white hover:bg-[#EFF6FF] border border-[#DBEAFE] text-[#172B4D] font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
               title="הורד קובץ Excel של יומן השעות המרכזי"
             >
               <Download className="w-3.5 h-3.5 text-[#2563EB]" />
               <span>הורד Excel (LOG)</span>
-            </a>
+            </button>
 
             <button
               onClick={fetchLog}

@@ -42,6 +42,8 @@ import * as hoursTodaySummaryHandler from "./functions/api/hours/today-summary";
 import * as hoursMyListsHoursHandler from "./functions/api/hours/my-lists-hours";
 import * as hoursLogHandler from "./functions/api/hours/log";
 import * as hoursListsHandler from "./functions/api/hours/lists";
+import * as hoursExportExcelHandler from "./functions/api/hours/export-excel";
+import * as hoursManageHandler from "./functions/api/hours/manage";
 
 interface Env {
   ASSETS?: {
@@ -297,6 +299,25 @@ export default {
         return hoursListsHandler.onRequestPost(context);
       }
       return hoursListsHandler.onRequestGet(context);
+    }
+
+    // 9.13 Export Excel from Microsoft Lists (/api/hours/export-excel)
+    if (pathname === "/api/hours/export-excel") {
+      if (request.method === "OPTIONS") {
+        return hoursExportExcelHandler.onRequestOptions(context);
+      }
+      return hoursExportExcelHandler.onRequestGet(context);
+    }
+
+    // 9.14 Manager Directory Management (/api/hours/manage)
+    if (pathname === "/api/hours/manage") {
+      if (request.method === "OPTIONS") {
+        return hoursManageHandler.onRequestOptions(context);
+      }
+      if (request.method === "POST") {
+        return hoursManageHandler.onRequestPost(context);
+      }
+      return hoursManageHandler.onRequestGet(context);
     }
 
     // 8. Simulator Activity Logger

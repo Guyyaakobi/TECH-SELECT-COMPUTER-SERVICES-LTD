@@ -21,6 +21,7 @@ import {
   getGraphDiagnostics,
   clearGraphTokenCache,
   getDailyHoursReport,
+  registerCustomCustomer,
 } from "./services/graphHours";
 import {
   queryCentralLog,
@@ -35,6 +36,8 @@ import {
   fetchSharePointListEntries,
   resolveEffectiveName,
   getUserListsDailySummary,
+  getKnownTeamMembers,
+  registerCustomEmployee,
 } from "./services/sharepointLists";
 import {
   evaluateHoursRequestComplexity,
@@ -5026,6 +5029,95 @@ ${!isAteraCustomer ? `
       } catch (err: any) {
         console.error("[POST /api/hours/log/sync-sharepoint] Error:", err);
         return res.status(500).json({ error: err?.message || "שגיאה בסנכרון ל-SharePoint Tools" });
+      }
+    });
+
+    hoursRouter.get("/log/export", (_req, res) => {
+      try {
+        const currentEntries = loadCentralLog();
+        const excelRows = currentEntries.map((e) => ({
+          "תאריך": e.date,
+          "שם לקוח": e.customerName,
+          "עובד": e.employeeName,
+          "סוג": e.workType,
+          "משעה": e.startTime || "",
+          "עד שעה": e.endTime || "",
+          "סיכום שעות": e.durationHours,
+          "מה בוצע": e.description,
+          "סטטוס": e.status,
+          "מזהה תיעוד": e.id,
+          "תאריך רישום": e.createdAt,
+        }));
+
+        const ws = XLSX.utils.json_to_sheet(excelRows);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "LOG");
+        const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
+
+        res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        res.setHeader("Content-Disposition", 'attachment; filename="TOOLS_LOG.xlsx"');
+        return res.send(buffer);
+      } catch (err: any) {
+        return res.status(500).json({ error: err?.message || "שגיאה בייצוא" });
+      }
+    });
+
+    // 10.9 Manager Directory Endpoints (/api/hours/manage: list & add customers/employees)
+    hoursRouter.get("/manage", async (req, res) => {
+      try {
+        const requestEnv = { ...process.env, userToken: (req as any).rawToken };
+        const [customersDetection, employees] = await Promise.all([
+          detectAndListCustomers(requestEnv, false).catch(() => ({
+            customers: [],
+            totalCustomers: 0,
+          })),
+          Promise.resolve(getKnownTeamMembers()),
+        ]);
+
+        return res.json({
+          customers: customersDetection.customers || [],
+          totalCustomers: customersDetection.totalCustomers || 0,
+          employees,
+        });
+      } catch (err: any) {
+        console.error("[GET /api/hours/manage] Error:", err);
+        return res.status(500).json({ error: err?.message || "שגיאה בטעינת לקוחות ועובדים" });
+      }
+    });
+
+    hoursRouter.post("/manage", async (req, res) => {
+      try {
+        const body = req.body || {};
+        const entityType = String(body.entityType || body.type || "").trim();
+        const requestEnv = { ...process.env, userToken: (req as any).rawToken };
+
+        if (entityType === "customer") {
+          const result = await registerCustomCustomer(
+            {
+              name: body.name,
+              englishName: body.englishName,
+              aliases: body.aliases,
+              createSharePointFolder: body.createSharePointFolder !== false,
+            },
+            requestEnv
+          );
+          return res.json(result);
+        }
+
+        if (entityType === "employee") {
+          const result = registerCustomEmployee({
+            name: body.name,
+            email: body.email,
+            shortName: body.shortName,
+            aliases: body.aliases,
+          });
+          return res.json(result);
+        }
+
+        return res.status(400).json({ error: "סוג פעולה לא חוקי (נדרש customer או employee)" });
+      } catch (err: any) {
+        console.error("[POST /api/hours/manage] Error:", err);
+        return res.status(500).json({ error: err?.message || "שגיאה בהוספת לקוח / עובד" });
       }
     });
 

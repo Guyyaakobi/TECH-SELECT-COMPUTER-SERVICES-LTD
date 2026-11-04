@@ -2002,19 +2002,19 @@ EXTRACTION RULES FOR propose_entries:
                   filePath = mt.filePath;
                   webUrl = mt.webUrl;
 
-                  // Inspect file worksheets AND check duplicates IN PARALLEL
+                  // Inspect file worksheets AND check duplicates IN PARALLEL with fast timeouts
                   const [inspection, dup] = await Promise.all([
                     withSafeTimeout(
                       inspectWorkbookFile(fileId, activeEnv, driveId, customerName, {
                         preferredTabName: rawWorkType,
                         quickMode: true,
                       }),
-                      8500,
+                      5500,
                       null
                     ),
                     withSafeTimeout(
                       findDuplicates(fileId, { employee: user.name, date }, activeEnv, driveId),
-                      6500,
+                      3500,
                       { hasDuplicates: false, duplicates: [] }
                     ),
                   ]);

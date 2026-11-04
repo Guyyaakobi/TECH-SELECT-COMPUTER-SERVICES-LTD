@@ -15,6 +15,7 @@ import {
   BarChart3,
   FileSpreadsheet,
   ListChecks,
+  UserPlus,
 } from "lucide-react";
 import {
   fetchHoursConfig,
@@ -35,6 +36,7 @@ import { HoursTestPanel } from "./HoursTestPanel";
 import { TodayHoursModal } from "./TodayHoursModal";
 import { CentralHoursLogModal } from "./CentralHoursLogModal";
 import { MyLoggedHoursModal } from "./MyLoggedHoursModal";
+import { ManageDirectoryModal } from "./ManageDirectoryModal";
 import { HoursErrorBoundary } from "./HoursErrorBoundary";
 import type { PublicClientApplication, AccountInfo } from "@azure/msal-browser";
 
@@ -62,6 +64,7 @@ export const HoursTrackerPage: React.FC = () => {
   const [showDailySummaryModal, setShowDailySummaryModal] = useState<boolean>(false);
   const [showCentralLogModal, setShowCentralLogModal] = useState<boolean>(false);
   const [showMyLoggedHoursModal, setShowMyLoggedHoursModal] = useState<boolean>(false);
+  const [showManageDirectoryModal, setShowManageDirectoryModal] = useState<boolean>(false);
   const [quotaRefreshTrigger, setQuotaRefreshTrigger] = useState<number>(0);
 
   // Generation counter so clicking Logout at ANY stage immediately cancels any in-flight initAuth
@@ -522,6 +525,20 @@ export const HoursTrackerPage: React.FC = () => {
                   </button>
                 )}
 
+                {/* Add Customer / Employee Quick Button for Manager Guy & Admins */}
+                {isGuyOrAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setShowManageDirectoryModal(true)}
+                    className="text-[11px] sm:text-xs px-2.5 sm:px-3 py-1.5 rounded-full border border-[#DBEAFE] bg-white hover:bg-[#EFF6FF] text-[#172B4D] font-medium flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap shrink-0"
+                    title="הוספת לקוח חדש או עובד צוות חדש"
+                  >
+                    <UserPlus className="w-3.5 h-3.5 text-[#2563EB] shrink-0" />
+                    <span className="sm:hidden">+ הוספה</span>
+                    <span className="hidden sm:inline">+ לקוח / עובד</span>
+                  </button>
+                )}
+
                 {/* Central LOG Button for Guy g@tech-select.co.il */}
                 {isGuy && (
                   <button
@@ -624,6 +641,15 @@ export const HoursTrackerPage: React.FC = () => {
               isOpen={showCentralLogModal}
               onClose={() => setShowCentralLogModal(false)}
               currentUser={currentUserObj}
+            />
+          )}
+
+          {/* Manage Customers & Employees Modal for Manager Guy & Admins */}
+          {showManageDirectoryModal && (
+            <ManageDirectoryModal
+              isOpen={showManageDirectoryModal}
+              onClose={() => setShowManageDirectoryModal(false)}
+              onUpdated={() => setQuotaRefreshTrigger((prev) => prev + 1)}
             />
           )}
 

@@ -16,10 +16,12 @@ import {
   CalendarDays,
   Edit3,
   Save,
+  FileSpreadsheet,
 } from "lucide-react";
 import {
   apiGetMyListsDailySummary,
   apiAssistantChat,
+  downloadEntriesAsExcel,
   UserListsDailySummaryClient,
   UserListsDayGroupClient,
   UserListsEntryClient,
@@ -264,6 +266,23 @@ export const MyLoggedHoursModal: React.FC<MyLoggedHoursModalProps> = ({
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-[#06B6D4]" : "text-[#2563EB]"}`} />
               <span className="hidden sm:inline">רענן מ-Lists</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const allFilteredEntries = filteredDays.flatMap((d) => d.entries);
+                downloadEntriesAsExcel(
+                  allFilteredEntries,
+                  `TechSelect_${selectedEmployee.name || "Employee"}_Hours`
+                );
+              }}
+              disabled={loading || filteredDays.length === 0}
+              className="p-2 sm:px-3 sm:py-1.5 rounded-xl bg-white hover:bg-[#EFF6FF] border border-[#DBEAFE] text-xs font-semibold text-[#2563EB] transition-colors flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
+              title="ייצא את השעות המוצגות לקובץ Excel"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-[#2563EB]" />
+              <span className="hidden sm:inline">ייצוא ל-Excel</span>
             </button>
 
             {summary?.listWebUrl && (

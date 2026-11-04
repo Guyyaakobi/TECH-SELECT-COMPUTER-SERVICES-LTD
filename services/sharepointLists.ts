@@ -388,6 +388,76 @@ export const KNOWN_TEAM_MEMBERS: Array<{ name: string; email: string; shortName:
   { name: "שי", email: "ShaiA@tech-select.co.il", shortName: "שי" },
 ];
 
+export function getKnownTeamMembers(): Array<{ name: string; email: string; shortName: string; aliases: string[] }> {
+  return KNOWN_TEAM_MEMBERS.map((tm) => ({
+    ...tm,
+    aliases: BILINGUAL_EMPLOYEE_DICTIONARY[tm.name] || [],
+  }));
+}
+
+export function registerCustomEmployee(params: {
+  name: string;
+  email: string;
+  shortName?: string;
+  aliases?: string[];
+}): { success: boolean; employee: { name: string; email: string; shortName: string; aliases: string[] } } {
+  const cleanName = String(params.name || "").trim();
+  const cleanEmail = String(params.email || "").trim().toLowerCase();
+  if (!cleanName) {
+    throw new Error("נא להזין שם עובד תקין");
+  }
+  const effectiveEmail = cleanEmail.includes("@")
+    ? cleanEmail
+    : `${cleanName.split(/\s+/)[0].toLowerCase()}@tech-select.co.il`;
+  const effectiveShortName = String(params.shortName || cleanName.split(/\s+/)[0] || cleanName).trim();
+
+  const extraAliases = Array.isArray(params.aliases)
+    ? params.aliases.map((a) => String(a || "").trim()).filter(Boolean)
+    : [];
+
+  const allAliases = Array.from(
+    new Set([
+      cleanName,
+      effectiveShortName,
+      effectiveEmail,
+      effectiveEmail.split("@")[0],
+      ...(BILINGUAL_EMPLOYEE_DICTIONARY[cleanName] || []),
+      ...extraAliases,
+    ])
+  );
+
+  BILINGUAL_EMPLOYEE_DICTIONARY[cleanName] = allAliases;
+
+  const existingIdx = KNOWN_TEAM_MEMBERS.findIndex(
+    (tm) => tm.name.toLowerCase() === cleanName.toLowerCase() || tm.email.toLowerCase() === effectiveEmail
+  );
+
+  if (existingIdx >= 0) {
+    KNOWN_TEAM_MEMBERS[existingIdx] = {
+      name: cleanName,
+      email: effectiveEmail,
+      shortName: effectiveShortName,
+    };
+  } else {
+    KNOWN_TEAM_MEMBERS.push({
+      name: cleanName,
+      email: effectiveEmail,
+      shortName: effectiveShortName,
+    });
+  }
+
+  return {
+    success: true,
+    employee: {
+      name: cleanName,
+      email: effectiveEmail,
+      shortName: effectiveShortName,
+      aliases: allAliases,
+    },
+  };
+}
+
+
 /**
  * Strictly searches KNOWN_TEAM_MEMBERS & BILINGUAL_EMPLOYEE_DICTIONARY for a matching employee.
  * Returns null if the name is NOT an existing TECH-SELECT employee (never invents new names).

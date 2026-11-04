@@ -1,4 +1,5 @@
 import { getApiToken, clearCachedApiToken } from "./hoursAuth";
+import * as XLSX from "xlsx";
 
 /**
  * Generic authenticated fetch wrapper for /api/hours/* endpoints
@@ -898,3 +899,268 @@ export async function apiGetMyListsDailySummary(options?: {
     listWebUrl: "https://techselectltd.sharepoint.com/sites/Customers/Lists/List/AllItems.aspx",
   };
 }
+
+/**
+ * 18. Generate and download a real .xlsx file directly in the browser without navigating away
+ */
+export function downloadEntriesAsExcel(
+  entries: Array<{
+    date?: string;
+    customerName?: string;
+    workType?: string;
+    sheetName?: string;
+    employeeName?: string;
+    employeeEmail?: string;
+    startTime?: string;
+    endTime?: string;
+    durationHours?: number;
+    description?: string;
+    status?: string;
+    webUrl?: string;
+  }>,
+  fileNamePrefix = "TechSelect_Hours_Report",
+  sheetName = "דיווח שעות"
+): void {
+  const rowsForExcel = (entries || []).map((e, idx) => ({
+    "#": idx + 1,
+    "תאריך": e.date || "",
+    "לקוח": e.customerName || "",
+    "סוג פעילות": e.workType || e.sheetName || "טיקטים",
+    "עובד": e.employeeName || "",
+    "שעת התחלה": e.startTime || "",
+    "שעת סיום": e.endTime || "",
+    "סה״כ שעות לחיוב": Number(e.durationHours || 0),
+    "תיאור הפעילות": e.description || "",
+    ...(e.status ? { "סטטוס": e.status } : {}),
+  }));
+
+  // Add a total summary row at the bottom
+  const totalHours =
+    Math.round(
+      rowsForExcel.reduce((sum, r) => sum + (Number(r["סה״כ שעות לחיוב"]) || 0), 0) * 100
+    ) / 100;
+
+  if (rowsForExcel.length > 0) {
+    rowsForExcel.push({
+      "#": "" as any,
+      "תאריך": "",
+      "לקוח": "",
+      "סוג פעילות": "",
+      "עובד": "",
+      "שעת התחלה": "",
+      "שעת סיום": "סה״כ שעות:",
+      "סה״כ שעות לחיוב": totalHours,
+      "תיאור הפעילות": `${entries.length} רשומות`,
+    });
+  }
+
+  const worksheet = XLSX.utils.json_to_sheet(rowsForExcel);
+  // Set RTL view for Hebrew Excel sheets
+  if (!worksheet["!views"]) worksheet["!views"] = [];
+  worksheet["!views"].push({ rightToLeft: true });
+
+  worksheet["!cols"] = [
+    { wch: 5 },
+    { wch: 13 },
+    { wch: 24 },
+    { wch: 16 },
+    { wch: 18 },
+    { wch: 12 },
+    { wch: 14 },
+    { wch: 16 },
+    { wch: 55 },
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName.slice(0, 31));
+
+  const wbout = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+  const blob = new Blob([wbout], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+
+  const dateSuffix = new Date().toISOString().split("T")[0];
+  const cleanName = `${fileNamePrefix}_${dateSuffix}.xlsx`;
+
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.setAttribute("download", cleanName);
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => {
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }, 200);
+}
+
+/**
+ * 19. Authenticated Server Excel Export with instant client-side fallback
+ */
+export async function apiDownloadExportExcel(options?: {
+  date?: string;
+  period?: string;
+  customer?: string;
+  employee?: string;
+  fallbackEntries?: any[];
+  fileNamePrefix?: string;
+}): Promise<void> {
+  // If we already have the exact entries loaded on screen, generate the .xlsx immediately (<20ms)!
+  if (options?.fallbackEntries && options.fallbackEntries.length > 0) {
+    downloadEntriesAsExcel(
+      options.fallbackEntries,
+      options.fileNamePrefix || `TechSelect_Hours_${options.date || "Report"}`
+    );
+    return;
+  }
+
+  // Otherwise fetch from /api/hours/export-excel with Bearer token
+  let token = await getApiToken();
+  const params = new URLSearchParams();
+  if (options?.date) params.set("date", options.date);
+  if (options?.period) params.set("period", options.period);
+  if (options?.customer) params.set("customer", options.customer);
+  if (options?.employee) params.set("employee", options.employee);
+  const q = params.toString() ? `?${params.toString()}` : "";
+
+  const res = await fetch(`/api/hours/export-excel${q}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const contentType = res.headers.get("content-type") || "";
+  if (res.ok && contentType.includes("spreadsheet")) {
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute(
+      "download",
+      `${options?.fileNamePrefix || "TechSelect_Lists_Report"}_${options?.date || new Date().toISOString().split("T")[0]}.xlsx`
+    );
+    document.body.appendChild(link);
+    link.click();
+    setTimeout(() => {
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }, 200);
+    return;
+  }
+
+  // Fallback: fetch today-summary and export via XLSX in browser
+  const report = await apiGetTodayHoursSummary({
+    date: options?.date || "today",
+    period: (options?.period as any) || "day",
+    customer: options?.customer,
+    employee: options?.employee,
+  });
+  downloadEntriesAsExcel(
+    report.entries || [],
+    options?.fileNamePrefix || `TechSelect_Hours_${report.date || "Report"}`
+  );
+}
+
+export interface ManagedEmployeeItem {
+  name: string;
+  email: string;
+  shortName: string;
+  aliases?: string[];
+}
+
+const CUSTOM_EMPLOYEES_STORAGE_KEY = "techselect_custom_employees_v1";
+
+export function getCustomStoredEmployees(): ManagedEmployeeItem[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_EMPLOYEES_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCustomStoredEmployee(emp: ManagedEmployeeItem): void {
+  try {
+    const current = getCustomStoredEmployees();
+    const idx = current.findIndex(
+      (e) =>
+        e.name.toLowerCase() === emp.name.toLowerCase() ||
+        (e.email && emp.email && e.email.toLowerCase() === emp.email.toLowerCase())
+    );
+    if (idx >= 0) {
+      current[idx] = emp;
+    } else {
+      current.push(emp);
+    }
+    localStorage.setItem(CUSTOM_EMPLOYEES_STORAGE_KEY, JSON.stringify(current));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+/**
+ * 20. Manager Directory API: Get Customers & Employees
+ */
+export async function apiGetManagedDirectory(): Promise<{
+  customers: Array<{ id: string; name: string; webUrl?: string }>;
+  totalCustomers: number;
+  employees: ManagedEmployeeItem[];
+}> {
+  return fetchHoursApi(`/api/hours/manage`, { method: "GET" });
+}
+
+/**
+ * 21. Manager Directory API: Add Customer
+ */
+export async function apiAddManagedCustomer(params: {
+  name: string;
+  englishName?: string;
+  aliases?: string[];
+  createSharePointFolder?: boolean;
+}): Promise<{
+  success: boolean;
+  customer: { id: string; name: string; webUrl?: string };
+  aliases: string[];
+  createdInSharePoint: boolean;
+  hoursFolderUrl?: string;
+}> {
+  return fetchHoursApi(`/api/hours/manage`, {
+    method: "POST",
+    body: JSON.stringify({
+      entityType: "customer",
+      ...params,
+    }),
+  });
+}
+
+/**
+ * 22. Manager Directory API: Add Employee
+ */
+export async function apiAddManagedEmployee(params: {
+  name: string;
+  email: string;
+  shortName?: string;
+  aliases?: string[];
+}): Promise<{
+  success: boolean;
+  employee: ManagedEmployeeItem;
+}> {
+  const res = await fetchHoursApi<{ success: boolean; employee: ManagedEmployeeItem }>(
+    `/api/hours/manage`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        entityType: "employee",
+        ...params,
+      }),
+    }
+  );
+  if (res?.employee) {
+    saveCustomStoredEmployee(res.employee);
+  }
+  return res;
+}
+

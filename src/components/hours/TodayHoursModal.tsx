@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import {
   apiGetTodayHoursSummary,
+  apiDownloadExportExcel,
   DailyHoursReportClient,
   EmployeeDailySummaryClient,
   CustomerDailySummaryClient,
@@ -41,11 +42,29 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
   const [filterQuery, setFilterQuery] = useState<string>("");
   const [report, setReport] = useState<DailyHoursReportClient | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
+  const [exportingExcel, setExportingExcel] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"employees" | "customers" | "entries">("employees");
   const [expandedEmployee, setExpandedEmployee] = useState<string | null>(null);
   const [expandedCustomer, setExpandedCustomer] = useState<string | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
+
+  const handleExportExcel = async () => {
+    try {
+      setExportingExcel(true);
+      await apiDownloadExportExcel({
+        date: report?.date || selectedDate,
+        period: selectedDate,
+        fallbackEntries: report?.entries || [],
+        fileNamePrefix: `TechSelect_Hours_${report?.date || selectedDate}`,
+      });
+    } catch (err: any) {
+      console.error("[TodayHoursModal] Excel export error:", err);
+      setError(err?.message || "שגיאה בייצוא לקובץ Excel");
+    } finally {
+      setExportingExcel(false);
+    }
+  };
 
   const fetchReport = async (dateStr?: string) => {
     try {
@@ -183,16 +202,16 @@ export const TodayHoursModal: React.FC<TodayHoursModalProps> = ({
               <span>{copied ? "הועתק!" : "העתק סיכום"}</span>
             </button>
 
-            <a
-              href={`/api/hours/export-excel?date=${encodeURIComponent(report?.date || "")}&period=${encodeURIComponent(selectedDate)}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-1.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
-              title="ייצא את הנתונים מ-Microsoft Lists לקובץ Excel"
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              disabled={exportingExcel || loading}
+              className="px-3 py-1.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
+              title="הורד קובץ Excel (.xlsx) של התיעודים המוצגים"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>ייצוא ל-Excel</span>
-            </a>
+              <span>{exportingExcel ? "מייצא..." : "ייצוא ל-Excel"}</span>
+            </button>
 
             <button
               onClick={onClose}

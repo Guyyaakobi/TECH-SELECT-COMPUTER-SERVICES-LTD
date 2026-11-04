@@ -1025,6 +1025,135 @@ export const BILINGUAL_CUSTOMER_DICTIONARY: Record<string, string[]> = {
   "hisep": ["הייספ לאב", "הייספ", "hsl", "hisep lab"],
 };
 
+export async function registerCustomCustomer(
+  params: {
+    name: string;
+    englishName?: string;
+    aliases?: string[];
+    createSharePointFolder?: boolean;
+  },
+  env?: any
+): Promise<{
+  success: boolean;
+  customer: CustomerFolder;
+  aliases: string[];
+  createdInSharePoint: boolean;
+  hoursFolderUrl?: string;
+}> {
+  const cleanName = String(params.name || "").trim();
+  const cleanEnglish = String(params.englishName || "").trim();
+  if (!cleanName) {
+    throw new Error("נא להזין שם לקוח תקין");
+  }
+
+  const rawAliases = Array.isArray(params.aliases)
+    ? params.aliases.map((a) => String(a || "").trim()).filter(Boolean)
+    : [];
+  if (cleanEnglish && !rawAliases.includes(cleanEnglish)) {
+    rawAliases.unshift(cleanEnglish);
+  }
+
+  const allAliases = Array.from(
+    new Set([
+      cleanName,
+      cleanName.toLowerCase(),
+      ...(cleanEnglish ? [cleanEnglish, cleanEnglish.toLowerCase()] : []),
+      ...(BILINGUAL_CUSTOMER_DICTIONARY[cleanName] || []),
+      ...rawAliases,
+    ])
+  ).filter(Boolean);
+
+  BILINGUAL_CUSTOMER_DICTIONARY[cleanName] = allAliases;
+  BILINGUAL_CUSTOMER_DICTIONARY[cleanName.toLowerCase()] = allAliases;
+  if (cleanEnglish) {
+    BILINGUAL_CUSTOMER_DICTIONARY[cleanEnglish.toLowerCase()] = allAliases;
+  }
+
+  let createdInSharePoint = false;
+  let folderItem: CustomerFolder = {
+    id: `custom_${Date.now()}`,
+    name: cleanName,
+    type: "folder",
+  };
+  let hoursFolderUrl: string | undefined = undefined;
+
+  if (params.createSharePointFolder !== false) {
+    try {
+      const { driveId } = await resolveSharePointDrive(env);
+      const { hoursFolderName } = getGraphHoursConfig(env);
+
+      // 1. Create or reuse customer root folder in SharePoint default drive
+      const createRootRes = await fetchGraph(
+        `https://graph.microsoft.com/v1.0/drives/${driveId}/root/children`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: cleanName,
+            folder: {},
+            "@microsoft.graph.conflictBehavior": "replace",
+          }),
+        },
+        env
+      );
+
+      if (createRootRes.ok) {
+        const rootData: any = await createRootRes.json();
+        createdInSharePoint = true;
+        folderItem = {
+          id: rootData.id,
+          name: rootData.name || cleanName,
+          webUrl: rootData.webUrl,
+          driveId,
+          type: "folder",
+        };
+
+        // 2. Create "שעות עבודה" subfolder inside the customer folder
+        const createHoursSubRes = await fetchGraph(
+          `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${rootData.id}/children`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: hoursFolderName || "שעות עבודה",
+              folder: {},
+              "@microsoft.graph.conflictBehavior": "replace",
+            }),
+          },
+          env
+        );
+        if (createHoursSubRes.ok) {
+          const hoursSubData: any = await createHoursSubRes.json();
+          folderItem.hoursFolderId = hoursSubData.id;
+          hoursFolderUrl = hoursSubData.webUrl;
+        }
+      }
+    } catch (spErr) {
+      console.warn("[registerCustomCustomer] SharePoint folder creation warning:", spErr);
+    }
+  }
+
+  // Also add to in-memory customersCache immediately so UI & AI see it without waiting
+  if (customersCache && Array.isArray(customersCache.items)) {
+    const existsIdx = customersCache.items.findIndex(
+      (c) => c.name.toLowerCase() === cleanName.toLowerCase()
+    );
+    if (existsIdx >= 0) {
+      customersCache.items[existsIdx] = folderItem;
+    } else {
+      customersCache.items.unshift(folderItem);
+    }
+  }
+
+  return {
+    success: true,
+    customer: folderItem,
+    aliases: allAliases,
+    createdInSharePoint,
+    hoursFolderUrl,
+  };
+}
+
 /**
  * Generic IT & Business vocabulary (used for compound word translation, NOT as standalone customer names)
  */
@@ -1984,30 +2113,52 @@ export function matchMonthItem(
  * "נובמבר 2026", "נובמבר 2025", "11-26"...) and select the item for the requested month.
  * Handle both: month folder -> the .xlsx inside, or .xlsx per month.
  */
+// Fast 5-minute cache for resolved monthly Excel targets per customer & month
+const monthTargetCache = new Map<string, { result: MonthTargetResult; expiresAt: number }>();
+
+export function clearMonthTargetCache(customerName?: string): void {
+  if (!customerName) {
+    monthTargetCache.clear();
+    return;
+  }
+  const norm = customerName.trim().toLowerCase();
+  for (const key of monthTargetCache.keys()) {
+    if (key.includes(norm)) monthTargetCache.delete(key);
+  }
+}
+
 export async function findMonthTarget(
   customerInput: string | CustomerFolder,
   dateInput: string,
   env?: any
 ): Promise<MonthTargetResult> {
   const { year, month, ym } = parseYearMonth(dateInput);
+  const inputKey =
+    typeof customerInput === "object" && customerInput.id
+      ? `${customerInput.id}::${customerInput.name.toLowerCase()}::${ym}`
+      : `${String(customerInput || "").trim().toLowerCase()}::${ym}`;
+
+  const cachedTarget = monthTargetCache.get(inputKey);
+  if (cachedTarget && Date.now() < cachedTarget.expiresAt && cachedTarget.result.found) {
+    return cachedTarget.result;
+  }
 
   // 1. Resolve candidate customer folders (if a customer has both a library and a folder, or close matches, inspect them!)
   let candidateCustomers: CustomerFolder[] = [];
-  if (typeof customerInput === "object" && customerInput.id) {
+  if (
+    typeof customerInput === "object" &&
+    customerInput.id &&
+    !String(customerInput.id).startsWith("dict_") &&
+    !String(customerInput.id).startsWith("cust_")
+  ) {
+    // Fast path: customerInput is ALREADY a real SharePoint folder/library!
+    // Use it directly first without making a redundant findCustomer call!
     candidateCustomers = [customerInput];
-    // Also include any other folder/library with the same or bilingual name from cache
-    try {
-      const extraMatches = await findCustomer(customerInput.name, env, { minScore: 0.75, maxResults: 3 });
-      for (const m of extraMatches) {
-        if (!candidateCustomers.some((c) => c.id === m.customer.id)) {
-          candidateCustomers.push(m.customer);
-        }
-      }
-    } catch {
-      // ignore
-    }
   } else {
-    const query = typeof customerInput === "string" ? customerInput.trim() : "";
+    const query =
+      typeof customerInput === "string"
+        ? customerInput.trim()
+        : customerInput?.name || "";
     const matches = await findCustomer(query, env, { minScore: 0.42, maxResults: 3 });
     candidateCustomers = matches.map((m) => m.customer);
   }
@@ -2129,37 +2280,38 @@ export async function findMonthTarget(
       );
     }
 
-    // Also run recursive search inside this customer's library/folder for any .xlsx or .xls files
-    try {
-      const custSearchUrl =
-        custFolder.type === "library"
-          ? `https://graph.microsoft.com/v1.0/drives/${driveId}/root/search(q='xlsx')?$top=100`
-          : `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${custFolder.id}/search(q='xlsx')?$top=100`;
-      const searchRes = await fetchGraph(custSearchUrl, { method: "GET" }, env);
-      if (searchRes.ok) {
-        const sData: any = await searchRes.json();
-        const custNameNorm = normalizeCustomerString(custFolder.name);
-        for (const item of sData.value || []) {
-          if (!isExcelDriveItem(item)) continue;
-          // Note: Graph's /items/{id}/search sometimes searches the entire drive if folder-scoped search is unsupported.
-          // Verify parentReference.path if custFolder is a folder so we don't mix other customers' files!
-          if (custFolder.type === "folder" && item.parentReference?.path) {
-            const decodedPath = decodeURIComponent(String(item.parentReference.path)).toLowerCase();
-            if (
-              !decodedPath.includes(custFolder.name.toLowerCase()) &&
-              (!custNameNorm || !decodedPath.includes(custNameNorm))
-            ) {
-              continue;
+    // Only run recursive drive search if we haven't already found an exact month match in the hours subfolder!
+    const alreadyHasExactMonthMatch = Boolean(matchMonthItem(files, year, month, custFolder.name));
+    if (!alreadyHasExactMonthMatch) {
+      try {
+        const custSearchUrl =
+          custFolder.type === "library"
+            ? `https://graph.microsoft.com/v1.0/drives/${driveId}/root/search(q='xlsx')?$top=100`
+            : `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${custFolder.id}/search(q='xlsx')?$top=100`;
+        const searchRes = await fetchGraph(custSearchUrl, { method: "GET" }, env);
+        if (searchRes.ok) {
+          const sData: any = await searchRes.json();
+          const custNameNorm = normalizeCustomerString(custFolder.name);
+          for (const item of sData.value || []) {
+            if (!isExcelDriveItem(item)) continue;
+            if (custFolder.type === "folder" && item.parentReference?.path) {
+              const decodedPath = decodeURIComponent(String(item.parentReference.path)).toLowerCase();
+              if (
+                !decodedPath.includes(custFolder.name.toLowerCase()) &&
+                (!custNameNorm || !decodedPath.includes(custNameNorm))
+              ) {
+                continue;
+              }
             }
+            const parentPath = item.parentReference?.path
+              ? decodeURIComponent(String(item.parentReference.path)).split(":").pop() || ""
+              : "";
+            addFile(item, parentPath);
           }
-          const parentPath = item.parentReference?.path
-            ? decodeURIComponent(String(item.parentReference.path)).split(":").pop() || ""
-            : "";
-          addFile(item, parentPath);
         }
+      } catch {
+        // ignore search error
       }
-    } catch {
-      // ignore search error
     }
 
     return { files, rootItems: custItems, driveId };
@@ -2290,7 +2442,7 @@ export async function findMonthTarget(
     ? `${chosenCustomerFolder.name}/${chosenFile.parentFolderName.replace(/^\/+/, "")}`
     : `${chosenCustomerFolder.name}/${hoursFolderName}`;
 
-  return {
+  const finalResult: MonthTargetResult = {
     found: true,
     customerName: chosenCustomerFolder.name,
     requestedMonth: ym,
@@ -2303,6 +2455,17 @@ export async function findMonthTarget(
     existingItems: existingNames,
     availableFiles,
   };
+
+  monthTargetCache.set(inputKey, {
+    result: finalResult,
+    expiresAt: Date.now() + 5 * 60 * 1000,
+  });
+  monthTargetCache.set(`${chosenCustomerFolder.name.toLowerCase()}::${ym}`, {
+    result: finalResult,
+    expiresAt: Date.now() + 5 * 60 * 1000,
+  });
+
+  return finalResult;
 }
 
 /**
