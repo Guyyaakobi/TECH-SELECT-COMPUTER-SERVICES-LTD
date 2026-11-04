@@ -107,7 +107,7 @@ export const ManageDirectoryModal: React.FC<ManageDirectoryModalProps> = ({
       setFeedback({
         type: "success",
         message: res.createdInSharePoint
-          ? `הלקוח "${cleanName}" נוסף בהצלחה ונוצרה עבורו תיקיית "שעות עבודה" ב-SharePoint!`
+          ? `הלקוח "${cleanName}" הוקם כספריית לקוח ב-SharePoint (במיקום של כל הלקוחות) יחד עם תיקיית "שעות עבודה"!`
           : `הלקוח "${cleanName}" נוסף בהצלחה למילון הלקוחות של המערכת!`,
         webUrl: res.hoursFolderUrl || res.customer?.webUrl,
       });
@@ -341,7 +341,7 @@ export const ManageDirectoryModal: React.FC<ManageDirectoryModalProps> = ({
                 />
                 <FolderPlus className="w-3.5 h-3.5 text-[#2563EB]" />
                 <span>
-                  צור אוטומטית תיקיית לקוח ותיקיית <strong>"שעות עבודה"</strong> ב-SharePoint (אם אינה קיימת)
+                  הקם אוטומטית ספריית לקוח (Document Library) ותיקיית <strong>"שעות עבודה"</strong> באתר הלקוחות ב-SharePoint
                 </span>
               </label>
 

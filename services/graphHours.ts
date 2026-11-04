@@ -717,7 +717,13 @@ export async function detectAndListCustomers(
         "form templates",
         "נכסי אתר",
         "דפי אתר",
+        "documents",
+        "shared documents",
+        "מסמכים",
       ]);
+
+      const libraryCustomers: CustomerFolder[] = [];
+      const defaultDriveFolders: Array<{ id: string; name: string; webUrl?: string; driveId: string }> = [];
 
       // 1. Fetch document libraries AND root folders in parallel
       const fetchLibrariesPromise = (async () => {
@@ -730,12 +736,13 @@ export async function detectAndListCustomers(
             const allDrives: any[] = (drivesData.value || []).filter(
               (d: any) =>
                 !d.system &&
+                d.id !== driveId &&
                 !SYSTEM_DRIVE_NAMES.has(String(d.name || "").trim().toLowerCase())
             );
 
             for (const drive of allDrives) {
-              if (!allCustomers.some((c) => c.id === drive.id)) {
-                allCustomers.push({
+              if (!libraryCustomers.some((c) => c.id === drive.id)) {
+                libraryCustomers.push({
                   id: drive.id,
                   name: drive.name,
                   webUrl: drive.webUrl,
@@ -766,15 +773,12 @@ export async function detectAndListCustomers(
               if (["לקוחות", "customers", "clients", "תיקיות לקוחות"].includes(lowerName)) {
                 containerFoldersToInspect.push({ id: folder.id, driveId });
               }
-              if (!allCustomers.some((c) => c.id === folder.id)) {
-                allCustomers.push({
-                  id: folder.id,
-                  name: folder.name,
-                  webUrl: folder.webUrl,
-                  driveId,
-                  type: "folder" as const,
-                });
-              }
+              defaultDriveFolders.push({
+                id: folder.id,
+                name: folder.name,
+                webUrl: folder.webUrl,
+                driveId,
+              });
             }
             currentChildrenUrl = data["@odata.nextLink"] || null;
           }
@@ -784,6 +788,55 @@ export async function detectAndListCustomers(
       })();
 
       await Promise.all([fetchLibrariesPromise, fetchRootFoldersPromise]);
+
+      // Auto-migrate any customer (such as "קורלייט") that was mistakenly created inside default "Documents"
+      // into a proper Site Document Library alongside all the other customers
+      if (libraryCustomers.length > 0 && defaultDriveFolders.length > 0) {
+        for (const strayFolder of defaultDriveFolders) {
+          const strayName = String(strayFolder.name || "").trim();
+          if (!strayName) continue;
+          const alreadyHasLibrary = libraryCustomers.some(
+            (lib) => lib.name.trim().toLowerCase() === strayName.toLowerCase()
+          );
+          if (strayName === "קורלייט" || strayName.toLowerCase() === "correlate") {
+            try {
+              if (!alreadyHasLibrary) {
+                const migrated = await createCustomerLibraryInSite(siteId, strayName, env);
+                if (migrated) {
+                  libraryCustomers.unshift(migrated);
+                }
+              }
+              // Remove the stray folder from Documents so it doesn't stay under "Documents : קורלייט"
+              await cleanupStrayDocumentsFolderIfEmpty(driveId, strayFolder.id, env);
+              continue;
+            } catch (migErr) {
+              console.warn(`[detectAndListCustomers] Auto-migration notice for ${strayName}:`, migErr);
+            }
+          }
+        }
+      }
+
+      for (const lib of libraryCustomers) {
+        if (!allCustomers.some((c) => c.id === lib.id)) {
+          allCustomers.push(lib);
+        }
+      }
+
+      for (const folder of defaultDriveFolders) {
+        if (
+          !allCustomers.some(
+            (c) => c.id === folder.id || c.name.trim().toLowerCase() === folder.name.trim().toLowerCase()
+          )
+        ) {
+          allCustomers.push({
+            id: folder.id,
+            name: folder.name,
+            webUrl: folder.webUrl,
+            driveId: folder.driveId,
+            type: "folder" as const,
+          });
+        }
+      }
 
       // If there is a container folder like "לקוחות" / "Customers", also list its child folders
       if (containerFoldersToInspect.length > 0) {
@@ -1023,7 +1076,194 @@ export const BILINGUAL_CUSTOMER_DICTIONARY: Record<string, string[]> = {
   "הייספ": ["hsl", "hisep", "hisep lab", "hisep labs", "הייספ לאב"],
   "hsl": ["הייספ לאב", "הייספ", "hisep", "hisep lab"],
   "hisep": ["הייספ לאב", "הייספ", "hsl", "hisep lab"],
+  "קורלייט": ["correlate", "corelate", "קורלייט"],
+  "correlate": ["קורלייט", "corelate"],
 };
+
+/**
+ * Helper: Safely remove a stray folder from the default "Documents" drive ONLY if it contains no Excel files
+ * (e.g., when a customer was mistakenly created inside "Documents : <Customer>" instead of as a Site Document Library).
+ */
+async function cleanupStrayDocumentsFolderIfEmpty(
+  defaultDriveId: string,
+  folderItemId: string,
+  env?: any
+): Promise<boolean> {
+  try {
+    const childrenRes = await fetchGraph(
+      `https://graph.microsoft.com/v1.0/drives/${defaultDriveId}/items/${folderItemId}/children?$top=50`,
+      { method: "GET" },
+      env
+    );
+    if (!childrenRes.ok) return false;
+    const childrenData: any = await childrenRes.json();
+    const children: any[] = childrenData.value || [];
+
+    // Check if there are any files directly inside
+    if (children.some((c) => c.file)) {
+      return false;
+    }
+
+    // If there is a subfolder (like "שעות עבודה"), make sure it has no files either
+    for (const sub of children) {
+      if (sub.folder) {
+        const subRes = await fetchGraph(
+          `https://graph.microsoft.com/v1.0/drives/${defaultDriveId}/items/${sub.id}/children?$top=20`,
+          { method: "GET" },
+          env
+        );
+        if (subRes.ok) {
+          const subData: any = await subRes.json();
+          if ((subData.value || []).length > 0) {
+            return false;
+          }
+        }
+      }
+    }
+
+    // Safe to delete the empty stray folder from Documents
+    const delRes = await fetchGraph(
+      `https://graph.microsoft.com/v1.0/drives/${defaultDriveId}/items/${folderItemId}`,
+      { method: "DELETE" },
+      env
+    );
+    return delRes.ok || delRes.status === 204;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Helper: Create or resolve a Customer Document Library at the SharePoint site level (/sites/Customers)
+ * and ensure its "שעות עבודה" folder exists inside that library.
+ */
+async function createCustomerLibraryInSite(
+  siteId: string,
+  customerName: string,
+  env?: any
+): Promise<(CustomerFolder & { hoursFolderUrl?: string }) | null> {
+  const { hoursFolderName } = getGraphHoursConfig(env);
+  const cleanName = customerName.trim();
+
+  // 1. Check if a Document Library (Drive) with this customer name already exists at the site level
+  let customerDrive: { id: string; name: string; webUrl?: string } | null = null;
+  try {
+    const drivesRes = await fetchGraph(
+      `https://graph.microsoft.com/v1.0/sites/${siteId}/drives?$top=200`,
+      { method: "GET" },
+      env
+    );
+    if (drivesRes.ok) {
+      const drivesData: any = await drivesRes.json();
+      const found = (drivesData.value || []).find(
+        (d: any) =>
+          !d.system &&
+          String(d.name || "").trim().toLowerCase() === cleanName.toLowerCase() &&
+          !["documents", "shared documents", "מסמכים"].includes(
+            String(d.name || "").trim().toLowerCase()
+          )
+      );
+      if (found) {
+        customerDrive = { id: found.id, name: found.name, webUrl: found.webUrl };
+      }
+    }
+  } catch (e) {
+    console.warn("[createCustomerLibraryInSite] Error checking existing drives:", e);
+  }
+
+  // 2. If not found, create a new Document Library at the site level (same place as all other customers!)
+  if (!customerDrive) {
+    const createListRes = await fetchGraph(
+      `https://graph.microsoft.com/v1.0/sites/${siteId}/lists`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          displayName: cleanName,
+          list: {
+            template: "documentLibrary",
+          },
+        }),
+      },
+      env
+    );
+
+    if (createListRes.ok) {
+      const listData: any = await createListRes.json();
+      if (listData?.id) {
+        const listDriveRes = await fetchGraph(
+          `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listData.id}/drive`,
+          { method: "GET" },
+          env
+        );
+        if (listDriveRes.ok) {
+          const driveData: any = await listDriveRes.json();
+          customerDrive = {
+            id: driveData.id,
+            name: driveData.name || cleanName,
+            webUrl: driveData.webUrl || listData.webUrl,
+          };
+        }
+      }
+    } else if (createListRes.status === 409) {
+      // Already exists — re-query drives
+      const drivesRes2 = await fetchGraph(
+        `https://graph.microsoft.com/v1.0/sites/${siteId}/drives?$top=200`,
+        { method: "GET" },
+        env
+      );
+      if (drivesRes2.ok) {
+        const drivesData2: any = await drivesRes2.json();
+        const found2 = (drivesData2.value || []).find(
+          (d: any) => String(d.name || "").trim().toLowerCase() === cleanName.toLowerCase()
+        );
+        if (found2) {
+          customerDrive = { id: found2.id, name: found2.name, webUrl: found2.webUrl };
+        }
+      }
+    }
+  }
+
+  if (!customerDrive || !customerDrive.id) {
+    return null;
+  }
+
+  // 3. Create "שעות עבודה" folder at the root of the customer's own Document Library
+  let hoursFolderId: string | undefined;
+  let hoursFolderUrl: string | undefined;
+  try {
+    const createHoursSubRes = await fetchGraph(
+      `https://graph.microsoft.com/v1.0/drives/${customerDrive.id}/root/children`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: hoursFolderName || "שעות עבודה",
+          folder: {},
+          "@microsoft.graph.conflictBehavior": "replace",
+        }),
+      },
+      env
+    );
+    if (createHoursSubRes.ok) {
+      const hoursSubData: any = await createHoursSubRes.json();
+      hoursFolderId = hoursSubData.id;
+      hoursFolderUrl = hoursSubData.webUrl;
+    }
+  } catch (subErr) {
+    console.warn("[createCustomerLibraryInSite] Could not create hours subfolder:", subErr);
+  }
+
+  return {
+    id: customerDrive.id,
+    name: customerDrive.name || cleanName,
+    webUrl: customerDrive.webUrl,
+    driveId: customerDrive.id,
+    hoursFolderId,
+    hoursFolderUrl,
+    type: "library",
+  };
+}
 
 export async function registerCustomCustomer(
   params: {
@@ -1073,76 +1313,58 @@ export async function registerCustomCustomer(
   let folderItem: CustomerFolder = {
     id: `custom_${Date.now()}`,
     name: cleanName,
-    type: "folder",
+    type: "library",
   };
   let hoursFolderUrl: string | undefined = undefined;
 
   if (params.createSharePointFolder !== false) {
     try {
-      const { driveId } = await resolveSharePointDrive(env);
-      const { hoursFolderName } = getGraphHoursConfig(env);
+      const { siteId, driveId: defaultDriveId } = await resolveSharePointDrive(env);
 
-      // 1. Create or reuse customer root folder in SharePoint default drive
-      const createRootRes = await fetchGraph(
-        `https://graph.microsoft.com/v1.0/drives/${driveId}/root/children`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: cleanName,
-            folder: {},
-            "@microsoft.graph.conflictBehavior": "replace",
-          }),
-        },
-        env
-      );
-
-      if (createRootRes.ok) {
-        const rootData: any = await createRootRes.json();
+      // 1. Create or reuse a Customer Document Library at the SharePoint site root (/sites/Customers)
+      //    so it sits alongside all existing customers (NOT inside the default "Documents" library!)
+      const libResult = await createCustomerLibraryInSite(siteId, cleanName, env);
+      if (libResult) {
         createdInSharePoint = true;
+        hoursFolderUrl = libResult.hoursFolderUrl || libResult.webUrl;
         folderItem = {
-          id: rootData.id,
-          name: rootData.name || cleanName,
-          webUrl: rootData.webUrl,
-          driveId,
-          type: "folder",
+          id: libResult.id,
+          name: libResult.name,
+          webUrl: libResult.webUrl,
+          driveId: libResult.driveId,
+          hoursFolderId: libResult.hoursFolderId,
+          type: "library",
         };
 
-        // 2. Create "שעות עבודה" subfolder inside the customer folder
-        const createHoursSubRes = await fetchGraph(
-          `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${rootData.id}/children`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              name: hoursFolderName || "שעות עבודה",
-              folder: {},
-              "@microsoft.graph.conflictBehavior": "replace",
-            }),
-          },
-          env
-        );
-        if (createHoursSubRes.ok) {
-          const hoursSubData: any = await createHoursSubRes.json();
-          folderItem.hoursFolderId = hoursSubData.id;
-          hoursFolderUrl = hoursSubData.webUrl;
+        // 2. If a stray folder with the same name was previously created inside "Documents", clean it up if empty
+        try {
+          const strayRes = await fetchGraph(
+            `https://graph.microsoft.com/v1.0/drives/${defaultDriveId}/root:/${encodeURIComponent(cleanName)}`,
+            { method: "GET" },
+            env
+          );
+          if (strayRes.ok) {
+            const strayData: any = await strayRes.json();
+            if (strayData?.id && strayData?.folder) {
+              await cleanupStrayDocumentsFolderIfEmpty(defaultDriveId, strayData.id, env);
+            }
+          }
+        } catch {
+          // ignore if no stray folder exists in Documents
         }
       }
     } catch (spErr) {
-      console.warn("[registerCustomCustomer] SharePoint folder creation warning:", spErr);
+      console.warn("[registerCustomCustomer] SharePoint library creation warning:", spErr);
     }
   }
 
   // Also add to in-memory customersCache immediately so UI & AI see it without waiting
   if (customersCache && Array.isArray(customersCache.items)) {
-    const existsIdx = customersCache.items.findIndex(
-      (c) => c.name.toLowerCase() === cleanName.toLowerCase()
+    // Remove any old folder entry from defaultDriveId if replaced by library
+    customersCache.items = customersCache.items.filter(
+      (c) => c.name.trim().toLowerCase() !== cleanName.toLowerCase()
     );
-    if (existsIdx >= 0) {
-      customersCache.items[existsIdx] = folderItem;
-    } else {
-      customersCache.items.unshift(folderItem);
-    }
+    customersCache.items.unshift(folderItem);
   }
 
   return {
