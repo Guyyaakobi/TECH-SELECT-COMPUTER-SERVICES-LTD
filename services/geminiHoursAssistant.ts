@@ -168,13 +168,14 @@ export function buildEnrichedRowPayload(params: {
 
   // If neither start nor end time was provided, suggest from report time rounded to 15 min
   if (!calculatedStartTime && !calculatedEndTime) {
-    const suggested = suggestStartEndTimes(minutes || 30);
+    const suggested = suggestStartEndTimes(minutes || 60);
     calculatedStartTime = suggested.startTime;
     calculatedEndTime = suggested.endTime;
   }
 
-  if (!calculatedEndTime && calculatedStartTime) {
-    calculatedEndTime = calculateEndTime(calculatedStartTime, minutes || 30);
+  // Never allow endTime to be empty or identical to startTime (Excel formulas require End > Start)
+  if ((!calculatedEndTime || calculatedEndTime === calculatedStartTime) && calculatedStartTime) {
+    calculatedEndTime = calculateEndTime(calculatedStartTime, minutes || 60);
   }
 
   let effectiveHours = hours;
@@ -247,6 +248,7 @@ export function buildEnrichedRowPayload(params: {
     userUpn: userUpn || userEmail || "",
 
     "שעת התחלה": calculatedStartTime,
+    "שעת התחלה 1": calculatedStartTime,
     "שעה התחלה": calculatedStartTime,
     התחלה: calculatedStartTime,
     משעה: calculatedStartTime,
@@ -264,6 +266,7 @@ export function buildEnrichedRowPayload(params: {
     start: calculatedStartTime,
 
     "שעת סיום": calculatedEndTime,
+    "שעת סיום 1": calculatedEndTime,
     "שעה סיום": calculatedEndTime,
     סיום: calculatedEndTime,
     "עד שעה": calculatedEndTime,
@@ -377,6 +380,7 @@ export function buildEnrichedRowPayload(params: {
   // and MUST ALWAYS take absolute precedence over stale keys inside userOverride/mappedRow!
   if (calculatedStartTime) {
     result["שעת התחלה"] = calculatedStartTime;
+    result["שעת התחלה 1"] = calculatedStartTime;
     result["שעה התחלה"] = calculatedStartTime;
     result["התחלה"] = calculatedStartTime;
     result["משעה"] = calculatedStartTime;
@@ -387,6 +391,7 @@ export function buildEnrichedRowPayload(params: {
   }
   if (calculatedEndTime) {
     result["שעת סיום"] = calculatedEndTime;
+    result["שעת סיום 1"] = calculatedEndTime;
     result["שעה סיום"] = calculatedEndTime;
     result["סיום"] = calculatedEndTime;
     result["עד שעה"] = calculatedEndTime;
@@ -951,7 +956,7 @@ export async function processAssistantChat(
     };
 
     // Calculate / synchronize exact duration from start and end times if both exist
-    if (targetDraft.startTime && targetDraft.endTime) {
+    if (targetDraft.startTime && targetDraft.endTime && targetDraft.startTime !== targetDraft.endTime) {
       const matchStart = targetDraft.startTime.match(/^(\d{1,2}):(\d{2})/);
       const matchEnd = targetDraft.endTime.match(/^(\d{1,2}):(\d{2})/);
       if (matchStart && matchEnd) {
@@ -971,7 +976,7 @@ export async function processAssistantChat(
           targetDraft.durationFormatted = `${dm} דקות`;
         }
       }
-    } else if (targetDraft.startTime && !targetDraft.endTime) {
+    } else if (targetDraft.startTime && (!targetDraft.endTime || targetDraft.endTime === targetDraft.startTime)) {
       targetDraft.endTime = calculateEndTime(targetDraft.startTime, targetDraft.durationMinutes || 60);
     } else if (!targetDraft.startTime && targetDraft.endTime) {
       targetDraft.startTime = calculateStartTime(targetDraft.endTime, targetDraft.durationMinutes || 60);
@@ -1032,6 +1037,7 @@ export async function processAssistantChat(
     // CRITICAL: Overwrite stale mappedRow keys with user's explicit / edited values!
     if (targetDraft.startTime) {
       userOverrideValues["שעת התחלה"] = targetDraft.startTime;
+      userOverrideValues["שעת התחלה 1"] = targetDraft.startTime;
       userOverrideValues["שעה התחלה"] = targetDraft.startTime;
       userOverrideValues["התחלה"] = targetDraft.startTime;
       userOverrideValues["משעה"] = targetDraft.startTime;
@@ -1050,6 +1056,7 @@ export async function processAssistantChat(
     }
     if (targetDraft.endTime) {
       userOverrideValues["שעת סיום"] = targetDraft.endTime;
+      userOverrideValues["שעת סיום 1"] = targetDraft.endTime;
       userOverrideValues["שעה סיום"] = targetDraft.endTime;
       userOverrideValues["סיום"] = targetDraft.endTime;
       userOverrideValues["עד שעה"] = targetDraft.endTime;
@@ -1881,10 +1888,10 @@ EXTRACTION RULES FOR propose_entries:
 
             const rawDuration = raw.duration || "";
             const parsedDuration = roundToQuarterHour(rawDuration);
-            const hasUserSpecifiedDuration = parsedDuration.minutes > 0;
-            const minutes = hasUserSpecifiedDuration ? parsedDuration.minutes : 60;
-            const hours = hasUserSpecifiedDuration ? parsedDuration.hours : 1;
-            const formatted = hasUserSpecifiedDuration ? parsedDuration.formatted : "1 שעה";
+            const hasUserSpecifiedDuration = Boolean(rawDuration && String(rawDuration).trim().length > 0 && parsedDuration.minutes > 0);
+            let minutes = hasUserSpecifiedDuration ? parsedDuration.minutes : 60;
+            let hours = hasUserSpecifiedDuration ? parsedDuration.hours : 1;
+            let formatted = hasUserSpecifiedDuration ? parsedDuration.formatted : "1 שעה";
 
             const matchingActiveDraft = (activeDrafts || []).find(
               (d) =>
@@ -1910,15 +1917,28 @@ EXTRACTION RULES FOR propose_entries:
             let endTime = String(raw.endTime || "").trim();
             let isTimeSuggested = false;
 
-            if (startTime && endTime) {
+            if (startTime && endTime && startTime !== endTime) {
               isTimeSuggested = Boolean(raw.isTimeSuggested ?? false);
-            } else if (startTime && !endTime) {
+              const mS = startTime.match(/^(\d{1,2}):(\d{2})/);
+              const mE = endTime.match(/^(\d{1,2}):(\d{2})/);
+              if (mS && mE) {
+                let diff = (parseInt(mE[1], 10) * 60 + parseInt(mE[2], 10)) - (parseInt(mS[1], 10) * 60 + parseInt(mS[2], 10));
+                if (diff <= 0) diff += 24 * 60;
+                if (diff > 0) {
+                  minutes = diff;
+                  hours = +(diff / 60).toFixed(2);
+                  const dh = Math.floor(diff / 60);
+                  const dm = diff % 60;
+                  formatted = dh > 0 && dm > 0 ? `${dh}:${String(dm).padStart(2, "0")} שעות` : dh > 0 ? `${dh} ${dh === 1 ? "שעה" : "שעות"}` : `${dm} דקות`;
+                }
+              }
+            } else if (startTime && (!endTime || endTime === startTime)) {
               endTime = calculateEndTime(startTime, minutes || 60);
               isTimeSuggested = false;
             } else if (!startTime && endTime) {
               startTime = calculateStartTime(endTime, minutes || 60);
               isTimeSuggested = false;
-            } else if (matchingActiveDraft?.startTime && matchingActiveDraft?.endTime && !matchingActiveDraft.isTimeSuggested) {
+            } else if (matchingActiveDraft?.startTime && matchingActiveDraft?.endTime && matchingActiveDraft.startTime !== matchingActiveDraft.endTime && !matchingActiveDraft.isTimeSuggested) {
               startTime = matchingActiveDraft.startTime;
               endTime = matchingActiveDraft.endTime;
               isTimeSuggested = false;

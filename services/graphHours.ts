@@ -2596,14 +2596,17 @@ export function mapHeadersToSemanticFields(headers: string[]): {
 
   // 4. Start time (שעת התחלה / שעת הגעה / שעת כניסה)
   matchField("start_time", (h) => {
+    if (/[2-9]/.test(h)) return false;
     if (
       h.includes("סיום") ||
+      h.includes("סיומ") ||
       h.includes("עזיבה") ||
       h.includes("יציאה") ||
       h.includes("עד שעה") ||
       h.includes("שעה עד") ||
       h.includes("עד השעה") ||
       h.includes("תום") ||
+      h.includes("תומ") ||
       h.includes("end") ||
       h.includes("departure") ||
       h.includes("out")
@@ -2611,7 +2614,7 @@ export function mapHeadersToSemanticFields(headers: string[]): {
       return false;
     }
     return (
-      h === "שעת התחלה" || h === "התחלה" || h === "משעה" || h === "שעה מה" || h === "מהשעה" ||
+      h === "שעת התחלה" || h === "שעת התחלה 1" || h === "התחלה" || h === "משעה" || h === "שעה מה" || h === "מהשעה" ||
       h === "שעת הגעה" || h === "הגעה" || h === "שעת כניסה" || h === "כניסה" ||
       h === "start" || h === "start time" || h === "arrival" || h === "in" ||
       h.includes("התחלה") || h.includes("הגעה") || h.includes("כניסה") ||
@@ -2622,6 +2625,7 @@ export function mapHeadersToSemanticFields(headers: string[]): {
 
   // 5. End time (שעת סיום / שעת עזיבה / שעת יציאה)
   matchField("end_time", (h) => {
+    if (/[2-9]/.test(h)) return false;
     if (
       h.includes("התחלה") ||
       h.includes("הגעה") ||
@@ -2636,12 +2640,12 @@ export function mapHeadersToSemanticFields(headers: string[]): {
       return false;
     }
     return (
-      h === "שעת סיום" || h === "סיום" || h === "עד שעה" || h === "שעה עד" || h === "עד השעה" ||
+      h === "שעת סיום" || h === "שעת סיום 1" || h === "סיום" || h === "עד שעה" || h === "שעה עד" || h === "עד השעה" ||
       h === "שעת עזיבה" || h === "עזיבה" || h === "שעת יציאה" || h === "יציאה" ||
       h === "end" || h === "end time" || h === "departure" || h === "out" ||
-      h.includes("סיום") || h.includes("עזיבה") || h.includes("יציאה") ||
+      h.includes("סיום") || h.includes("סיומ") || h.includes("עזיבה") || h.includes("יציאה") ||
       h.includes("עד שעה") || h.includes("עד השעה") || h.includes("שעה עד") ||
-      h.includes("תום") || h.includes("departure") || h.includes("end")
+      h.includes("תום") || h.includes("תומ") || h.includes("departure") || h.includes("end")
     );
   });
 
@@ -2871,16 +2875,16 @@ export async function inspectWorkbookFile(
           const values: any[][] = uData.values || [];
           const formulas: any[][] = uData.formulas || [];
 
-          // Detect header row in first 15 rows
+          // Detect header row in first 35 rows
           const headerKeywords = [
-            "תאריך", "יום", "עובד", "טכנאי", "מבצע", "שעה", "שעות", "משך", "התחלה", "סיום", "הגעה", "עזיבה",
+            "תאריך", "יום", "עובד", "טכנאי", "מבצע", "שעה", "שעות", "משך", "משכ", "התחלה", "סיום", "סיומ", "הגעה", "עזיבה",
             "סהכ", "סה״כ", "סה\"כ", "איש קשר", "קשר", "נציג", "פונה", "קריאה", "טיקט", "מהות",
             "תיאור", "פירוט", "נושא", "פרויקט", "פרוייקט", "חתימה", "אישור", "סטטוס", "הערות",
             "date", "day", "employee", "technician", "start", "end", "hours", "duration", "contact", "ticket"
           ];
 
           let bestScore = -1;
-          for (let r = 0; r < Math.min(values.length, 15); r++) {
+          for (let r = 0; r < Math.min(values.length, 35); r++) {
             const row = values[r] || [];
             const textCols = row.filter((c: any) => typeof c === "string" && c.trim().length > 0);
             let score = 0;
@@ -2900,28 +2904,52 @@ export async function inspectWorkbookFile(
             }
           }
 
-          // Trim trailing empty headers
-          let lastCol = headers.length - 1;
-          while (lastCol >= 0 && !headers[lastCol]) lastCol--;
-          if (lastCol >= 0) headers = headers.slice(0, lastCol + 1);
+          headers = trimTableHeaders(headers);
 
           // Data rows below header row
           const dataRows: any[][] = [];
+          const dataFormulas: any[][] = [];
+          let firstTemplateOffset = -1;
           for (let r = headerRowIndex + 1; r < values.length; r++) {
             const row = values[r] || [];
-            const isRowEmpty = row.every((c: any) => c === null || c === "" || c === undefined);
-            if (isRowEmpty) continue;
+            const rowForms = formulas[r] || [];
             // Check if totals row
             const isTotals = row.some((c: any) =>
               typeof c === "string" && ["סה״כ", "סה\"כ", "סך הכל", "סיכום", "total"].some((k) => c.toLowerCase().includes(k))
             );
             if (isTotals) break;
+
+            let hasUserData = false;
+            for (let c = 0; c < Math.min(row.length, headers.length); c++) {
+              const v = row[c];
+              const f = rowForms[c];
+              const strVal = v !== null && v !== undefined ? String(v).trim() : "";
+              const strForm = f !== null && f !== undefined ? String(f).trim() : "";
+              const isFormula = strForm.startsWith("=");
+              const isZero =
+                strVal === "0" ||
+                strVal === "0.0" ||
+                strVal === "0.00" ||
+                strVal === "0:00" ||
+                strVal === "00:00" ||
+                (strVal !== "" && !isNaN(Number(strVal)) && Number(strVal) === 0);
+              if (!isFormula && strVal !== "" && !isZero) {
+                hasUserData = true;
+                break;
+              }
+            }
+            if (!hasUserData) {
+              if (firstTemplateOffset === -1) firstTemplateOffset = r;
+              continue;
+            }
             dataRows.push(row);
+            dataFormulas.push(rowForms);
           }
 
-          totalDataRows = dataRows.length;
+          totalDataRows = firstTemplateOffset !== -1 ? Math.max(0, firstTemplateOffset - (headerRowIndex + 1)) : dataRows.length;
           recentRows = dataRows.slice(-3);
-          formats = detectRowFormats(headers, dataRows, formulas);
+          const sampleForms = dataFormulas.length > 0 ? dataFormulas : firstTemplateOffset !== -1 && formulas[firstTemplateOffset] ? [formulas[firstTemplateOffset]] : formulas;
+          formats = detectRowFormats(headers, dataRows, sampleForms);
         }
       } catch (usedErr) {
         console.warn(`[inspectWorkbookFile] usedRange error for ${sheetName}:`, usedErr);
@@ -2977,6 +3005,47 @@ export async function inspectWorkbookFile(
   });
 
   return result;
+}
+
+/**
+ * Trims trailing empty columns and side metadata/parameter boxes (e.g. "תקרת שעות ביקור ליום לעובד | 5.0")
+ * that sit to the left of the main table separated by an empty column.
+ */
+export function trimTableHeaders(rawHeaders: string[]): string[] {
+  if (!rawHeaders || rawHeaders.length === 0) return [];
+  let headers = [...rawHeaders];
+
+  const isSideParameterOrNumericHeader = (h: string): boolean => {
+    const clean = String(h || "").trim();
+    if (!clean) return true;
+    if (/^\d+(\.\d+)?$/.test(clean)) return true;
+    const lower = clean.toLowerCase();
+    if (lower.includes("תקרת") || lower.includes("תקרה") || lower.startsWith("מחיר") || lower.startsWith("תעריף")) {
+      return true;
+    }
+    return false;
+  };
+
+  // If there is an empty spacer column after at least 4 valid table headers, and everything after that gap is side-box metadata/numbers, cut at the gap
+  for (let i = 4; i < headers.length; i++) {
+    if (!headers[i]) {
+      const rest = headers.slice(i + 1);
+      if (rest.every(isSideParameterOrNumericHeader)) {
+        headers = headers.slice(0, i);
+        break;
+      }
+    }
+  }
+
+  // Trim trailing empty or side-parameter cells from the end
+  let lastValidCol = headers.length - 1;
+  while (lastValidCol >= 0 && isSideParameterOrNumericHeader(headers[lastValidCol])) {
+    lastValidCol--;
+  }
+  if (lastValidCol >= 0) {
+    headers = headers.slice(0, lastValidCol + 1);
+  }
+  return headers;
 }
 
 /**
@@ -3164,11 +3233,11 @@ export function buildRowValuesFromSemanticMapping(
   }
 
   if (fieldToColIndex.start_time !== undefined) {
-    values[fieldToColIndex.start_time] = rowObj.startTime || rowObj["שעת התחלה"] || "";
+    values[fieldToColIndex.start_time] = rowObj.startTime || rowObj["שעת התחלה"] || rowObj["שעת התחלה 1"] || "";
   }
 
   if (fieldToColIndex.end_time !== undefined) {
-    values[fieldToColIndex.end_time] = rowObj.endTime || rowObj["שעת סיום"] || "";
+    values[fieldToColIndex.end_time] = rowObj.endTime || rowObj["שעת סיום"] || rowObj["שעת סיום 1"] || "";
   }
 
   if (fieldToColIndex.duration_hours !== undefined) {
@@ -3358,14 +3427,14 @@ export async function readSheetStructure(
     formulas = rangeData.formulas || [];
     fullAddress = rangeData.address || "A1";
   } else {
-    // If usedRange returned 404 (e.g. newly initialized month file with no data rows yet), attempt reading top range A1:Z15
-    const fallbackRangeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='A1:Z15')`;
+    // If usedRange returned 404 (e.g. newly initialized month file with no data rows yet), attempt reading top range A1:Z25
+    const fallbackRangeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='A1:Z25')`;
     const fallbackRes = await fetchGraph(fallbackRangeUrl, { method: "GET" }, env);
     if (fallbackRes.ok) {
       const fbData: any = await fallbackRes.json();
       values = fbData.values || [];
       formulas = fbData.formulas || [];
-      fullAddress = fbData.address || "A1:Z15";
+      fullAddress = fbData.address || "A1:Z25";
     } else {
       const errText = await usedRangeRes.text().catch(() => "");
       throw new Error(
@@ -3379,19 +3448,19 @@ export async function readSheetStructure(
   const startRowIndex = addressMatch ? parseInt(addressMatch[2], 10) : 1;
   const startColLetter = addressMatch ? addressMatch[1] : "A";
 
-  // Detect header row: scan first 15 rows to find the row with the most distinct column headers
+  // Detect header row: scan first 35 rows to find the row with the most distinct column headers
   let headerRowOffset = 0;
   let headers: string[] = [];
   let bestHeaderScore = -1;
   const headerKeywords = [
-    "תאריך", "יום", "עובד", "טכנאי", "מבצע", "שעה", "שעות", "משך", "התחלה", "סיום", "הגעה", "עזיבה",
+    "תאריך", "יום", "עובד", "טכנאי", "מבצע", "שעה", "שעות", "משך", "משכ", "התחלה", "סיום", "סיומ", "הגעה", "עזיבה",
     "כניסה", "יציאה", "שעת כניסה", "שעת יציאה", "מהשעה", "עד השעה", "שעה מה", "שעה עד",
     "סהכ", "סה״כ", "סה\"כ", "איש קשר", "קשר", "נציג", "פונה", "משתמש", "קריאה", "טיקט", "מהות",
     "תיאור", "פירוט", "נושא", "פרויקט", "פרוייקט", "חתימה", "אישור", "סטטוס", "הערות", "לקוח",
     "date", "day", "employee", "technician", "start", "end", "hours", "duration", "contact", "ticket", "task"
   ];
 
-  for (let r = 0; r < Math.min(values.length, 15); r++) {
+  for (let r = 0; r < Math.min(values.length, 35); r++) {
     const row = values[r] || [];
     const textCols = row.filter((c: any) => typeof c === "string" && c.trim().length > 0);
     let keywordScore = 0;
@@ -3412,14 +3481,8 @@ export async function readSheetStructure(
     }
   }
 
-  // Trim trailing empty headers so we don't carry dozens of trailing empty columns from merged banner rows
-  let lastNonEmptyCol = headers.length - 1;
-  while (lastNonEmptyCol >= 0 && !headers[lastNonEmptyCol]) {
-    lastNonEmptyCol--;
-  }
-  if (lastNonEmptyCol >= 0) {
-    headers = headers.slice(0, lastNonEmptyCol + 1);
-  }
+  // Trim trailing empty headers and side-box parameter headers (e.g. "תקרת שעות ביקור ליום לעובד | 5.0")
+  headers = trimTableHeaders(headers);
 
   if (headers.length === 0) {
     throw new Error(
@@ -3427,30 +3490,19 @@ export async function readSheetStructure(
     );
   }
 
-  const actualHeaderRowNumber = startRowIndex + headerRowOffset;
-
-  // Scan rows below header row for data and totals/summary row
+  // Scan rows below header row for data, available template slots, and totals/summary row
   const dataRows: any[][] = [];
   const dataFormulas: any[][] = [];
   let totalsRowOffset = -1;
   let lastOccupiedRowOffset = headerRowOffset;
+  let firstTemplateSlotOffset = -1;
   const totalsKeywords = ["סה״כ", "סה\"כ", "סך הכל", "סיכום", "total", "totals", "sum"];
 
   for (let r = headerRowOffset + 1; r < values.length; r++) {
     const row = values[r] || [];
     const rowFormulas = formulas[r] || [];
-    const isRowEmpty =
-      row.every((c: any) => c === null || c === "" || c === undefined || String(c).trim() === "") &&
-      (!rowFormulas ||
-        rowFormulas.every(
-          (f: any) => f === null || f === "" || f === undefined || String(f).trim() === "" || String(f).trim() === "="
-        ));
 
-    if (isRowEmpty) {
-      continue;
-    }
-
-    // Check if this row is a totals row
+    // Check if this row is a totals row first
     const isTotals =
       row.some(
         (c: any) => typeof c === "string" && totalsKeywords.some((k) => c.toLowerCase().includes(k))
@@ -3469,17 +3521,58 @@ export async function readSheetStructure(
       break;
     }
 
+    // Check if row is empty or only contains pre-filled template formulas / 0.00 placeholders
+    let hasUserData = false;
+    const maxCols = Math.min(Math.max(row.length, rowFormulas.length), headers.length);
+    for (let c = 0; c < maxCols; c++) {
+      const v = row[c];
+      const f = rowFormulas[c];
+      const strVal = v !== null && v !== undefined ? String(v).trim() : "";
+      const strForm = f !== null && f !== undefined ? String(f).trim() : "";
+      const isFormulaCell = strForm.startsWith("=");
+      const isZeroPlaceholder =
+        strVal === "0" ||
+        strVal === "0.0" ||
+        strVal === "0.00" ||
+        strVal === "0:00" ||
+        strVal === "00:00" ||
+        (strVal !== "" && !isNaN(Number(strVal)) && Number(strVal) === 0);
+
+      if (!isFormulaCell && strVal !== "" && !isZeroPlaceholder) {
+        hasUserData = true;
+        break;
+      }
+    }
+
+    if (!hasUserData) {
+      if (firstTemplateSlotOffset === -1) {
+        firstTemplateSlotOffset = r;
+      }
+      continue;
+    }
+
     dataRows.push(row);
     dataFormulas.push(rowFormulas);
     lastOccupiedRowOffset = r;
   }
 
+  // Capture formulas from either existing rows or template rows so detectRowFormats knows which columns have formulas
+  const formulaSampleRows =
+    firstTemplateSlotOffset !== -1 && formulas[firstTemplateSlotOffset]
+      ? [formulas[firstTemplateSlotOffset], ...dataFormulas]
+      : dataFormulas;
+
   const last5Rows = dataRows.slice(-5);
   const totalDataRows = dataRows.length;
   const hasTotalsRow = totalsRowOffset !== -1;
 
-  // Calculate next empty row address (ABOVE any totals row, or immediately following the last occupied row)
-  let nextEmptyRowNumber = startRowIndex + lastOccupiedRowOffset + 1;
+  // Calculate next empty row number:
+  // Always prefer the first available template slot row inside the table (e.g. Row 21 where 0.00 formulas exist)
+  // over appending below the table!
+  let nextEmptyRowNumber =
+    firstTemplateSlotOffset !== -1
+      ? startRowIndex + firstTemplateSlotOffset
+      : startRowIndex + lastOccupiedRowOffset + 1;
   let totalsRowAddress: string | undefined = undefined;
 
   const startColIdx = columnLetterToIndex(startColLetter);
@@ -3488,13 +3581,15 @@ export async function readSheetStructure(
   if (hasTotalsRow) {
     const actualTotalsRowNumber = startRowIndex + totalsRowOffset;
     totalsRowAddress = `${startColLetter}${actualTotalsRowNumber}:${endColLetter}${actualTotalsRowNumber}`;
-    nextEmptyRowNumber = actualTotalsRowNumber;
+    if (nextEmptyRowNumber > actualTotalsRowNumber) {
+      nextEmptyRowNumber = actualTotalsRowNumber;
+    }
   }
 
   const nextEmptyRowAddress = `${startColLetter}${nextEmptyRowNumber}:${endColLetter}${nextEmptyRowNumber}`;
 
   // Detect row formats (date, time, hours, formula columns)
-  const formats = detectRowFormats(headers, dataRows, dataFormulas);
+  const formats = detectRowFormats(headers, dataRows, formulaSampleRows);
   const semanticMapping = mapHeadersToSemanticFields(headers);
 
   return {
@@ -3530,7 +3625,7 @@ function detectRowFormats(
   hoursFormat?: "decimal" | "hh:mm";
   formulaColumns: number[];
 } {
-  let dateFormat = "YYYY-MM-DD";
+  let dateFormat = "DD/MM/YYYY";
   let timeFormat = "HH:mm";
   let hoursFormat: "decimal" | "hh:mm" = "decimal";
   const formulaColumns: number[] = [];
@@ -3745,16 +3840,38 @@ export function getHebrewDay(dateStr: string, format: "short" | "full" = "short"
 }
 
 function isDayHeader(norm: string): boolean {
-  return norm === "יום" || norm.startsWith("יום ") || norm.includes("בשבוע") || norm === "day" || norm.includes("יוםעבודה");
+  return (
+    norm === "יום" ||
+    norm === "יומ" ||
+    norm.startsWith("יום ") ||
+    norm.startsWith("יומ ") ||
+    norm.includes("בשבוע") ||
+    norm === "day" ||
+    norm.includes("יוםעבודה") ||
+    norm.includes("יומעבודה")
+  );
 }
 
 function isDateHeader(norm: string): boolean {
   if (isDayHeader(norm)) return false;
-  return norm.includes("תאריך") || norm.includes("date");
+  return norm.includes("תאריך") || norm.includes("תאריכ") || norm.includes("date");
 }
 
 function isEmployeeHeader(norm: string): boolean {
-  if (norm.includes("קשר") || norm.includes("לקוח") || norm.includes("פרויקט") || norm.includes("חברה") || norm.includes("משתמש קצה")) return false;
+  if (
+    norm.includes("קשר") ||
+    norm.includes("לקוח") ||
+    norm.includes("פרויקט") ||
+    norm.includes("חברה") ||
+    norm.includes("משתמש קצה") ||
+    norm.includes("תקרת") ||
+    norm.includes("תקרה") ||
+    norm.includes("שעות") ||
+    norm.includes("ביקור") ||
+    norm.includes("ליום")
+  ) {
+    return false;
+  }
   return (
     norm.includes("עובד") ||
     norm.includes("טכנאי") ||
@@ -3771,15 +3888,23 @@ function isEmployeeHeader(norm: string): boolean {
   );
 }
 
+function isSecondaryTimeSlotHeader(norm: string): boolean {
+  // Matches headers like "שעת התחלה 2", "שעת סיום 2", "כניסה 2", "יציאה 2", "start 2", "end 2"
+  return /(?:^|\s)[2-9](?:$|\s)/.test(norm) || /(?:התחלה|סיומ|סיום|כניסה|יציאה|הגעה|עזיבה|משעה|שעה|start|end|arrival|departure)\s*[2-9]/.test(norm);
+}
+
 function isStartTimeHeader(norm: string): boolean {
+  if (isSecondaryTimeSlotHeader(norm)) return false;
   if (
     norm.includes("סיום") ||
+    norm.includes("סיומ") ||
     norm.includes("עזיבה") ||
     norm.includes("יציאה") ||
     norm.includes("עד שעה") ||
     norm.includes("עד השעה") ||
     norm.includes("שעה עד") ||
     norm.includes("תום") ||
+    norm.includes("תומ") ||
     norm.includes("end") ||
     norm.includes("departure") ||
     norm.includes("checkout") ||
@@ -3804,6 +3929,7 @@ function isStartTimeHeader(norm: string): boolean {
 }
 
 function isEndTimeHeader(norm: string): boolean {
+  if (isSecondaryTimeSlotHeader(norm)) return false;
   if (
     norm.includes("התחלה") ||
     norm.includes("משעה") ||
@@ -3820,12 +3946,14 @@ function isEndTimeHeader(norm: string): boolean {
   }
   return (
     norm.includes("סיום") ||
+    norm.includes("סיומ") ||
     norm.includes("עד שעה") ||
     norm.includes("עד השעה") ||
     norm.includes("שעה עד") ||
     norm.includes("עזיבה") ||
     norm.includes("יציאה") ||
     norm.includes("תום") ||
+    norm.includes("תומ") ||
     norm.includes("end") ||
     norm.includes("departure") ||
     norm.includes("checkout") ||
@@ -3836,6 +3964,7 @@ function isEndTimeHeader(norm: string): boolean {
 
 export function extractStartTime(rowObj: Record<string, any>, structure?: SheetStructureResult): string {
   const direct =
+    rowObj["שעת התחלה 1"] ||
     rowObj["שעת כניסה"] ||
     rowObj["כניסה"] ||
     rowObj["שעת כניסה לאתר"] ||
@@ -3854,6 +3983,7 @@ export function extractStartTime(rowObj: Record<string, any>, structure?: SheetS
   if (direct) return String(direct).trim();
 
   const et =
+    rowObj["שעת סיום 1"] ||
     rowObj["שעת יציאה"] ||
     rowObj["יציאה"] ||
     rowObj["שעת יציאה מהאתר"] ||
@@ -3869,7 +3999,7 @@ export function extractStartTime(rowObj: Record<string, any>, structure?: SheetS
     rowObj["סיום"] ||
     rowObj["endTime"] ||
     rowObj["end"];
-  const durationMins = getDurationMinutes(rowObj) || 30;
+  const durationMins = getDurationMinutes(rowObj) || 60;
   if (et) {
     return calculateStartTime(String(et).trim(), durationMins);
   }
@@ -3885,7 +4015,11 @@ export function extractStartTime(rowObj: Record<string, any>, structure?: SheetS
 }
 
 export function extractEndTime(rowObj: Record<string, any>, structure?: SheetStructureResult): string {
+  const st = extractStartTime(rowObj, structure);
+  const durationMins = getDurationMinutes(rowObj) || 60;
+
   const direct =
+    rowObj["שעת סיום 1"] ||
     rowObj["שעת יציאה"] ||
     rowObj["יציאה"] ||
     rowObj["שעת יציאה מהאתר"] ||
@@ -3901,10 +4035,15 @@ export function extractEndTime(rowObj: Record<string, any>, structure?: SheetStr
     rowObj["סיום"] ||
     rowObj["endTime"] ||
     rowObj["end"];
-  if (direct) return String(direct).trim();
 
-  const st = extractStartTime(rowObj, structure);
-  const durationMins = getDurationMinutes(rowObj) || 30;
+  if (direct) {
+    const cleanDirect = String(direct).trim();
+    // Never allow endTime to be identical to startTime (otherwise Excel formula End - Start evaluates to 0.00!)
+    if (cleanDirect && cleanDirect !== st) {
+      return cleanDirect;
+    }
+  }
+
   if (st) {
     return calculateEndTime(st, durationMins);
   }
@@ -3912,13 +4051,16 @@ export function extractEndTime(rowObj: Record<string, any>, structure?: SheetStr
 }
 
 function isHoursHeader(norm: string): boolean {
+  if (norm.includes("תקרת") || norm.includes("תקרה")) return false;
   return (
     norm.includes("שעות") ||
     norm.includes("משך") ||
+    norm.includes("משכ") ||
     norm.includes("סהכ") ||
     norm.includes("סה״כ") ||
     norm.includes("סה\"כ") ||
     norm.includes("זמן") ||
+    norm.includes("זמנ") ||
     norm.includes("כמות") ||
     norm.includes("hours") ||
     norm.includes("duration")
@@ -3958,8 +4100,8 @@ function isContactHeader(norm: string): boolean {
 }
 
 function isCustomerHeader(norm: string): boolean {
-  if (norm.includes("קשר") || norm.includes("חתימ")) return false;
-  return norm.includes("לקוח") || norm.includes("ארגון") || norm.includes("חברה") || norm.includes("customer");
+  if (norm.includes("קשר") || norm.includes("חתימ") || norm.includes("לחיוב") || norm.includes("שעות")) return false;
+  return norm.includes("לקוח") || norm.includes("ארגון") || norm.includes("ארגונ") || norm.includes("חברה") || norm.includes("customer");
 }
 
 function isProjectHeader(norm: string): boolean {
@@ -4054,6 +4196,14 @@ export function resolveCellValueForHeader(
 
   const normHeader = normalizeCustomerString(rawHeader).toLowerCase();
 
+  // Never populate secondary time slot columns (e.g. "שעת התחלה 2", "שעת סיום 2") unless explicitly supplied in rowObj
+  if (isSecondaryTimeSlotHeader(normHeader)) {
+    if (rowObj[rawHeader] !== undefined && rowObj[rawHeader] !== null && String(rowObj[rawHeader]).trim() !== "") {
+      return rowObj[rawHeader];
+    }
+    return "";
+  }
+
   // 2. Direct exact match check
   if (rowObj[rawHeader] !== undefined && rowObj[rawHeader] !== null && String(rowObj[rawHeader]).trim() !== "") {
     const directVal = rowObj[rawHeader];
@@ -4137,30 +4287,41 @@ export function resolveCellValueForHeader(
     );
   }
 
-  // D. START TIME (שעת התחלה / שעת כניסה / שעת הגעה)
+  // D. START TIME (שעת התחלה / שעת התחלה 1 / שעת כניסה / שעת הגעה)
+  const firstStartColIdx = structure.headers?.findIndex((h) =>
+    isStartTimeHeader(normalizeCustomerString(String(h || "")).toLowerCase())
+  );
   if (
     structure.colIndexToField?.[colIdx] === "start_time" ||
-    isStartTimeHeader(normHeader)
+    (isStartTimeHeader(normHeader) && (firstStartColIdx === undefined || firstStartColIdx === -1 || firstStartColIdx === colIdx))
   ) {
     return extractStartTime(rowObj, structure);
   }
 
-  // E. END TIME (שעת סיום / שעת יציאה / שעת עזיבה)
+  // E. END TIME (שעת סיום / שעת סיום 1 / שעת יציאה / שעת עזיבה)
+  const firstEndColIdx = structure.headers?.findIndex((h) =>
+    isEndTimeHeader(normalizeCustomerString(String(h || "")).toLowerCase())
+  );
   if (
     structure.colIndexToField?.[colIdx] === "end_time" ||
-    isEndTimeHeader(normHeader)
+    (isEndTimeHeader(normHeader) && (firstEndColIdx === undefined || firstEndColIdx === -1 || firstEndColIdx === colIdx))
   ) {
     return extractEndTime(rowObj, structure);
   }
 
+  // If this is a subsequent start/end time column (e.g. a second shift), leave empty
+  if (isStartTimeHeader(normHeader) || isEndTimeHeader(normHeader)) {
+    return "";
+  }
+
   // Adjacent Time Columns Heuristic (for worksheets with duplicate, generic or ambiguous time headers):
-  // 1. If previous column was resolved as Start Time and current column is not hours/date/employee:
+  // 1. If previous column was resolved as primary Start Time and current column is not hours/date/employee:
   if (colIdx > 0 && !isHoursHeader(normHeader) && !isDateHeader(normHeader) && !isEmployeeHeader(normHeader)) {
     const prevHeader = String(structure.headers?.[colIdx - 1] || "");
     const prevNorm = normalizeCustomerString(prevHeader).toLowerCase();
     const isPrevStart =
       structure.colIndexToField?.[colIdx - 1] === "start_time" ||
-      isStartTimeHeader(prevNorm);
+      (isStartTimeHeader(prevNorm) && (firstStartColIdx === undefined || firstStartColIdx === -1 || firstStartColIdx === colIdx - 1));
     if (
       isPrevStart &&
       (normHeader.includes("שעה") ||
@@ -4173,7 +4334,7 @@ export function resolveCellValueForHeader(
     }
   }
 
-  // 2. If next column is resolved as End Time and current column has a time-like header:
+  // 2. If next column is resolved as primary End Time and current column has a time-like header:
   if (
     structure.headers &&
     colIdx < structure.headers.length - 1 &&
@@ -4185,7 +4346,7 @@ export function resolveCellValueForHeader(
     const nextNorm = normalizeCustomerString(nextHeader).toLowerCase();
     const isNextEnd =
       structure.colIndexToField?.[colIdx + 1] === "end_time" ||
-      isEndTimeHeader(nextNorm);
+      (isEndTimeHeader(nextNorm) && (firstEndColIdx === undefined || firstEndColIdx === -1 || firstEndColIdx === colIdx + 1));
     if (
       isNextEnd &&
       (normHeader.includes("שעה") ||
@@ -4199,7 +4360,7 @@ export function resolveCellValueForHeader(
   }
 
   // 3. Generic single-word "שעה" column pair heuristic:
-  if (normHeader === "שעה" || normHeader === "זמן" || normHeader === "time") {
+  if (normHeader === "שעה" || normHeader === "זמן" || normHeader === "זמנ" || normHeader === "time") {
     // If next column is also "שעה" or "time" -> this is Start Time
     if (structure.headers && colIdx < structure.headers.length - 1) {
       const nextNorm = normalizeCustomerString(String(structure.headers[colIdx + 1] || "")).toLowerCase();
@@ -4361,13 +4522,12 @@ export function resolveCellValueForHeader(
  *
  * Scans starting from initialRowNumber:
  * - Reads row cells across columns A through Z (or wider if headers span beyond Z).
- * - If a row contains ANY value (string, number, boolean, date) or formula:
+ * - If a row contains ANY user data value (dates, times, descriptions, employees):
  *   "אם יש משהו בשורה אל תדרוס את השורה" -> DO NOT overwrite the row!
  *   Skips this row and advances downwards.
+ * - Template rows that only contain pre-filled formulas / 0.00 placeholders in hours columns are recognized as available slots!
  * - If a row is identified as a totals/summary row (סה"כ, SUM, SUBTOTAL):
  *   Protects the totals row by inserting empty rows above it with shift: "Down".
- * - Once `numRowsNeeded` consecutive rows are verified completely empty with zero content and zero formulas:
- *   Returns the safe row range address.
  */
 export async function findSafeEmptyRowRange(
   driveId: string,
@@ -4380,12 +4540,14 @@ export async function findSafeEmptyRowRange(
   hasTotalsRowHint: boolean,
   totalsRowAddressHint: string | undefined,
   sessionHeaders: Record<string, string>,
-  env?: any
+  env?: any,
+  headersLength?: number
 ): Promise<{
   targetRowNumber: number;
   targetAddress: string;
   skippedOccupiedRows: number;
   insertedRowsCount: number;
+  existingFormulasMatrix: string[][];
 }> {
   let currentCandidateRow = Math.max(initialRowNumber || 2, 2);
   const startColIdx = columnLetterToIndex(startColLetter || "A");
@@ -4398,6 +4560,53 @@ export async function findSafeEmptyRowRange(
   const totalsKeywords = ["סה״כ", "סה\"כ", "סך הכל", "סיכום", "total", "totals", "sum"];
   const MAX_ROWS_TO_CHECK = 200;
   let totalRowsChecked = 0;
+
+  // Helper to check if a single row has actual user data vs. being empty or only having template formulas (like =G... showing 0.00)
+  const analyzeRowContent = (rowVals: any[], rowForms: any[]) => {
+    let hasUserData = false;
+    let isTotals = false;
+    const effectiveMaxCol = headersLength && headersLength > 0 ? startColIdx + headersLength : Math.max(rowVals.length, rowForms.length);
+    const numColsToCheck = Math.min(Math.max(rowVals.length, rowForms.length), effectiveMaxCol);
+
+    for (let c = 0; c < numColsToCheck; c++) {
+      const v = rowVals[c];
+      const f = rowForms[c];
+      const strVal = v !== null && v !== undefined ? String(v).trim() : "";
+      const strForm = f !== null && f !== undefined ? String(f).trim() : "";
+
+      if (strVal !== "" && totalsKeywords.some((kw) => strVal.toLowerCase().includes(kw))) {
+        isTotals = true;
+      }
+
+      if (strForm !== "" && strForm !== "=") {
+        const lowerF = strForm.toLowerCase();
+        if (
+          lowerF.startsWith("=sum") ||
+          lowerF.startsWith("=subtotal") ||
+          lowerF.includes("sum(") ||
+          lowerF.includes("subtotal(")
+        ) {
+          isTotals = true;
+        }
+      }
+
+      const isFormulaCell = strForm.startsWith("=");
+      const isZeroPlaceholder =
+        strVal === "0" ||
+        strVal === "0.0" ||
+        strVal === "0.00" ||
+        strVal === "0:00" ||
+        strVal === "00:00" ||
+        (strVal !== "" && !isNaN(Number(strVal)) && Number(strVal) === 0);
+
+      // A cell has user data if it is NOT a formula cell, NOT a 0.00 placeholder, and has a non-empty value!
+      if (!isFormulaCell && strVal !== "" && !isZeroPlaceholder) {
+        hasUserData = true;
+      }
+    }
+
+    return { hasUserData, isTotals };
+  };
 
   while (totalRowsChecked < MAX_ROWS_TO_CHECK) {
     const windowSize = Math.min(25, MAX_ROWS_TO_CHECK - totalRowsChecked);
@@ -4427,6 +4636,7 @@ export async function findSafeEmptyRowRange(
     }
 
     let foundSafeRowNumber = -1;
+    let foundWindowIndex = -1;
 
     for (let i = 0; i < values.length; i++) {
       const actualRowNumber = currentCandidateRow + i;
@@ -4434,36 +4644,7 @@ export async function findSafeEmptyRowRange(
       const rowVals = values[i] || [];
       const rowForms = formulas[i] || [];
 
-      let hasContent = false;
-      let isTotals = false;
-
-      const numColsToCheck = Math.max(rowVals.length, rowForms.length);
-      for (let c = 0; c < numColsToCheck; c++) {
-        const v = rowVals[c];
-        const f = rowForms[c];
-        const strVal = v !== null && v !== undefined ? String(v).trim() : "";
-        const strForm = f !== null && f !== undefined ? String(f).trim() : "";
-
-        if (strVal !== "") {
-          hasContent = true;
-          if (totalsKeywords.some((kw) => strVal.toLowerCase().includes(kw))) {
-            isTotals = true;
-          }
-        }
-
-        if (strForm !== "" && strForm !== "=") {
-          hasContent = true;
-          const lowerF = strForm.toLowerCase();
-          if (
-            lowerF.startsWith("=sum") ||
-            lowerF.startsWith("=subtotal") ||
-            lowerF.includes("sum(") ||
-            lowerF.includes("subtotal(")
-          ) {
-            isTotals = true;
-          }
-        }
-      }
+      const { hasUserData, isTotals } = analyzeRowContent(rowVals, rowForms);
 
       // 1. If this row is totals row -> insert empty rows above it to protect formulas
       if (isTotals) {
@@ -4490,6 +4671,7 @@ export async function findSafeEmptyRowRange(
               targetAddress,
               skippedOccupiedRows,
               insertedRowsCount,
+              existingFormulasMatrix: [],
             };
           } else {
             console.warn("[findSafeEmptyRowRange] Insert shift down returned non-ok:", insertRes.status);
@@ -4499,27 +4681,23 @@ export async function findSafeEmptyRowRange(
         }
       }
 
-      // 2. If row has ANY content (values, formulas, dates, text) -> DO NOT OVERWRITE!
-      if (hasContent) {
+      // 2. If row has ANY user data (dates, times, descriptions, employees) -> DO NOT OVERWRITE!
+      if (hasUserData) {
         console.log(
-          `[findSafeEmptyRowRange] שורה ${actualRowNumber} מכילה נתונים קיימים (ערכים/נוסחאות). מדלג על השורה כדי לא לדרוס מידע קיים!`
+          `[findSafeEmptyRowRange] שורה ${actualRowNumber} מכילה נתוני דיווח קיימים. מדלג על השורה כדי לא לדרוס מידע קיים!`
         );
         skippedOccupiedRows++;
         continue;
       }
 
-      // 3. Row is completely empty! Check if subsequent rows needed are also empty
+      // 3. Row is an available empty/template slot! Check if subsequent rows needed are also available
       let allNeededRowsEmpty = true;
       for (let k = 1; k < numRowsNeeded; k++) {
         if (i + k < values.length) {
           const nextRowVals = values[i + k] || [];
           const nextRowForms = formulas[i + k] || [];
-          const nextHasContent =
-            nextRowVals.some((v: any) => v !== null && v !== undefined && String(v).trim() !== "") ||
-            nextRowForms.some(
-              (f: any) => f !== null && f !== undefined && String(f).trim() !== "" && String(f).trim() !== "="
-            );
-          if (nextHasContent) {
+          const nextCheck = analyzeRowContent(nextRowVals, nextRowForms);
+          if (nextCheck.hasUserData || nextCheck.isTotals) {
             allNeededRowsEmpty = false;
             break;
           }
@@ -4532,20 +4710,31 @@ export async function findSafeEmptyRowRange(
 
       if (allNeededRowsEmpty) {
         foundSafeRowNumber = actualRowNumber;
+        foundWindowIndex = i;
         break;
       }
     }
 
     if (foundSafeRowNumber !== -1) {
       const targetAddress = `${startColLetter}${foundSafeRowNumber}:${endColLetter}${foundSafeRowNumber + numRowsNeeded - 1}`;
+      const existingFormulasMatrix: string[][] = [];
+      for (let k = 0; k < numRowsNeeded; k++) {
+        const fRow = formulas[foundWindowIndex + k] || [];
+        // Slice starting from startColIdx so indices align with headers (0..numCols-1)
+        existingFormulasMatrix.push(
+          fRow.slice(startColIdx, startColIdx + (endColIdx - startColIdx + 1)).map((f: any) => (typeof f === "string" ? f.trim() : ""))
+        );
+      }
+
       console.log(
-        `[findSafeEmptyRowRange] נבחרה שורה ריקה ומאומתת להזנה: ${targetAddress} (דולגו ${skippedOccupiedRows} שורות מלאות).`
+        `[findSafeEmptyRowRange] נבחרה שורה פנויה להזנה: ${targetAddress} (דולגו ${skippedOccupiedRows} שורות מלאות).`
       );
       return {
         targetRowNumber: foundSafeRowNumber,
         targetAddress,
         skippedOccupiedRows,
         insertedRowsCount,
+        existingFormulasMatrix,
       };
     }
 
@@ -4560,6 +4749,7 @@ export async function findSafeEmptyRowRange(
     targetAddress,
     skippedOccupiedRows,
     insertedRowsCount,
+    existingFormulasMatrix: [],
   };
 }
 
@@ -4841,7 +5031,7 @@ export async function writeRows(
       const initialRowNumber = structure.nextEmptyRowNumber || (structure.totalDataRows + 2);
 
       // Rule: "אם יש משהו בשורה אל תדרוס את השורה"
-      // Verify that candidate row(s) are genuinely empty before writing to avoid overwriting existing data/formulas!
+      // Verify that candidate row(s) have no user data before writing, while recognizing pre-filled template formula rows!
       const safeRowResult = await findSafeEmptyRowRange(
         driveId,
         fileId,
@@ -4853,7 +5043,8 @@ export async function writeRows(
         Boolean(structure.hasTotalsRow),
         structure.totalsRowAddress,
         sessionHeaders,
-        env
+        env,
+        headers.length
       );
 
       const targetAddress = safeRowResult.targetAddress;
@@ -4865,14 +5056,28 @@ export async function writeRows(
         );
       }
 
-      // Write values to validated target address via PATCH
+      // Preserve existing Excel formulas in the target row!
+      // When a template row already has formulas in columns like "סה"כ שעות בפועל" or "שעות לחיוב לקוח",
+      // keep the exact formula string (starting with "=") in the payload so Excel calculates it automatically from Start & End Time!
+      const finalWriteMatrix = rowValuesMatrix.map((rowVals, rIdx) => {
+        const existingFormulas = safeRowResult.existingFormulasMatrix?.[rIdx] || [];
+        return rowVals.map((cellVal, cIdx) => {
+          const existingFormula = existingFormulas[cIdx];
+          if (typeof existingFormula === "string" && existingFormula.startsWith("=")) {
+            return existingFormula;
+          }
+          return cellVal;
+        });
+      });
+
+      // Write values (preserving formulas where they exist) to validated target address via PATCH
       const writeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${encodeURIComponent(targetAddress)}')`;
       const writeRes = await fetchGraph(
         writeUrl,
         {
           method: "PATCH",
           headers: sessionHeaders,
-          body: JSON.stringify({ values: rowValuesMatrix }),
+          body: JSON.stringify({ values: finalWriteMatrix }),
         },
         env
       );
