@@ -2910,6 +2910,7 @@ export async function inspectWorkbookFile(
           const dataRows: any[][] = [];
           const dataFormulas: any[][] = [];
           let firstTemplateOffset = -1;
+          let lastOccupiedRowOffset = headerRowIndex;
           for (let r = headerRowIndex + 1; r < values.length; r++) {
             const row = values[r] || [];
             const rowForms = formulas[r] || [];
@@ -2944,9 +2945,15 @@ export async function inspectWorkbookFile(
             }
             dataRows.push(row);
             dataFormulas.push(rowForms);
+            lastOccupiedRowOffset = r;
           }
 
-          totalDataRows = firstTemplateOffset !== -1 ? Math.max(0, firstTemplateOffset - (headerRowIndex + 1)) : dataRows.length;
+          totalDataRows =
+            lastOccupiedRowOffset > headerRowIndex
+              ? lastOccupiedRowOffset - headerRowIndex
+              : firstTemplateOffset !== -1
+              ? Math.max(0, firstTemplateOffset - (headerRowIndex + 1))
+              : 0;
           recentRows = dataRows.slice(-3);
           const sampleForms = dataFormulas.length > 0 ? dataFormulas : firstTemplateOffset !== -1 && formulas[firstTemplateOffset] ? [formulas[firstTemplateOffset]] : formulas;
           formats = detectRowFormats(headers, dataRows, sampleForms);
@@ -3567,12 +3574,14 @@ export async function readSheetStructure(
   const hasTotalsRow = totalsRowOffset !== -1;
 
   // Calculate next empty row number:
-  // Always prefer the first available template slot row inside the table (e.g. Row 21 where 0.00 formulas exist)
-  // over appending below the table!
+  // Always append AFTER the last occupied user data row!
+  // If no user data rows exist yet, use the first template slot (or row after header).
   let nextEmptyRowNumber =
-    firstTemplateSlotOffset !== -1
+    lastOccupiedRowOffset > headerRowOffset
+      ? startRowIndex + lastOccupiedRowOffset + 1
+      : firstTemplateSlotOffset !== -1
       ? startRowIndex + firstTemplateSlotOffset
-      : startRowIndex + lastOccupiedRowOffset + 1;
+      : startRowIndex + headerRowOffset + 1;
   let totalsRowAddress: string | undefined = undefined;
 
   const startColIdx = columnLetterToIndex(startColLetter);
