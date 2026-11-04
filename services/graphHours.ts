@@ -136,6 +136,8 @@ export interface SheetStructureResult {
     isSelected: boolean;
   }>;
   unmappedFields?: string[];
+  fieldToColIndex?: Partial<Record<StandardColumnField, number>>;
+  colIndexToField?: Array<StandardColumnField | null>;
 }
 
 export function columnLetterToIndex(letter: string): number {
@@ -2592,19 +2594,56 @@ export function mapHeadersToSemanticFields(headers: string[]): {
     h.includes("משתמש") || h.includes("טכנאי") || h.includes("עובד")
   );
 
-  // 4. Start time (שעת התחלה / שעת הגעה)
-  matchField("start_time", (h) =>
-    h === "שעת התחלה" || h === "התחלה" || h === "משעה" || h === "שעה מה" ||
-    h === "שעת הגעה" || h === "הגעה" || h === "שעת כניסה" || h === "כניסה" ||
-    h === "start" || h === "start time" || h === "arrival" || h.includes("התחלה") || h.includes("הגעה")
-  );
+  // 4. Start time (שעת התחלה / שעת הגעה / שעת כניסה)
+  matchField("start_time", (h) => {
+    if (
+      h.includes("סיום") ||
+      h.includes("עזיבה") ||
+      h.includes("יציאה") ||
+      h.includes("עד שעה") ||
+      h.includes("שעה עד") ||
+      h.includes("עד השעה") ||
+      h.includes("תום") ||
+      h.includes("end") ||
+      h.includes("departure") ||
+      h.includes("out")
+    ) {
+      return false;
+    }
+    return (
+      h === "שעת התחלה" || h === "התחלה" || h === "משעה" || h === "שעה מה" || h === "מהשעה" ||
+      h === "שעת הגעה" || h === "הגעה" || h === "שעת כניסה" || h === "כניסה" ||
+      h === "start" || h === "start time" || h === "arrival" || h === "in" ||
+      h.includes("התחלה") || h.includes("הגעה") || h.includes("כניסה") ||
+      h.includes("משעה") || h.includes("מהשעה") || h.includes("שעה מה") ||
+      h.includes("arrival") || h.includes("start")
+    );
+  });
 
-  // 5. End time (שעת סיום / שעת עזיבה)
-  matchField("end_time", (h) =>
-    h === "שעת סיום" || h === "סיום" || h === "עד שעה" || h === "שעה עד" ||
-    h === "שעת עזיבה" || h === "עזיבה" || h === "שעת יציאה" || h === "יציאה" ||
-    h === "end" || h === "end time" || h === "departure" || h.includes("סיום") || h.includes("עזיבה")
-  );
+  // 5. End time (שעת סיום / שעת עזיבה / שעת יציאה)
+  matchField("end_time", (h) => {
+    if (
+      h.includes("התחלה") ||
+      h.includes("הגעה") ||
+      h.includes("כניסה") ||
+      h.includes("משעה") ||
+      h.includes("מהשעה") ||
+      h.includes("שעה מה") ||
+      h.includes("start") ||
+      h.includes("arrival") ||
+      h.includes("in")
+    ) {
+      return false;
+    }
+    return (
+      h === "שעת סיום" || h === "סיום" || h === "עד שעה" || h === "שעה עד" || h === "עד השעה" ||
+      h === "שעת עזיבה" || h === "עזיבה" || h === "שעת יציאה" || h === "יציאה" ||
+      h === "end" || h === "end time" || h === "departure" || h === "out" ||
+      h.includes("סיום") || h.includes("עזיבה") || h.includes("יציאה") ||
+      h.includes("עד שעה") || h.includes("עד השעה") || h.includes("שעה עד") ||
+      h.includes("תום") || h.includes("departure") || h.includes("end")
+    );
+  });
 
   // 6. Duration hours (סה"כ שעות / משך)
   matchField("duration_hours", (h) =>
@@ -3284,6 +3323,7 @@ export async function readSheetStructure(
 
       // Detect formats from existing rows
       const formats = detectRowFormats(headers, allRows);
+      const semanticMapping = mapHeadersToSemanticFields(headers);
 
       return {
         fileId,
@@ -3298,6 +3338,9 @@ export async function readSheetStructure(
         nextEmptyRowAddress: `Table:${tableName}[#NextRow]`,
         hasTotalsRow: Boolean(table.showTotals),
         formats,
+        fieldToColIndex: semanticMapping.fieldToColIndex,
+        colIndexToField: semanticMapping.colIndexToField,
+        unmappedFields: semanticMapping.unmappedFields,
       };
     }
   }
@@ -3342,6 +3385,7 @@ export async function readSheetStructure(
   let bestHeaderScore = -1;
   const headerKeywords = [
     "תאריך", "יום", "עובד", "טכנאי", "מבצע", "שעה", "שעות", "משך", "התחלה", "סיום", "הגעה", "עזיבה",
+    "כניסה", "יציאה", "שעת כניסה", "שעת יציאה", "מהשעה", "עד השעה", "שעה מה", "שעה עד",
     "סהכ", "סה״כ", "סה\"כ", "איש קשר", "קשר", "נציג", "פונה", "משתמש", "קריאה", "טיקט", "מהות",
     "תיאור", "פירוט", "נושא", "פרויקט", "פרוייקט", "חתימה", "אישור", "סטטוס", "הערות", "לקוח",
     "date", "day", "employee", "technician", "start", "end", "hours", "duration", "contact", "ticket", "task"
@@ -3451,6 +3495,7 @@ export async function readSheetStructure(
 
   // Detect row formats (date, time, hours, formula columns)
   const formats = detectRowFormats(headers, dataRows, dataFormulas);
+  const semanticMapping = mapHeadersToSemanticFields(headers);
 
   return {
     fileId,
@@ -3466,6 +3511,9 @@ export async function readSheetStructure(
     hasTotalsRow,
     totalsRowAddress,
     formats,
+    fieldToColIndex: semanticMapping.fieldToColIndex,
+    colIndexToField: semanticMapping.colIndexToField,
+    unmappedFields: semanticMapping.unmappedFields,
   };
 }
 
@@ -3724,24 +3772,143 @@ function isEmployeeHeader(norm: string): boolean {
 }
 
 function isStartTimeHeader(norm: string): boolean {
-  if (norm.includes("סיום") || norm.includes("עזיבה")) return false;
+  if (
+    norm.includes("סיום") ||
+    norm.includes("עזיבה") ||
+    norm.includes("יציאה") ||
+    norm.includes("עד שעה") ||
+    norm.includes("עד השעה") ||
+    norm.includes("שעה עד") ||
+    norm.includes("תום") ||
+    norm.includes("end") ||
+    norm.includes("departure") ||
+    norm.includes("checkout") ||
+    norm.includes("check out") ||
+    norm.includes("out")
+  ) {
+    return false;
+  }
   return (
     norm.includes("התחלה") ||
     norm.includes("משעה") ||
+    norm.includes("מהשעה") ||
+    norm.includes("שעה מה") ||
     norm.includes("הגעה") ||
+    norm.includes("כניסה") ||
     norm.includes("start") ||
-    norm.includes("arrival")
+    norm.includes("arrival") ||
+    norm.includes("checkin") ||
+    norm.includes("check in") ||
+    norm === "in"
   );
 }
 
 function isEndTimeHeader(norm: string): boolean {
+  if (
+    norm.includes("התחלה") ||
+    norm.includes("משעה") ||
+    norm.includes("מהשעה") ||
+    norm.includes("שעה מה") ||
+    norm.includes("הגעה") ||
+    norm.includes("כניסה") ||
+    norm.includes("start") ||
+    norm.includes("arrival") ||
+    norm.includes("checkin") ||
+    norm === "in"
+  ) {
+    return false;
+  }
   return (
     norm.includes("סיום") ||
     norm.includes("עד שעה") ||
+    norm.includes("עד השעה") ||
+    norm.includes("שעה עד") ||
     norm.includes("עזיבה") ||
+    norm.includes("יציאה") ||
+    norm.includes("תום") ||
     norm.includes("end") ||
-    norm.includes("departure")
+    norm.includes("departure") ||
+    norm.includes("checkout") ||
+    norm.includes("check out") ||
+    norm === "out"
   );
+}
+
+export function extractStartTime(rowObj: Record<string, any>, structure?: SheetStructureResult): string {
+  const direct =
+    rowObj["שעת כניסה"] ||
+    rowObj["כניסה"] ||
+    rowObj["שעת כניסה לאתר"] ||
+    rowObj["כניסה לאתר"] ||
+    rowObj["זמן כניסה"] ||
+    rowObj["שעה מה"] ||
+    rowObj["מהשעה"] ||
+    rowObj["משעה"] ||
+    rowObj["שעת הגעה"] ||
+    rowObj["הגעה"] ||
+    rowObj["שעת התחלה"] ||
+    rowObj["שעה התחלה"] ||
+    rowObj["התחלה"] ||
+    rowObj["startTime"] ||
+    rowObj["start"];
+  if (direct) return String(direct).trim();
+
+  const et =
+    rowObj["שעת יציאה"] ||
+    rowObj["יציאה"] ||
+    rowObj["שעת יציאה מהאתר"] ||
+    rowObj["יציאה מהאתר"] ||
+    rowObj["זמן יציאה"] ||
+    rowObj["שעה עד"] ||
+    rowObj["עד השעה"] ||
+    rowObj["עד שעה"] ||
+    rowObj["שעת עזיבה"] ||
+    rowObj["עזיבה"] ||
+    rowObj["שעת סיום"] ||
+    rowObj["שעה סיום"] ||
+    rowObj["סיום"] ||
+    rowObj["endTime"] ||
+    rowObj["end"];
+  const durationMins = getDurationMinutes(rowObj) || 30;
+  if (et) {
+    return calculateStartTime(String(et).trim(), durationMins);
+  }
+
+  const targetWorkType = String(structure?.sheetName || "").toLowerCase();
+  if (targetWorkType.includes("ביקור") || targetWorkType.includes("אתר")) {
+    return "09:00";
+  }
+  if (targetWorkType.includes("טיקט") || targetWorkType.includes("קריא") || targetWorkType.includes("תמיכ")) {
+    return "10:00";
+  }
+  return "09:00";
+}
+
+export function extractEndTime(rowObj: Record<string, any>, structure?: SheetStructureResult): string {
+  const direct =
+    rowObj["שעת יציאה"] ||
+    rowObj["יציאה"] ||
+    rowObj["שעת יציאה מהאתר"] ||
+    rowObj["יציאה מהאתר"] ||
+    rowObj["זמן יציאה"] ||
+    rowObj["שעה עד"] ||
+    rowObj["עד השעה"] ||
+    rowObj["עד שעה"] ||
+    rowObj["שעת עזיבה"] ||
+    rowObj["עזיבה"] ||
+    rowObj["שעת סיום"] ||
+    rowObj["שעה סיום"] ||
+    rowObj["סיום"] ||
+    rowObj["endTime"] ||
+    rowObj["end"];
+  if (direct) return String(direct).trim();
+
+  const st = extractStartTime(rowObj, structure);
+  const durationMins = getDurationMinutes(rowObj) || 30;
+  if (st) {
+    return calculateEndTime(st, durationMins);
+  }
+  return "10:30";
 }
 
 function isHoursHeader(norm: string): boolean {
@@ -3970,54 +4137,83 @@ export function resolveCellValueForHeader(
     );
   }
 
-  // D. START TIME (שעת התחלה)
-  if (isStartTimeHeader(normHeader)) {
-    const st =
-      rowObj["שעת התחלה"] ||
-      rowObj["startTime"] ||
-      rowObj["התחלה"] ||
-      rowObj["משעה"] ||
-      rowObj["שעת הגעה"] ||
-      rowObj["הגעה"] ||
-      rowObj["start"];
-    if (st) return String(st).trim();
-    const durationMins = getDurationMinutes(rowObj) || 30;
-    const et = rowObj["שעת סיום"] || rowObj["endTime"] || rowObj["סיום"] || rowObj["עד שעה"];
-    if (et) {
-      return calculateStartTime(et, durationMins);
-    }
-    const targetWorkType = String(structure.sheetName || "").toLowerCase();
-    if (targetWorkType.includes("ביקור") || targetWorkType.includes("אתר")) {
-      return "09:00";
-    }
-    if (targetWorkType.includes("טיקט") || targetWorkType.includes("קריא") || targetWorkType.includes("תמיכ")) {
-      return "10:00";
-    }
-    return "09:00";
+  // D. START TIME (שעת התחלה / שעת כניסה / שעת הגעה)
+  if (
+    structure.colIndexToField?.[colIdx] === "start_time" ||
+    isStartTimeHeader(normHeader)
+  ) {
+    return extractStartTime(rowObj, structure);
   }
 
-  // E. END TIME (שעת סיום)
-  if (isEndTimeHeader(normHeader)) {
-    const et =
-      rowObj["שעת סיום"] ||
-      rowObj["endTime"] ||
-      rowObj["סיום"] ||
-      rowObj["עד שעה"] ||
-      rowObj["שעת עזיבה"] ||
-      rowObj["עזיבה"] ||
-      rowObj["end"];
-    if (et) return String(et).trim();
-    const durationMins = getDurationMinutes(rowObj) || 30;
-    const st =
-      rowObj["שעת התחלה"] ||
-      rowObj["startTime"] ||
-      rowObj["התחלה"] ||
-      rowObj["משעה"] ||
-      (structure.sheetName?.includes("ביקור") ? "09:00" : "10:00");
-    if (st) {
-      return calculateEndTime(st, durationMins);
+  // E. END TIME (שעת סיום / שעת יציאה / שעת עזיבה)
+  if (
+    structure.colIndexToField?.[colIdx] === "end_time" ||
+    isEndTimeHeader(normHeader)
+  ) {
+    return extractEndTime(rowObj, structure);
+  }
+
+  // Adjacent Time Columns Heuristic (for worksheets with duplicate, generic or ambiguous time headers):
+  // 1. If previous column was resolved as Start Time and current column is not hours/date/employee:
+  if (colIdx > 0 && !isHoursHeader(normHeader) && !isDateHeader(normHeader) && !isEmployeeHeader(normHeader)) {
+    const prevHeader = String(structure.headers?.[colIdx - 1] || "");
+    const prevNorm = normalizeCustomerString(prevHeader).toLowerCase();
+    const isPrevStart =
+      structure.colIndexToField?.[colIdx - 1] === "start_time" ||
+      isStartTimeHeader(prevNorm);
+    if (
+      isPrevStart &&
+      (normHeader.includes("שעה") ||
+        normHeader.includes("עד") ||
+        normHeader.includes("time") ||
+        normHeader === "" ||
+        normHeader === prevNorm)
+    ) {
+      return extractEndTime(rowObj, structure);
     }
-    return "10:30";
+  }
+
+  // 2. If next column is resolved as End Time and current column has a time-like header:
+  if (
+    structure.headers &&
+    colIdx < structure.headers.length - 1 &&
+    !isHoursHeader(normHeader) &&
+    !isDateHeader(normHeader) &&
+    !isEmployeeHeader(normHeader)
+  ) {
+    const nextHeader = String(structure.headers[colIdx + 1] || "");
+    const nextNorm = normalizeCustomerString(nextHeader).toLowerCase();
+    const isNextEnd =
+      structure.colIndexToField?.[colIdx + 1] === "end_time" ||
+      isEndTimeHeader(nextNorm);
+    if (
+      isNextEnd &&
+      (normHeader.includes("שעה") ||
+        normHeader.includes("מ") ||
+        normHeader.includes("time") ||
+        normHeader === "" ||
+        normHeader === nextNorm)
+    ) {
+      return extractStartTime(rowObj, structure);
+    }
+  }
+
+  // 3. Generic single-word "שעה" column pair heuristic:
+  if (normHeader === "שעה" || normHeader === "זמן" || normHeader === "time") {
+    // If next column is also "שעה" or "time" -> this is Start Time
+    if (structure.headers && colIdx < structure.headers.length - 1) {
+      const nextNorm = normalizeCustomerString(String(structure.headers[colIdx + 1] || "")).toLowerCase();
+      if (nextNorm === normHeader || isEndTimeHeader(nextNorm)) {
+        return extractStartTime(rowObj, structure);
+      }
+    }
+    // If previous column was also "שעה" or "time" -> this is End Time
+    if (colIdx > 0 && structure.headers) {
+      const prevNorm = normalizeCustomerString(String(structure.headers[colIdx - 1] || "")).toLowerCase();
+      if (prevNorm === normHeader || isStartTimeHeader(prevNorm)) {
+        return extractEndTime(rowObj, structure);
+      }
+    }
   }
 
   // F. HOURS / DURATION (סה״כ שעות / משך)
@@ -4541,9 +4737,32 @@ export async function writeRows(
 
     // Map rows into matrix of values according to headers using semantic classification
     const rowValuesMatrix = rows.map((rowObj) => {
-      return headers.map((headerName, colIdx) => {
+      const rowVals = headers.map((headerName, colIdx) => {
         return resolveCellValueForHeader(headerName, colIdx, rowObj, structure, userContext);
       });
+
+      // Anti-duplicate time column guard:
+      // If two distinct columns received the identical start time string (e.g. "09:00"),
+      // and the sheet has not received the calculated end time in any column,
+      // the second occurrence is guaranteed to be the exit/end time column!
+      const stVal = extractStartTime(rowObj, structure);
+      const etVal = extractEndTime(rowObj, structure);
+      if (stVal && etVal && stVal !== etVal) {
+        const stColIndices: number[] = [];
+        rowVals.forEach((val, idx) => {
+          if (val === stVal) stColIndices.push(idx);
+        });
+
+        if (stColIndices.length > 1 && !rowVals.includes(etVal)) {
+          const secondColIdx = stColIndices[1];
+          console.warn(
+            `[writeRows] Correcting duplicate start time "${stVal}" at column ${secondColIdx} (${headers[secondColIdx] || indexToColumnLetter(secondColIdx)}) to exit time "${etVal}".`
+          );
+          rowVals[secondColIdx] = etVal;
+        }
+      }
+
+      return rowVals;
     });
 
     let writtenRowAddress = "";
@@ -5406,9 +5625,28 @@ export async function updateWrittenExcelRow(
         "שם עובד": empName,
         employeeName: empName,
         "שעת התחלה": params.startTime || "",
+        "שעה התחלה": params.startTime || "",
         startTime: params.startTime || "",
+        "שעת כניסה": params.startTime || "",
+        "כניסה": params.startTime || "",
+        "שעת כניסה לאתר": params.startTime || "",
+        "שעה מה": params.startTime || "",
+        "מהשעה": params.startTime || "",
+        "משעה": params.startTime || "",
+        "שעת הגעה": params.startTime || "",
+        "הגעה": params.startTime || "",
+
         "שעת סיום": params.endTime || "",
+        "שעה סיום": params.endTime || "",
         endTime: params.endTime || "",
+        "שעת יציאה": params.endTime || "",
+        "יציאה": params.endTime || "",
+        "שעת יציאה מהאתר": params.endTime || "",
+        "שעה עד": params.endTime || "",
+        "עד השעה": params.endTime || "",
+        "עד שעה": params.endTime || "",
+        "שעת עזיבה": params.endTime || "",
+        "עזיבה": params.endTime || "",
         שעות: effectiveHours ?? 1,
         משך: effectiveHours ?? 1,
         "סה״כ שעות": effectiveHours ?? 1,
@@ -5424,11 +5662,25 @@ export async function updateWrittenExcelRow(
         ticketNumber: params.ticketNumber || "",
       };
 
-      const updatedRowValues = [
-        headers.map((headerName, colIdx) =>
-          resolveCellValueForHeader(headerName, colIdx, rowObj, structure, user)
-        ),
-      ];
+      const resolvedUpdatedRow = headers.map((headerName, colIdx) =>
+        resolveCellValueForHeader(headerName, colIdx, rowObj, structure, user)
+      );
+
+      const stVal = extractStartTime(rowObj, structure);
+      const etVal = extractEndTime(rowObj, structure);
+      if (stVal && etVal && stVal !== etVal) {
+        const stColIndices: number[] = [];
+        resolvedUpdatedRow.forEach((val, idx) => {
+          if (val === stVal) stColIndices.push(idx);
+        });
+
+        if (stColIndices.length > 1 && !resolvedUpdatedRow.includes(etVal)) {
+          const secondColIdx = stColIndices[1];
+          resolvedUpdatedRow[secondColIdx] = etVal;
+        }
+      }
+
+      const updatedRowValues = [resolvedUpdatedRow];
 
       const rowMatch = targetAddress.match(/(\d+)/);
       const rowNum = rowMatch ? parseInt(rowMatch[1], 10) : Number(params.targetRow) || 0;

@@ -250,8 +250,16 @@ export function buildEnrichedRowPayload(params: {
     "שעה התחלה": calculatedStartTime,
     התחלה: calculatedStartTime,
     משעה: calculatedStartTime,
+    "שעה מה": calculatedStartTime,
+    מהשעה: calculatedStartTime,
     "שעת הגעה": calculatedStartTime,
     הגעה: calculatedStartTime,
+    "שעת כניסה": calculatedStartTime,
+    "שעה כניסה": calculatedStartTime,
+    כניסה: calculatedStartTime,
+    "שעת כניסה לאתר": calculatedStartTime,
+    "כניסה לאתר": calculatedStartTime,
+    "זמן כניסה": calculatedStartTime,
     startTime: calculatedStartTime,
     start: calculatedStartTime,
 
@@ -259,8 +267,17 @@ export function buildEnrichedRowPayload(params: {
     "שעה סיום": calculatedEndTime,
     סיום: calculatedEndTime,
     "עד שעה": calculatedEndTime,
+    "שעה עד": calculatedEndTime,
+    "עד השעה": calculatedEndTime,
     "שעת עזיבה": calculatedEndTime,
     עזיבה: calculatedEndTime,
+    "שעת יציאה": calculatedEndTime,
+    "שעה יציאה": calculatedEndTime,
+    יציאה: calculatedEndTime,
+    "שעת יציאה מהאתר": calculatedEndTime,
+    "יציאה מהאתר": calculatedEndTime,
+    "זמן יציאה": calculatedEndTime,
+    תום: calculatedEndTime,
     endTime: calculatedEndTime,
     end: calculatedEndTime,
 
@@ -465,6 +482,8 @@ export interface WrittenEntryResult {
   listItemId?: string;
   listItemWebUrl?: string;
   listsSyncResult?: { success: boolean; error?: string };
+  durationHours?: number;
+  durationMinutes?: number;
   employeeName?: string;
   ticketNumber?: string;
   startTime?: string;
@@ -1016,8 +1035,16 @@ export async function processAssistantChat(
       userOverrideValues["שעה התחלה"] = targetDraft.startTime;
       userOverrideValues["התחלה"] = targetDraft.startTime;
       userOverrideValues["משעה"] = targetDraft.startTime;
+      userOverrideValues["שעה מה"] = targetDraft.startTime;
+      userOverrideValues["מהשעה"] = targetDraft.startTime;
       userOverrideValues["שעת הגעה"] = targetDraft.startTime;
       userOverrideValues["הגעה"] = targetDraft.startTime;
+      userOverrideValues["שעת כניסה"] = targetDraft.startTime;
+      userOverrideValues["שעה כניסה"] = targetDraft.startTime;
+      userOverrideValues["כניסה"] = targetDraft.startTime;
+      userOverrideValues["שעת כניסה לאתר"] = targetDraft.startTime;
+      userOverrideValues["כניסה לאתר"] = targetDraft.startTime;
+      userOverrideValues["זמן כניסה"] = targetDraft.startTime;
       userOverrideValues["startTime"] = targetDraft.startTime;
       userOverrideValues["start"] = targetDraft.startTime;
     }
@@ -1026,8 +1053,17 @@ export async function processAssistantChat(
       userOverrideValues["שעה סיום"] = targetDraft.endTime;
       userOverrideValues["סיום"] = targetDraft.endTime;
       userOverrideValues["עד שעה"] = targetDraft.endTime;
+      userOverrideValues["שעה עד"] = targetDraft.endTime;
+      userOverrideValues["עד השעה"] = targetDraft.endTime;
       userOverrideValues["שעת עזיבה"] = targetDraft.endTime;
       userOverrideValues["עזיבה"] = targetDraft.endTime;
+      userOverrideValues["שעת יציאה"] = targetDraft.endTime;
+      userOverrideValues["שעה יציאה"] = targetDraft.endTime;
+      userOverrideValues["יציאה"] = targetDraft.endTime;
+      userOverrideValues["שעת יציאה מהאתר"] = targetDraft.endTime;
+      userOverrideValues["יציאה מהאתר"] = targetDraft.endTime;
+      userOverrideValues["זמן יציאה"] = targetDraft.endTime;
+      userOverrideValues["תום"] = targetDraft.endTime;
       userOverrideValues["endTime"] = targetDraft.endTime;
       userOverrideValues["end"] = targetDraft.endTime;
     }
