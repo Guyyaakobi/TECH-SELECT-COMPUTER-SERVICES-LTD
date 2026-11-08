@@ -1,0 +1,2924 @@
+import { GoogleGenAI, Type, FunctionDeclaration } from "@google/genai";
+import {
+  findCustomer,
+  checkCustomerExistsInSharePoint,
+  findMonthTarget,
+  readSheetStructure,
+  inspectWorkbookFile,
+  chooseTargetWorksheet,
+  mapHeadersToSemanticFields,
+  classifyWorksheet,
+  WorkbookInspectionResult,
+  InspectedWorksheet,
+  TabSemanticType,
+  StandardColumnField,
+  findDuplicates,
+  writeRows,
+  undoRow,
+  updateWrittenExcelRow,
+  CustomerFolder,
+  calculateEndTime,
+  calculateStartTime,
+  suggestStartEndTimes,
+  getHebrewDay,
+  prefixDescriptionWithAuthor,
+  getDailyHoursReport,
+  BILINGUAL_CUSTOMER_DICTIONARY,
+  listCustomers,
+} from "./graphHours";
+import { AuthenticatedUser } from "../server/hoursAuthMiddleware";
+import {
+  resolveEffectiveName,
+  resolveEmployeeEmail,
+  KNOWN_TEAM_MEMBERS,
+  getKnownTeamMembers,
+  matchKnownTeamMember,
+  resolveKnownEmployeeList,
+  isSuperAdminUser,
+  resolveUserAccessScope,
+  canUserViewEmployee,
+  UserAccessScope,
+} from "./sharepointLists";
+
+export interface HoursAssistantEntryDraft {
+  id: string; // card unique ID
+  customerName: string;
+  projectName?: string;
+  customerFolder?: string;
+  fileId?: string;
+  driveId?: string;
+  fileName?: string;
+  filePath?: string;
+  webUrl?: string;
+  targetRow?: number | string;
+  date: string; // YYYY-MM-DD or DD/MM/YYYY
+  durationMinutes: number; // e.g. 15, 30, 45, 60
+  durationHours: number; // e.g. 0.25, 0.5, 0.75, 1.0
+  durationFormatted: string; // e.g. "15 דקות (0.25 שעה)"
+  startTime?: string;
+  endTime?: string;
+  isTimeSuggested?: boolean;
+  workType: string;
+  activityType?: string;
+  targetTabName?: string;
+  detectedTabType?: TabSemanticType;
+  availableTabs?: Array<{
+    name: string;
+    detectedType: TabSemanticType;
+    isSelected: boolean;
+  }>;
+  needsUserTabChoice?: boolean;
+  tabChoiceReason?: string;
+  headers?: string[];
+  unmappedFields?: string[];
+  columnMapping?: Array<{
+    field: string;
+    label: string;
+    headerName?: string;
+    isExists: boolean;
+    value?: any;
+  }>;
+  contactPerson?: string;
+  ticketNumber?: string;
+  description: string;
+  duplicateWarning?: string | null;
+  isReadyForConfirmation: boolean;
+  missingFields?: string[];
+  mappedRow?: Record<string, any>;
+  availableFiles?: Array<{ fileId: string; fileName: string; webUrl?: string }>;
+  assignedEmployees?: string[];
+}
+
+export function extractAssignedEmployees(text: string, currentUserName: string): string[] {
+  const canonicalCurrent = matchKnownTeamMember(currentUserName)?.name || currentUserName;
+  if (!text) return [canonicalCurrent];
+  const clean = text.trim();
+  const found = new Set<string>();
+  found.add(canonicalCurrent);
+
+  // Only add additional team members from KNOWN_TEAM_MEMBERS when explicitly mentioned in a co-working phrase
+  // (never add client contact persons like "דיברתי עם X" or "טיפלתי בבעיה של X", and never add names outside KNOWN_TEAM_MEMBERS!)
+  for (const tm of KNOWN_TEAM_MEMBERS) {
+    const namesToCheck = Array.from(
+      new Set([
+        tm.name,
+        tm.shortName,
+        ...(tm.shortName === "יוסף" ? ["יוסף איאסה", "יוסי"] : []),
+      ])
+    ).filter(Boolean);
+
+    const isCoWorkingMatch = namesToCheck.some((n) => {
+      const escaped = n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const coWorkRegex = new RegExp(
+        `(?:אני\\s+ו|יחד\\s+עם\\s+|ביחד\\s+עם\\s+|בשיתוף\\s+עם\\s+|בשיתוף\\s+|עבדתי\\s+עם\\s+|הייתי\\s+עם\\s+|נסעתי\\s+עם\\s+|ביקרתי\\s+עם\\s+)${escaped}(?=$|[\\s,.;:!?()\\[\\]"'״׳\\-])`,
+        "i"
+      );
+      return coWorkRegex.test(clean);
+    });
+
+    if (isCoWorkingMatch) {
+      found.add(tm.name);
+    }
+  }
+
+  return resolveKnownEmployeeList(Array.from(found), canonicalCurrent);
+}
+
+export function buildEnrichedRowPayload(params: {
+  date: string;
+  userName: string;
+  userEmail?: string;
+  userId?: string;
+  userOid?: string;
+  userUpn?: string;
+  hours: number;
+  minutes?: number;
+  formatted?: string;
+  workType: string;
+  desc: string;
+  startTime?: string;
+  endTime?: string;
+  contactPerson?: string;
+  ticketNumber?: string;
+  customerName?: string;
+  userOverride?: Record<string, any>;
+}): Record<string, any> {
+  const {
+    date,
+    userName,
+    userEmail = "",
+    userId = "",
+    userOid = "",
+    userUpn = "",
+    hours,
+    minutes = Math.round(hours * 60) || 30,
+    workType,
+    desc,
+    startTime = "",
+    contactPerson = "",
+    ticketNumber = "",
+    customerName = "",
+    userOverride = {},
+  } = params;
+
+  let calculatedEndTime = params.endTime || "";
+  if (!calculatedEndTime && startTime && minutes) {
+    calculatedEndTime = calculateEndTime(startTime, minutes);
+  }
+
+  let calculatedStartTime = startTime;
+  if (!calculatedStartTime && calculatedEndTime && minutes) {
+    calculatedStartTime = calculateStartTime(calculatedEndTime, minutes);
+  }
+
+  // If neither start nor end time was provided, suggest from report time rounded to 15 min
+  if (!calculatedStartTime && !calculatedEndTime) {
+    const suggested = suggestStartEndTimes(minutes || 60);
+    calculatedStartTime = suggested.startTime;
+    calculatedEndTime = suggested.endTime;
+  }
+
+  // Never allow endTime to be empty or identical to startTime (Excel formulas require End > Start)
+  if ((!calculatedEndTime || calculatedEndTime === calculatedStartTime) && calculatedStartTime) {
+    calculatedEndTime = calculateEndTime(calculatedStartTime, minutes || 60);
+  }
+
+  let effectiveHours = hours;
+  let effectiveMinutes = minutes;
+
+  // If both start and end time are known, ensure hours & minutes reflect the exact difference
+  if (calculatedStartTime && calculatedEndTime) {
+    const mS = calculatedStartTime.match(/^(\d{1,2}):(\d{2})/);
+    const mE = calculatedEndTime.match(/^(\d{1,2}):(\d{2})/);
+    if (mS && mE) {
+      let diff = (parseInt(mE[1], 10) * 60 + parseInt(mE[2], 10)) - (parseInt(mS[1], 10) * 60 + parseInt(mS[2], 10));
+      if (diff <= 0) diff += 24 * 60;
+      if (diff > 0 && (!effectiveHours || effectiveHours <= 0 || effectiveHours === 1)) {
+        effectiveHours = +(diff / 60).toFixed(2);
+        effectiveMinutes = diff;
+      }
+    }
+  }
+
+  const hebrewDayShort = getHebrewDay(date, "short") || "א'";
+  const hebrewDayFull = getHebrewDay(date, "full") || "ראשון";
+
+  const effectiveContact = contactPerson.trim() || (workType.includes("ביקור") ? "נציג הלקוח" : "נציג הלקוח");
+  const effectiveTicket = ticketNumber.trim() || (workType.includes("טיקט") ? "-" : "");
+  const effectiveProject =
+    ticketNumber ||
+    (desc.length > 40 ? desc.substring(0, 40) + "..." : desc) ||
+    customerName ||
+    "פרויקט שוטף";
+
+  const prefixedDesc = prefixDescriptionWithAuthor(desc, userName);
+
+  const result: Record<string, any> = {
+    תאריך: date,
+    date: date,
+    "תאריך עבודה": date,
+    "תאריך ביצוע": date,
+
+    יום: hebrewDayShort,
+    "יום בשבוע": hebrewDayShort,
+    "יום עבודה": hebrewDayShort,
+    "יום מלא": hebrewDayFull,
+    day: hebrewDayShort,
+
+    עובד: userName,
+    "שם עובד": userName,
+    משתמש: userName,
+    "שם משתמש": userName,
+    "שם המשתמש": userName,
+    "משתמש מערכת": userName,
+    טכנאי: userName,
+    "שם טכנאי": userName,
+    "שם הטכנאי": userName,
+    מבצע: userName,
+    מטפל: userName,
+    "איש צוות": userName,
+    "איש שירות": userName,
+    "איש מחשוב": userName,
+    employee: userName,
+    technician: userName,
+    employeeName: userName,
+    userName: userName,
+    user: userName,
+    username: userUpn || userEmail || userName,
+    userEmail: userEmail || "",
+    employeeEmail: userEmail || "",
+    email: userEmail || "",
+    userId: userId || userOid || "",
+    userOid: userOid || userId || "",
+    userUpn: userUpn || userEmail || "",
+
+    "שעת התחלה": calculatedStartTime,
+    "שעת התחלה 1": calculatedStartTime,
+    "שעה התחלה": calculatedStartTime,
+    התחלה: calculatedStartTime,
+    משעה: calculatedStartTime,
+    "שעה מה": calculatedStartTime,
+    מהשעה: calculatedStartTime,
+    "שעת הגעה": calculatedStartTime,
+    הגעה: calculatedStartTime,
+    "שעת כניסה": calculatedStartTime,
+    "שעה כניסה": calculatedStartTime,
+    כניסה: calculatedStartTime,
+    "שעת כניסה לאתר": calculatedStartTime,
+    "כניסה לאתר": calculatedStartTime,
+    "זמן כניסה": calculatedStartTime,
+    startTime: calculatedStartTime,
+    start: calculatedStartTime,
+
+    "שעת סיום": calculatedEndTime,
+    "שעת סיום 1": calculatedEndTime,
+    "שעה סיום": calculatedEndTime,
+    סיום: calculatedEndTime,
+    "עד שעה": calculatedEndTime,
+    "שעה עד": calculatedEndTime,
+    "עד השעה": calculatedEndTime,
+    "שעת עזיבה": calculatedEndTime,
+    עזיבה: calculatedEndTime,
+    "שעת יציאה": calculatedEndTime,
+    "שעה יציאה": calculatedEndTime,
+    יציאה: calculatedEndTime,
+    "שעת יציאה מהאתר": calculatedEndTime,
+    "יציאה מהאתר": calculatedEndTime,
+    "זמן יציאה": calculatedEndTime,
+    תום: calculatedEndTime,
+    endTime: calculatedEndTime,
+    end: calculatedEndTime,
+
+    משך: effectiveHours,
+    שעות: effectiveHours,
+    "סה״כ שעות": effectiveHours,
+    "סה\"כ שעות": effectiveHours,
+    "סהכ שעות": effectiveHours,
+    "סה״כ": effectiveHours,
+    "סה\"כ": effectiveHours,
+    "משך זמן": effectiveHours,
+    "משך שעות": effectiveHours,
+    "כמות שעות": effectiveHours,
+    כמות: effectiveHours,
+    זמן: effectiveHours,
+    hours: effectiveHours,
+    duration: effectiveHours,
+    durationHours: effectiveHours,
+    durationMinutes: effectiveMinutes,
+
+    תיאור: prefixedDesc,
+    "תיאור פעילות": prefixedDesc,
+    "תיאור הפעילות": prefixedDesc,
+    "תיאור התקלה": prefixedDesc,
+    "תיאור תקלה": prefixedDesc,
+    "תיאור הטיפול": prefixedDesc,
+    פירוט: prefixedDesc,
+    "פירוט עבודה": prefixedDesc,
+    "פירוט פעילות": prefixedDesc,
+    "פירוט הטיפול": prefixedDesc,
+    "פירוט הקריאה": prefixedDesc,
+    "מהות הקריאה": prefixedDesc,
+    "מהות הטיפול": prefixedDesc,
+    "מה בוצע": prefixedDesc,
+    פעילות: prefixedDesc,
+    נושא: prefixedDesc,
+    description: prefixedDesc,
+    details: prefixedDesc,
+    summary: prefixedDesc,
+    task: prefixedDesc,
+
+    "מספר טיקט": effectiveTicket,
+    "מס' טיקט": effectiveTicket,
+    "מס טיקט": effectiveTicket,
+    טיקט: effectiveTicket,
+    "מספר קריאה": effectiveTicket,
+    "מס' קריאה": effectiveTicket,
+    "מס קריאה": effectiveTicket,
+    קריאה: effectiveTicket,
+    "מספר פנייה": effectiveTicket,
+    ticket: effectiveTicket,
+    ticketNumber: effectiveTicket,
+
+    "איש קשר": effectiveContact,
+    "שם איש קשר": effectiveContact,
+    "נציג לקוח": effectiveContact,
+    פונה: effectiveContact,
+    "שם פונה": effectiveContact,
+    contact: effectiveContact,
+    contactPerson: effectiveContact,
+
+    לקוח: customerName,
+    "שם לקוח": customerName,
+    "שם הלקוח": customerName,
+    ארגון: customerName,
+    חברה: customerName,
+    customer: customerName,
+    customerName: customerName,
+    client: customerName,
+    clientName: customerName,
+
+    סוג: workType,
+    "סוג עבודה": workType,
+    "סוג העבודה": workType,
+    "סוג פעילות": workType,
+    "סוג הפעילות": workType,
+    "סוג תמיכה": workType,
+    "סוג קריאה": workType,
+    "סוג שירות": workType,
+    workType: workType,
+
+    פרויקט: effectiveProject,
+    "שם פרויקט": effectiveProject,
+    "שם הפרויקט": effectiveProject,
+    project: effectiveProject,
+    projectName: effectiveProject,
+
+    חתימה: "",
+    "חתימת לקוח": "",
+    סטטוס: userOverride["סטטוס"] || "הושלם",
+    הערות: prefixDescriptionWithAuthor(userOverride["הערות"] || desc, userName),
+    notes: prefixDescriptionWithAuthor(userOverride["notes"] || desc, userName),
+  };
+
+  // Merge user overrides if any
+  Object.assign(result, userOverride);
+
+  // CRITICAL: Explicit parameters passed to buildEnrichedRowPayload represent current edited / intended values
+  // and MUST ALWAYS take absolute precedence over stale keys inside userOverride/mappedRow!
+  if (calculatedStartTime) {
+    result["שעת התחלה"] = calculatedStartTime;
+    result["שעת התחלה 1"] = calculatedStartTime;
+    result["שעה התחלה"] = calculatedStartTime;
+    result["התחלה"] = calculatedStartTime;
+    result["משעה"] = calculatedStartTime;
+    result["שעת הגעה"] = calculatedStartTime;
+    result["הגעה"] = calculatedStartTime;
+    result["startTime"] = calculatedStartTime;
+    result["start"] = calculatedStartTime;
+  }
+  if (calculatedEndTime) {
+    result["שעת סיום"] = calculatedEndTime;
+    result["שעת סיום 1"] = calculatedEndTime;
+    result["שעה סיום"] = calculatedEndTime;
+    result["סיום"] = calculatedEndTime;
+    result["עד שעה"] = calculatedEndTime;
+    result["שעת עזיבה"] = calculatedEndTime;
+    result["עזיבה"] = calculatedEndTime;
+    result["endTime"] = calculatedEndTime;
+    result["end"] = calculatedEndTime;
+  }
+  if (typeof effectiveHours === "number" && effectiveHours > 0) {
+    result["משך"] = effectiveHours;
+    result["שעות"] = effectiveHours;
+    result["סה״כ שעות"] = effectiveHours;
+    result["סה\"כ שעות"] = effectiveHours;
+    result["סהכ שעות"] = effectiveHours;
+    result["סה״כ"] = effectiveHours;
+    result["סה\"כ"] = effectiveHours;
+    result["משך זמן"] = effectiveHours;
+    result["משך שעות"] = effectiveHours;
+    result["כמות שעות"] = effectiveHours;
+    result["hours"] = effectiveHours;
+    result["duration"] = effectiveHours;
+    result["durationHours"] = effectiveHours;
+  }
+  if (typeof effectiveMinutes === "number" && effectiveMinutes > 0) {
+    result["durationMinutes"] = effectiveMinutes;
+  }
+  if (date) {
+    result["תאריך"] = date;
+    result["date"] = date;
+    result["תאריך עבודה"] = date;
+    result["תאריך ביצוע"] = date;
+  }
+  if (customerName) {
+    result["לקוח"] = customerName;
+    result["שם לקוח"] = customerName;
+    result["שם הלקוח"] = customerName;
+    result["customer"] = customerName;
+    result["customerName"] = customerName;
+  }
+  if (workType) {
+    result["סוג"] = workType;
+    result["סוג עבודה"] = workType;
+    result["סוג העבודה"] = workType;
+    result["סוג פעילות"] = workType;
+    result["סוג הפעילות"] = workType;
+    result["סוג תמיכה"] = workType;
+    result["סוג קריאה"] = workType;
+    result["סוג שירות"] = workType;
+    result["workType"] = workType;
+    result["activityType"] = workType;
+  }
+
+  // Guarantee that description fields always retain author prefix (e.g. "גיא כתב: " / "ודים כתב: ")
+  const finalDesc = prefixDescriptionWithAuthor(
+    userOverride["תיאור"] || userOverride["description"] || userOverride["details"] || prefixedDesc,
+    userName
+  );
+  result["תיאור"] = finalDesc;
+  result["תיאור פעילות"] = finalDesc;
+  result["תיאור הפעילות"] = finalDesc;
+  result["תיאור הטיפול"] = finalDesc;
+  result["description"] = finalDesc;
+  result["details"] = finalDesc;
+
+  if (userOverride["הערות"] || userOverride["notes"]) {
+    const finalNotes = prefixDescriptionWithAuthor(userOverride["הערות"] || userOverride["notes"], userName);
+    result["הערות"] = finalNotes;
+    result["notes"] = finalNotes;
+  }
+
+  return result;
+}
+
+export interface WrittenEntryResult {
+  id: string;
+  fileId: string;
+  fileName: string;
+  filePath: string;
+  sheetName?: string;
+  webUrl: string;
+  targetRow: number | string;
+  rowAddress: string;
+  driveId?: string;
+  itemId?: string;
+  writtenValues?: any[][];
+  entryId: string;
+  customerName: string;
+  date: string;
+  durationFormatted: string;
+  description: string;
+  workType: string;
+  writtenAt: number;
+  expiresAt: number; // 10 minutes
+  canUndo: boolean;
+  listItemId?: string;
+  listItemWebUrl?: string;
+  listsSyncResult?: { success: boolean; error?: string };
+  durationHours?: number;
+  durationMinutes?: number;
+  employeeName?: string;
+  ticketNumber?: string;
+  startTime?: string;
+  endTime?: string;
+  skippedOccupiedRows?: number;
+}
+
+export interface AssistantChatParams {
+  user: AuthenticatedUser;
+  message?: string;
+  audio?: {
+    data: string; // base64
+    mimeType: string;
+  };
+  history?: Array<{
+    role: "user" | "model";
+    text: string;
+    cards?: any[];
+  }>;
+  action?: "confirm_entry" | "confirm_all" | "undo_entry" | "edit_draft" | "edit_entry";
+  cardId?: string;
+  draftData?: any;
+  editData?: any;
+  activeDrafts?: HoursAssistantEntryDraft[];
+  undoData?: {
+    driveId?: string;
+    itemId?: string;
+    fileId?: string;
+    rowAddress?: string;
+    writtenValues?: any[][];
+    writtenAt?: number;
+    sheetName?: string;
+    customerName?: string;
+  };
+  writtenEntries?: WrittenEntryResult[];
+  env?: any;
+}
+
+export interface AssistantChatResult {
+  reply: string;
+  transcript?: string;
+  drafts: HoursAssistantEntryDraft[];
+  writtenEntries: WrittenEntryResult[];
+  undoneCardIds: string[];
+  isConfirmed: boolean;
+  suggestedAction?: "confirm" | "clarify" | "undo" | "none";
+}
+
+/**
+ * Format today's date and context in Asia/Jerusalem
+ */
+function getJerusalemContext(): {
+  nowIso: string;
+  todayIso: string;
+  yesterdayIso: string;
+  todayHebrew: string;
+  currentYear: number;
+  currentMonth: number;
+  lastMonthYear: number;
+  lastMonth: number;
+  fullDateDescription: string;
+} {
+  const now = new Date();
+  const jerusalemStr = now.toLocaleString("en-US", { timeZone: "Asia/Jerusalem" });
+  const jDate = new Date(jerusalemStr);
+
+  const currentYear = jDate.getFullYear();
+  const currentMonth = jDate.getMonth() + 1;
+  const currentDay = jDate.getDate();
+
+  const mm = currentMonth < 10 ? `0${currentMonth}` : `${currentMonth}`;
+  const dd = currentDay < 10 ? `0${currentDay}` : `${currentDay}`;
+  const todayIso = `${currentYear}-${mm}-${dd}`;
+
+  // Yesterday
+  const yDate = new Date(jDate.getTime() - 24 * 60 * 60 * 1000);
+  const yYear = yDate.getFullYear();
+  const yMonth = yDate.getMonth() + 1;
+  const yDay = yDate.getDate();
+  const ymm = yMonth < 10 ? `0${yMonth}` : `${yMonth}`;
+  const ydd = yDay < 10 ? `0${yDay}` : `${yDay}`;
+  const yesterdayIso = `${yYear}-${ymm}-${ydd}`;
+
+  // Last Month
+  let lastMonth = currentMonth - 1;
+  let lastMonthYear = currentYear;
+  if (lastMonth < 1) {
+    lastMonth = 12;
+    lastMonthYear = currentYear - 1;
+  }
+
+  const daysOfWeek = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
+  const dayOfWeekName = daysOfWeek[jDate.getDay()];
+  const todayHebrew = `${dd}/${mm}/${currentYear}`;
+
+  const fullDateDescription = `היום: יום ${dayOfWeekName}, ${todayHebrew} (${todayIso}), שעון ישראל (Asia/Jerusalem). אתמול: ${yesterdayIso}. חודש שעבר: ${lastMonthYear}-${lastMonth < 10 ? "0" + lastMonth : lastMonth}.`;
+
+  return {
+    nowIso: now.toISOString(),
+    todayIso,
+    yesterdayIso,
+    todayHebrew,
+    currentYear,
+    currentMonth,
+    lastMonthYear,
+    lastMonth,
+    fullDateDescription,
+  };
+}
+
+/**
+ * Rounds duration string or number to 15-minute increments
+ */
+export function roundToQuarterHour(input: string | number): {
+  minutes: number;
+  hours: number;
+  formatted: string;
+} {
+  let minutes = 15;
+
+  if (typeof input === "number") {
+    if (input <= 8) {
+      // treat as decimal hours (e.g. 0.25, 0.5, 1)
+      minutes = Math.round((input * 60) / 15) * 15;
+    } else {
+      minutes = Math.round(input / 15) * 15;
+    }
+  } else if (typeof input === "string") {
+    const s = input.trim().toLowerCase();
+    if (s.includes("רבע שעה") || s === "15" || s.includes("15 דק")) {
+      minutes = 15;
+    } else if (s.includes("חצי שעה") || s === "30" || s.includes("30 דק") || s.includes("חצי")) {
+      minutes = 30;
+    } else if (s.includes("שלושת רבעי") || s === "45" || s.includes("45 דק")) {
+      minutes = 45;
+    } else if (s === "שעה" || s === "60" || s.includes("שעה אחת") || s === "1") {
+      minutes = 60;
+    } else if (s.includes("שעה וחצי") || s === "90") {
+      minutes = 90;
+    } else if (s.includes("שעתיים") || s === "120") {
+      minutes = 120;
+    } else {
+      // Look for numbers like "20 דקות", "40 דקות", "0.5", "1.5"
+      const decimalMatch = s.match(/^(\d+(?:\.\d+)?)\s*(?:שעות|שעה|h|hours)?$/);
+      if (decimalMatch && parseFloat(decimalMatch[1]) <= 12) {
+        minutes = Math.round((parseFloat(decimalMatch[1]) * 60) / 15) * 15;
+      } else {
+        const minMatch = s.match(/(\d+)\s*(?:דקות|דק|min|m)/);
+        if (minMatch) {
+          const rawM = parseInt(minMatch[1], 10);
+          minutes = Math.round(rawM / 15) * 15;
+        } else {
+          const numMatch = s.match(/(\d+(?:\.\d+)?)/);
+          if (numMatch) {
+            const val = parseFloat(numMatch[1]);
+            if (val <= 8) {
+              minutes = Math.round((val * 60) / 15) * 15;
+            } else {
+              minutes = Math.round(val / 15) * 15;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (minutes < 15) minutes = 15;
+  const hours = parseFloat((minutes / 60).toFixed(2));
+  const formatted = `${minutes} דקות (${hours} ${hours === 1 ? "שעה" : "שעות"})`;
+
+  return { minutes, hours, formatted };
+}
+
+/**
+ * Infer Work Type semantic category: "tickets", "onsite", "project"
+ */
+export function inferWorkType(text: string): TabSemanticType {
+  if (!text) return "tickets";
+  const s = text.toLowerCase();
+  if (
+    s.includes("פרויקט") ||
+    s.includes("פרוייקט") ||
+    s.includes("project") ||
+    /\bfat\b/i.test(s) ||
+    s.includes("הקמה") ||
+    s.includes("מיגרציה") ||
+    s.includes("שדרוג") ||
+    s.includes("הטמעה") ||
+    s.includes("הלבנה")
+  ) {
+    return "project";
+  }
+  if (
+    s.includes("באתר") ||
+    s.includes("הגעתי") ||
+    s.includes("הגעה") ||
+    s.includes("נסעתי") ||
+    s.includes("ביקור") ||
+    s.includes("במשרד") ||
+    s.includes("אצל הלקוח") ||
+    s.includes("פיזית") ||
+    s.includes("site") ||
+    s.includes("visit")
+  ) {
+    return "onsite";
+  }
+  return "tickets";
+}
+
+/**
+ * Extract candidate customer name from employee text or conversation turns
+ */
+export function extractCustomerCandidate(text: string): string | null {
+  if (!text) return null;
+  const s = text.trim();
+  const lower = s.toLowerCase();
+
+  // 1. Check known customers from dictionary (exact / substring / alias)
+  for (const [key, aliases] of Object.entries(BILINGUAL_CUSTOMER_DICTIONARY)) {
+    if (lower.includes(key.toLowerCase())) return key;
+    for (const a of aliases) {
+      if (lower.includes(a.toLowerCase())) return key;
+    }
+  }
+
+  // 2. Regex for Israeli Hebrew phrasing: אצל [לקוח], עבור [לקוח], ב[לקוח], לקוח [לקוח]
+  const pattern = /(?:אצל|עבור|בקרב|עם|לקוח|בחברת)\s+([\"'״׳]?[\u0590-\u05FF\w\-]+[\"'״׳]?(?:\s+[\u0590-\u05FF\w\-]+)?)/i;
+  const m = s.match(pattern);
+  if (m && m[1]) {
+    const candidate = m[1].replace(/[\"'״׳]/g, "").trim();
+    const stopWords = ["היום", "אתמול", "שלשום", "שעה", "שעתיים", "שעות", "ביקור", "שיחה", "תמיכה", "טיקט", "מחשב", "שרת", "משתמש", "משתמשת", "משתמשים", "עובד", "טכנאי"];
+    if (candidate.length >= 2 && !stopWords.includes(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Main Assistant Chat Processor
+ */
+export async function processAssistantChat(
+  params: AssistantChatParams,
+  env?: any
+): Promise<AssistantChatResult> {
+  const activeEnv = env || process.env;
+  const rawUser = params.user;
+  const userEmail = (rawUser?.email || "g@tech-select.co.il").trim().toLowerCase();
+  const userName = resolveEffectiveName(rawUser?.name, userEmail);
+  const user = {
+    name: userName,
+    email: userEmail,
+    id: (rawUser as any)?.id || (rawUser as any)?.oid || "",
+    oid: (rawUser as any)?.oid || (rawUser as any)?.id || "",
+    username: (rawUser as any)?.username || (rawUser as any)?.upn || userEmail,
+    upn: (rawUser as any)?.upn || (rawUser as any)?.username || userEmail,
+    isAdmin: isSuperAdminUser(userEmail, userName),
+  };
+  const { message, audio, history = [], action, cardId, activeDrafts = [] } = params;
+
+  // 1. Direct Action: Undo written entry (stateless)
+  if (action === "undo_entry" && (cardId || params.undoData)) {
+    const existing =
+      (params.writtenEntries || []).find(
+        (w) => w.id === cardId || w.entryId === cardId || (cardId && w.fileId === cardId)
+      ) ||
+      (params.undoData?.itemId || params.undoData?.fileId ? (params.undoData as any) : null) ||
+      ((params.writtenEntries || []).length > 0 ? (params.writtenEntries || [])[0] : null);
+
+    const rawUndo = params.undoData || {};
+    const effectiveFileId = rawUndo.fileId || rawUndo.itemId || existing?.fileId || existing?.itemId;
+    let effectiveRowAddress = rawUndo.rowAddress || existing?.rowAddress;
+    const effectiveDriveId = rawUndo.driveId || existing?.driveId;
+    const effectiveSheetName = rawUndo.sheetName || existing?.sheetName;
+    const effectiveWrittenValues = rawUndo.writtenValues || existing?.writtenValues;
+    const effectiveWrittenAt = rawUndo.writtenAt || existing?.writtenAt || Date.now();
+
+    // If rowAddress was missing, but targetRow exists: fallback to `${targetRow}:${targetRow}`
+    if (!effectiveRowAddress && (existing?.targetRow || (existing as any)?.rowNumber)) {
+      const rNum = existing?.targetRow || (existing as any)?.rowNumber;
+      effectiveRowAddress = `${rNum}:${rNum}`;
+    }
+
+    if (!effectiveFileId || !effectiveRowAddress) {
+      return {
+        reply: "לא נמצאו נתוני זיהוי לשורה לביטול או שפג תוקף חלון הזמן (10 דקות).",
+        drafts: activeDrafts,
+        writtenEntries: params.writtenEntries || [],
+        undoneCardIds: [],
+        isConfirmed: false,
+      };
+    }
+
+    const effectiveListItemId = (rawUndo as any)?.listItemId || existing?.listItemId;
+
+    const undoParams = {
+      driveId: effectiveDriveId,
+      itemId: effectiveFileId,
+      fileId: effectiveFileId,
+      rowAddress: effectiveRowAddress,
+      writtenValues: effectiveWrittenValues,
+      writtenAt: effectiveWrittenAt,
+      sheetName: effectiveSheetName,
+      listItemId: effectiveListItemId,
+      customerName: existing?.customerName || (rawUndo as any)?.customerName,
+      date: existing?.date || (rawUndo as any)?.date,
+      description: existing?.description || (rawUndo as any)?.description,
+      employeeName: user.name,
+      employeeEmail: user.email,
+    };
+
+    try {
+      await undoRow(undoParams, user, activeEnv);
+      const remainingWritten = (params.writtenEntries || []).filter(
+        (w) => w.id !== cardId && w.id !== existing?.id && w.entryId !== cardId
+      );
+      const targetCardId = existing?.id || cardId;
+      return {
+        reply: `הרשומה עבור ${existing?.customerName || rawUndo.customerName || "הלקוח"} בוטלה בהצלחה ונמחקה מקובץ ה-Excel ומ-Microsoft Lists.`,
+        drafts: activeDrafts,
+        writtenEntries: remainingWritten,
+        undoneCardIds: targetCardId ? [targetCardId] : [],
+        isConfirmed: false,
+      };
+    } catch (undoErr: any) {
+      console.error("[undo_entry action] Error:", undoErr);
+      return {
+        reply: undoErr?.message || "לא ניתן לבטל את השורה מקובץ ה-Excel.",
+        drafts: activeDrafts,
+        writtenEntries: params.writtenEntries || [],
+        undoneCardIds: [],
+        isConfirmed: false,
+      };
+    }
+  }
+
+  // 1.5 Direct Action: Edit already written entry (Microsoft Lists + SharePoint Excel)
+  if (action === "edit_entry" && (cardId || params.editData || params.draftData)) {
+    const rawEdit = params.editData || params.draftData || {};
+    const existing =
+      (params.writtenEntries || []).find(
+        (w) => w.id === cardId || w.entryId === cardId || (rawEdit.id && w.id === rawEdit.id)
+      ) || null;
+
+    const effectiveFileId = rawEdit.fileId || existing?.fileId || "";
+    const effectiveDriveId = rawEdit.driveId || existing?.driveId;
+    const effectiveRowAddress = rawEdit.rowAddress || existing?.rowAddress;
+    const effectiveTargetRow = rawEdit.targetRow ?? existing?.targetRow;
+    const effectiveSheetName = rawEdit.sheetName || existing?.sheetName;
+    const effectiveListItemId = rawEdit.listItemId || existing?.listItemId || (rawEdit.id && !String(rawEdit.id).startsWith("draft_") ? rawEdit.id : undefined);
+    const effectiveCustomer = rawEdit.customerName || existing?.customerName || "";
+    const effectiveDate = rawEdit.date || existing?.date || "";
+    const effectiveStartTime = rawEdit.startTime !== undefined ? rawEdit.startTime : existing?.startTime;
+    const effectiveEndTime = rawEdit.endTime !== undefined ? rawEdit.endTime : existing?.endTime;
+    const effectiveDescription = rawEdit.description !== undefined ? rawEdit.description : existing?.description || "";
+    const effectiveWorkType = rawEdit.workType || existing?.workType || "טיקטים";
+    const effectiveEmployeeName = rawEdit.employeeName || existing?.employeeName || user.name;
+    const oldDescription = rawEdit.oldDescription || existing?.description || "";
+
+    let durationHours =
+      typeof rawEdit.durationHours === "number"
+        ? rawEdit.durationHours
+        : typeof rawEdit.durationMinutes === "number"
+        ? +(rawEdit.durationMinutes / 60).toFixed(2)
+        : undefined;
+    let durationFormatted = rawEdit.durationFormatted || existing?.durationFormatted || "";
+
+    if (durationHours === undefined && durationFormatted) {
+      const rounded = roundToQuarterHour(durationFormatted);
+      durationHours = rounded.hours;
+      durationFormatted = rounded.formatted;
+    } else if (typeof durationHours === "number") {
+      const dh = Math.floor(durationHours);
+      const dm = Math.round((durationHours - dh) * 60);
+      if (!durationFormatted) {
+        durationFormatted = dh > 0 && dm > 0 ? `${dh}:${String(dm).padStart(2, "0")} שעות` : `${durationHours} שעות`;
+      }
+    }
+
+    try {
+      const updateRes = await updateWrittenExcelRow(
+        {
+          fileId: effectiveFileId,
+          driveId: effectiveDriveId,
+          rowAddress: effectiveRowAddress,
+          targetRow: effectiveTargetRow,
+          sheetName: effectiveSheetName,
+          listItemId: effectiveListItemId,
+          customerName: effectiveCustomer,
+          date: effectiveDate,
+          durationHours,
+          durationMinutes: durationHours ? Math.round(durationHours * 60) : undefined,
+          durationFormatted,
+          startTime: effectiveStartTime,
+          endTime: effectiveEndTime,
+          description: effectiveDescription,
+          workType: effectiveWorkType,
+          employeeName: effectiveEmployeeName,
+          employeeEmail: user.email,
+          oldDescription,
+        },
+        user,
+        activeEnv
+      );
+
+      const updatedWrittenList = (params.writtenEntries || []).map((w) => {
+        if (w.id === cardId || w.entryId === cardId || (rawEdit.id && w.id === rawEdit.id)) {
+          return {
+            ...w,
+            customerName: effectiveCustomer || w.customerName,
+            date: effectiveDate || w.date,
+            startTime: effectiveStartTime ?? w.startTime,
+            endTime: effectiveEndTime ?? w.endTime,
+            durationHours: durationHours ?? w.durationHours,
+            durationMinutes: durationHours ? Math.round(durationHours * 60) : w.durationMinutes,
+            durationFormatted: durationFormatted || w.durationFormatted,
+            description: effectiveDescription || w.description,
+            workType: effectiveWorkType || w.workType,
+            listItemId: updateRes.listItemId || w.listItemId,
+          };
+        }
+        return w;
+      });
+
+      return {
+        reply: `התיעוד עבור ${effectiveCustomer || "הלקוח"} עודכן בהצלחה ✓ (${durationFormatted || `${durationHours || 1} שעות`}) ב-Microsoft Lists${updateRes.excelUpdated ? " ובקובץ ה-Excel" : ""}.`,
+        drafts: activeDrafts,
+        writtenEntries: updatedWrittenList,
+        undoneCardIds: [],
+        isConfirmed: true,
+      };
+    } catch (editErr: any) {
+      console.error("[edit_entry action] Error:", editErr);
+      return {
+        reply: editErr?.message || "אירעה שגיאה בעת עדכון התיעוד.",
+        drafts: activeDrafts,
+        writtenEntries: params.writtenEntries || [],
+        undoneCardIds: [],
+        isConfirmed: false,
+      };
+    }
+  }
+
+  // 2. Direct Action: Confirm specific entry via UI button "אשר והזן"
+  if (action === "confirm_entry" && cardId) {
+    const rawTarget =
+      (params.draftData && (params.draftData.id === cardId || !activeDrafts.length))
+        ? params.draftData
+        : (activeDrafts.find((d) => d.id === cardId) || params.draftData);
+
+    if (!rawTarget) {
+      return {
+        reply: "לא נמצאה טיוטה להזנה.",
+        drafts: activeDrafts,
+        writtenEntries: params.writtenEntries || [],
+        undoneCardIds: [],
+        isConfirmed: false,
+      };
+    }
+
+    const targetDraft: HoursAssistantEntryDraft = {
+      ...(activeDrafts.find((d) => d.id === cardId) || {}),
+      ...rawTarget,
+    };
+
+    // Calculate / synchronize exact duration from start and end times if both exist
+    if (targetDraft.startTime && targetDraft.endTime && targetDraft.startTime !== targetDraft.endTime) {
+      const matchStart = targetDraft.startTime.match(/^(\d{1,2}):(\d{2})/);
+      const matchEnd = targetDraft.endTime.match(/^(\d{1,2}):(\d{2})/);
+      if (matchStart && matchEnd) {
+        const sMins = parseInt(matchStart[1], 10) * 60 + parseInt(matchStart[2], 10);
+        let eMins = parseInt(matchEnd[1], 10) * 60 + parseInt(matchEnd[2], 10);
+        if (eMins <= sMins) eMins += 24 * 60;
+        const diffM = Math.max(15, eMins - sMins);
+        targetDraft.durationMinutes = diffM;
+        targetDraft.durationHours = +(diffM / 60).toFixed(2);
+        const dh = Math.floor(diffM / 60);
+        const dm = diffM % 60;
+        if (dh > 0 && dm > 0) {
+          targetDraft.durationFormatted = `${dh}:${String(dm).padStart(2, "0")} שעות`;
+        } else if (dh > 0) {
+          targetDraft.durationFormatted = `${dh} ${dh === 1 ? "שעה" : "שעות"}`;
+        } else {
+          targetDraft.durationFormatted = `${dm} דקות`;
+        }
+      }
+    } else if (targetDraft.startTime && (!targetDraft.endTime || targetDraft.endTime === targetDraft.startTime)) {
+      targetDraft.endTime = calculateEndTime(targetDraft.startTime, targetDraft.durationMinutes || 60);
+    } else if (!targetDraft.startTime && targetDraft.endTime) {
+      targetDraft.startTime = calculateStartTime(targetDraft.endTime, targetDraft.durationMinutes || 60);
+    } else if (!targetDraft.startTime && !targetDraft.endTime) {
+      const suggested = suggestStartEndTimes(targetDraft.durationMinutes || 60);
+      targetDraft.startTime = suggested.startTime;
+      targetDraft.endTime = suggested.endTime;
+    }
+
+    if (!targetDraft.fileId) {
+      // Find month target
+      const mt = await findMonthTarget(targetDraft.customerFolder || targetDraft.customerName, targetDraft.date, activeEnv);
+      if (!mt.found || !mt.fileId) {
+        return {
+          reply: `לא נמצא קובץ שעות עבור ${targetDraft.customerName} לחודש המבוקש.`,
+          drafts: activeDrafts,
+          writtenEntries: params.writtenEntries || [],
+          undoneCardIds: [],
+          isConfirmed: false,
+        };
+      }
+      targetDraft.fileId = mt.fileId;
+      targetDraft.driveId = mt.driveId;
+      targetDraft.fileName = mt.fileName;
+      targetDraft.filePath = mt.filePath;
+      targetDraft.webUrl = mt.webUrl;
+    }
+
+    // Prepare fully enriched row object
+    const semanticActivityType =
+      targetDraft.activityType ||
+      (targetDraft.workType && !["שעות", "Sheet1"].includes(targetDraft.workType) ? targetDraft.workType : "") ||
+      (targetDraft.targetTabName && !["שעות", "Sheet1"].includes(targetDraft.targetTabName) ? targetDraft.targetTabName : "") ||
+      (inferWorkType(targetDraft.description || "") === "onsite" ? "ביקור באתר" : inferWorkType(targetDraft.description || "") === "project" ? "פרויקטים" : "טיקטים");
+
+    const effectiveExcelTab = targetDraft.targetTabName || (targetDraft.availableTabs?.[0]?.name) || "שעות";
+
+    const userOverrideValues: Record<string, any> = {
+      ...(targetDraft.mappedRow || {}),
+      "סוג פעילות": semanticActivityType,
+      "סוג הפעילות": semanticActivityType,
+      "סוג תמיכה": semanticActivityType,
+      "סוג עבודה": semanticActivityType,
+      activityType: semanticActivityType,
+      משתמש: user.name,
+      "שם משתמש": user.name,
+      "שם המשתמש": user.name,
+      עובד: user.name,
+      "שם עובד": user.name,
+      מטפל: user.name,
+      user: user.name,
+      username: user.username || user.email || "g@tech-select.co.il",
+      userEmail: user.email || "g@tech-select.co.il",
+      employeeEmail: user.email || "g@tech-select.co.il",
+      userId: user.id || user.oid || "",
+      userOid: user.oid || user.id || "",
+      userUpn: user.upn || user.username || user.email || "g@tech-select.co.il",
+    };
+
+    // CRITICAL: Overwrite stale mappedRow keys with user's explicit / edited values!
+    if (targetDraft.startTime) {
+      userOverrideValues["שעת התחלה"] = targetDraft.startTime;
+      userOverrideValues["שעת התחלה 1"] = targetDraft.startTime;
+      userOverrideValues["שעה התחלה"] = targetDraft.startTime;
+      userOverrideValues["התחלה"] = targetDraft.startTime;
+      userOverrideValues["משעה"] = targetDraft.startTime;
+      userOverrideValues["שעה מה"] = targetDraft.startTime;
+      userOverrideValues["מהשעה"] = targetDraft.startTime;
+      userOverrideValues["שעת הגעה"] = targetDraft.startTime;
+      userOverrideValues["הגעה"] = targetDraft.startTime;
+      userOverrideValues["שעת כניסה"] = targetDraft.startTime;
+      userOverrideValues["שעה כניסה"] = targetDraft.startTime;
+      userOverrideValues["כניסה"] = targetDraft.startTime;
+      userOverrideValues["שעת כניסה לאתר"] = targetDraft.startTime;
+      userOverrideValues["כניסה לאתר"] = targetDraft.startTime;
+      userOverrideValues["זמן כניסה"] = targetDraft.startTime;
+      userOverrideValues["startTime"] = targetDraft.startTime;
+      userOverrideValues["start"] = targetDraft.startTime;
+    }
+    if (targetDraft.endTime) {
+      userOverrideValues["שעת סיום"] = targetDraft.endTime;
+      userOverrideValues["שעת סיום 1"] = targetDraft.endTime;
+      userOverrideValues["שעה סיום"] = targetDraft.endTime;
+      userOverrideValues["סיום"] = targetDraft.endTime;
+      userOverrideValues["עד שעה"] = targetDraft.endTime;
+      userOverrideValues["שעה עד"] = targetDraft.endTime;
+      userOverrideValues["עד השעה"] = targetDraft.endTime;
+      userOverrideValues["שעת עזיבה"] = targetDraft.endTime;
+      userOverrideValues["עזיבה"] = targetDraft.endTime;
+      userOverrideValues["שעת יציאה"] = targetDraft.endTime;
+      userOverrideValues["שעה יציאה"] = targetDraft.endTime;
+      userOverrideValues["יציאה"] = targetDraft.endTime;
+      userOverrideValues["שעת יציאה מהאתר"] = targetDraft.endTime;
+      userOverrideValues["יציאה מהאתר"] = targetDraft.endTime;
+      userOverrideValues["זמן יציאה"] = targetDraft.endTime;
+      userOverrideValues["תום"] = targetDraft.endTime;
+      userOverrideValues["endTime"] = targetDraft.endTime;
+      userOverrideValues["end"] = targetDraft.endTime;
+    }
+    if (typeof targetDraft.durationHours === "number") {
+      userOverrideValues["משך"] = targetDraft.durationHours;
+      userOverrideValues["שעות"] = targetDraft.durationHours;
+      userOverrideValues["סה״כ שעות"] = targetDraft.durationHours;
+      userOverrideValues["סה\"כ שעות"] = targetDraft.durationHours;
+      userOverrideValues["סהכ שעות"] = targetDraft.durationHours;
+      userOverrideValues["סה״כ"] = targetDraft.durationHours;
+      userOverrideValues["סה\"כ"] = targetDraft.durationHours;
+      userOverrideValues["משך זמן"] = targetDraft.durationHours;
+      userOverrideValues["משך שעות"] = targetDraft.durationHours;
+      userOverrideValues["כמות שעות"] = targetDraft.durationHours;
+      userOverrideValues["hours"] = targetDraft.durationHours;
+      userOverrideValues["duration"] = targetDraft.durationHours;
+      userOverrideValues["durationHours"] = targetDraft.durationHours;
+    }
+    if (typeof targetDraft.durationMinutes === "number") {
+      userOverrideValues["durationMinutes"] = targetDraft.durationMinutes;
+    }
+    if (targetDraft.date) {
+      userOverrideValues["תאריך"] = targetDraft.date;
+      userOverrideValues["date"] = targetDraft.date;
+      userOverrideValues["תאריך עבודה"] = targetDraft.date;
+      userOverrideValues["תאריך ביצוע"] = targetDraft.date;
+    }
+    if (targetDraft.customerName) {
+      userOverrideValues["לקוח"] = targetDraft.customerName;
+      userOverrideValues["שם לקוח"] = targetDraft.customerName;
+      userOverrideValues["שם הלקוח"] = targetDraft.customerName;
+      userOverrideValues["customer"] = targetDraft.customerName;
+      userOverrideValues["customerName"] = targetDraft.customerName;
+    }
+    if (targetDraft.description) {
+      userOverrideValues["תיאור"] = targetDraft.description;
+      userOverrideValues["תיאור פעילות"] = targetDraft.description;
+      userOverrideValues["תיאור הפעילות"] = targetDraft.description;
+      userOverrideValues["description"] = targetDraft.description;
+      userOverrideValues["details"] = targetDraft.description;
+    }
+    if (targetDraft.contactPerson) {
+      userOverrideValues["איש קשר"] = targetDraft.contactPerson;
+      userOverrideValues["שם איש קשר"] = targetDraft.contactPerson;
+    }
+    if (targetDraft.ticketNumber) {
+      userOverrideValues["מספר טיקט"] = targetDraft.ticketNumber;
+      userOverrideValues["מספר קריאה"] = targetDraft.ticketNumber;
+      userOverrideValues["טיקט"] = targetDraft.ticketNumber;
+    }
+
+    const rawAssigned = (
+      Array.isArray(targetDraft.assignedEmployees) && targetDraft.assignedEmployees.length > 0
+        ? targetDraft.assignedEmployees
+        : [
+            targetDraft.mappedRow?.["עובד"] ||
+            targetDraft.mappedRow?.["שם עובד"] ||
+            targetDraft.mappedRow?.employeeName ||
+            user.name,
+          ]
+    ).map((e) => String(e).trim()).filter(Boolean);
+
+    const effectiveEmployees = resolveKnownEmployeeList(rawAssigned, user.name);
+
+    const rowsPayload = effectiveEmployees.map((empName) => {
+      const empEmail = resolveEmployeeEmail(empName, user.email);
+      const userOverride = {
+        ...userOverrideValues,
+        "עובד": empName,
+        "שם עובד": empName,
+        "טכנאי": empName,
+        "שם טכנאי": empName,
+        "מבצע": empName,
+        "מטפל": empName,
+        "משתמש": empName,
+        "שם משתמש": empName,
+        employeeName: empName,
+        employee: empName,
+        userName: empName,
+        userEmail: empEmail,
+        employeeEmail: empEmail,
+      };
+
+      return buildEnrichedRowPayload({
+        date: targetDraft.date,
+        userName: empName,
+        userEmail: empEmail,
+        userId: user.id || user.oid || "",
+        userOid: user.oid || user.id || "",
+        userUpn: empEmail,
+        hours: targetDraft.durationHours,
+        minutes: targetDraft.durationMinutes,
+        formatted: targetDraft.durationFormatted,
+        workType: semanticActivityType,
+        desc: targetDraft.description,
+        startTime: targetDraft.startTime,
+        endTime: targetDraft.endTime,
+        contactPerson: targetDraft.contactPerson,
+        ticketNumber: targetDraft.ticketNumber,
+        customerName: targetDraft.customerName,
+        userOverride,
+      });
+    });
+
+    const writeRes = await writeRows(targetDraft.fileId, rowsPayload, user, activeEnv, targetDraft.driveId, effectiveExcelTab);
+    const rowNumMatch = (writeRes.rowAddress || "").match(/\d+/);
+    const baseRowNum = rowNumMatch ? parseInt(rowNumMatch[0], 10) : 1;
+
+    const newWrittenItems: WrittenEntryResult[] = effectiveEmployees.map((empName, idx) => {
+      const targetRow = baseRowNum + idx;
+      const itemId = writeRes.listItemIds?.[idx] || (idx === 0 ? writeRes.listItemId : undefined);
+      return {
+        id: idx === 0 ? targetDraft.id : `${targetDraft.id}_emp_${idx}`,
+        fileId: targetDraft.fileId,
+        driveId: writeRes.driveId || targetDraft.driveId,
+        itemId: targetDraft.fileId,
+        fileName: targetDraft.fileName || "hours.xlsx",
+        filePath: targetDraft.filePath || "",
+        sheetName: writeRes.sheetName || effectiveExcelTab,
+        webUrl: writeRes.webUrl || targetDraft.webUrl || "",
+        targetRow,
+        rowAddress: writeRes.rowAddress || `Row ${targetRow}`,
+        writtenValues: writeRes.writtenValues,
+        entryId: `${writeRes.entryId || targetDraft.id}_${idx}`,
+        customerName: targetDraft.customerName,
+        date: targetDraft.date,
+        startTime: targetDraft.startTime,
+        endTime: targetDraft.endTime,
+        durationHours: targetDraft.durationHours,
+        durationMinutes: targetDraft.durationMinutes,
+        durationFormatted: targetDraft.durationFormatted,
+        description: targetDraft.description,
+        workType: semanticActivityType,
+        employeeName: empName,
+        writtenAt: writeRes.writtenAt || Date.now(),
+        expiresAt: (writeRes.writtenAt || Date.now()) + 10 * 60 * 1000,
+        canUndo: true,
+        listItemId: itemId,
+        listItemWebUrl: writeRes.listItemWebUrl,
+        listsSyncResult: writeRes.listsSyncResult,
+        skippedOccupiedRows: writeRes.skippedOccupiedRows,
+      };
+    });
+
+    const remainingDrafts = activeDrafts.filter((d) => d.id !== cardId);
+
+    const replyMsg =
+      effectiveEmployees.length > 1
+        ? `נרשמו בהצלחה ${effectiveEmployees.length} שורות ✓ נפתחה שורה נפרדת עבור ${effectiveEmployees.join(" ועבור ")} בטאב "${writeRes.sheetName || effectiveExcelTab}" בקובץ ${targetDraft.fileName || ""} וב-Microsoft Lists.`
+        : `נרשם בהצלחה ✓ השורה נוספה לטאב "${writeRes.sheetName || effectiveExcelTab}" בקובץ ${targetDraft.fileName || ""} (שורה ${newWrittenItems[0].targetRow}) וב-Microsoft Lists.`;
+
+    return {
+      reply: replyMsg,
+      drafts: remainingDrafts,
+      writtenEntries: newWrittenItems,
+      undoneCardIds: [],
+      isConfirmed: true,
+    };
+  }
+
+  // 3. Initialize Gemini Client Server-Side
+  const apiKey =
+    activeEnv?.GEMINI_API_KEY ||
+    activeEnv?.GOOGLE_GENAI_API_KEY ||
+    activeEnv?.GEMINI_KEY ||
+    activeEnv?.GOOGLE_API_KEY ||
+    (typeof process !== "undefined" &&
+      (process.env?.GEMINI_API_KEY ||
+        process.env?.GOOGLE_GENAI_API_KEY ||
+        process.env?.GEMINI_KEY ||
+        process.env?.GOOGLE_API_KEY)) ||
+    (typeof (globalThis as any).GEMINI_API_KEY === "string" ? (globalThis as any).GEMINI_API_KEY : "");
+
+  if (!apiKey) {
+    throw new Error(
+      "מפתח Gemini API חסר בשרת (GEMINI_API_KEY). יש לוודא שהוגדר משתנה סביבה או סוד תואם."
+    );
+  }
+
+  const ai = new GoogleGenAI({
+    apiKey,
+    httpOptions: {
+      headers: {
+        "User-Agent": "aistudio-build",
+      },
+    },
+  });
+
+  const jCtx = getJerusalemContext();
+
+  // Assistant Tools
+  const toolDeclarations: FunctionDeclaration[] = [
+    {
+      name: "find_customer",
+      description: "Search SharePoint customer folders by fuzzy name matching. Returns matching customers with score, folder path, and ambiguity status.",
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          query: {
+            type: Type.STRING,
+            description: "Customer name or partial name in Hebrew or English (e.g. as mentioned by user)",
+          },
+        },
+        required: ["query"],
+      },
+    },
+    {
+      name: "find_month_target",
+      description: "Locate the Excel hours file for a customer for a given month/date (e.g. '2026-09' or '2026-09-30'). Returns fileId, fileName, webUrl, and parentPath.",
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          customerFolderName: {
+            type: Type.STRING,
+            description: "Exact customer name or folder name returned by find_customer",
+          },
+          date: {
+            type: Type.STRING,
+            description: "Date in YYYY-MM-DD, YYYY-MM, or DD/MM/YYYY format",
+          },
+        },
+        required: ["customerFolderName", "date"],
+      },
+    },
+    {
+      name: "read_sheet_structure",
+      description: "Read table structure, column headers, and next empty row index from the customer Excel file to format row columns properly.",
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          fileId: {
+            type: Type.STRING,
+            description: "The fileId of the target Excel file",
+          },
+        },
+        required: ["fileId"],
+      },
+    },
+    {
+      name: "find_duplicates",
+      description: "Check if an entry for this employee on this date (and start/duration) already exists in the target file. Always call before asking confirmation.",
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          fileId: {
+            type: Type.STRING,
+            description: "The fileId of the target Excel file",
+          },
+          date: {
+            type: Type.STRING,
+            description: "Date of entry (YYYY-MM-DD or DD/MM/YYYY)",
+          },
+          start: {
+            type: Type.STRING,
+            description: "Optional start time e.g. '14:00'",
+          },
+          duration: {
+            type: Type.STRING,
+            description: "Optional duration e.g. '0.25' or '15 דקות'",
+          },
+        },
+        required: ["fileId", "date"],
+      },
+    },
+    {
+      name: "propose_entries",
+      description: "Propose or update structured entry drafts to display as summary cards to the employee. Call this when you have extracted details before asking confirmation.",
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          entries: {
+            type: Type.ARRAY,
+            description: "List of entries extracted from the employee's request",
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                customerName: { type: Type.STRING, description: "Customer name" },
+                date: { type: Type.STRING, description: "Date in YYYY-MM-DD or DD/MM/YYYY" },
+                duration: { type: Type.STRING, description: "Duration e.g. '15 דקות' / '0.25 שעה'" },
+                workType: {
+                  type: Type.STRING,
+                  description: "Target tab name or activity category ('פרויקטים' / 'project' if any project/FAT/migration/setup is mentioned, even if arriving onsite; 'ביקור באתר' / 'onsite' for routine onsite visit without a project; 'טיקטים' / 'tickets' for remote/service tickets)",
+                },
+                description: {
+                  type: Type.STRING,
+                  description:
+                    "Full, comprehensive, and exact technical documentation of all work performed by the technician. NEVER shorten, summarize, or omit technician details - preserve all steps, systems, and explanations as provided by the technician.",
+                },
+                startTime: { type: Type.STRING, description: "Start time (HH:MM)" },
+                endTime: { type: Type.STRING, description: "End time (HH:MM)" },
+                isTimeSuggested: { type: Type.BOOLEAN, description: "True if times are suggested, false if explicitly set by employee" },
+                contactPerson: { type: Type.STRING, description: "Optional contact person" },
+                ticketNumber: { type: Type.STRING, description: "Optional ticket number" },
+                isReady: { type: Type.BOOLEAN, description: "True if customer, date, duration, description are all present" },
+                missingFields: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: "List of missing mandatory fields if any: ['לקוח', 'תאריך', 'משך', 'תיאור']",
+                },
+                assignedEmployees: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: `Optional list of existing TECH-SELECT employees who worked together on this task. MUST ONLY contain names from the closed employee list: [${KNOWN_TEAM_MEMBERS.map((m) => m.name).join(", ")}]. NEVER add new names or client contacts from user input! Defaults to the reporting employee only.`,
+                },
+              },
+              required: ["customerName", "date", "description", "workType"],
+            },
+          },
+        },
+        required: ["entries"],
+      },
+    },
+    {
+      name: "write_rows",
+      description: "CRITICAL: Write rows to the Excel sheet. NEVER CALL THIS TOOL BEFORE THE USER HAS EXPLICITLY CONFIRMED (e.g., 'כן', 'מאשר', 'תזין', 'אשר והזן'). Always include all fields so all columns in the tab are populated.",
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          fileId: { type: Type.STRING, description: "Target file ID" },
+          rows: {
+            type: Type.ARRAY,
+            description: "Array of row objects with all fields needed for Excel columns",
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                date: { type: Type.STRING, description: "Date in YYYY-MM-DD or DD/MM/YYYY" },
+                workType: {
+                  type: Type.STRING,
+                  description: "Target tab name or activity category",
+                },
+                hours: { type: Type.NUMBER, description: "Duration in decimal hours (e.g. 0.5, 1.0, 1.5)" },
+                description: {
+                  type: Type.STRING,
+                  description:
+                    "Full, comprehensive, and exact technical documentation preserving all actions, systems, and steps performed by the technician. NEVER shorten or omit details.",
+                },
+                startTime: { type: Type.STRING, description: "Start time (e.g. '09:00' or '10:00')" },
+                endTime: { type: Type.STRING, description: "End time (e.g. '10:30' or '11:00')" },
+                contactPerson: { type: Type.STRING, description: "Contact person at customer" },
+                ticketNumber: { type: Type.STRING, description: "Ticket or call number" },
+                customer: { type: Type.STRING, description: "Customer name" },
+                assignedEmployees: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: "Optional list of employee names who worked on this task.",
+                },
+              },
+              required: ["date", "workType", "hours", "description"],
+            },
+          },
+        },
+        required: ["fileId", "rows"],
+      },
+    },
+    {
+      name: "undo_row",
+      description: "Undo and cancel a row written in the last 10 minutes.",
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          fileId: { type: Type.STRING, description: "Target file ID" },
+          rowAddress: { type: Type.STRING, description: "Row address or entry ID to undo" },
+        },
+        required: ["fileId", "rowAddress"],
+      },
+    },
+    {
+      name: "get_today_hours_summary",
+      description:
+        "Retrieve logged hours reports, employee documentations, and audit summaries primarily from the Microsoft Lists (LISTS) database for maximum efficiency. Used whenever the user or manager asks questions about hours logged (today, yesterday, last week 'שבוע שעבר', this week 'השבוע', this month 'החודש', last month 'חודש שעבר', or a specific date), how many people documented today ('כמה אנשים תיעדו היום?'), hours logged at a specific customer ('כמה שעות נעשו היום אצל לקוח X?'), or what an employee documented ('כמה שעות יוסף דיווח שבוע שעבר?', 'מה ודים עשה היום?').",
+      parameters: {
+        type: Type.OBJECT,
+        properties: {
+          date: {
+            type: Type.STRING,
+            description: "Target date in YYYY-MM-DD format, or 'today' / 'yesterday' ('אתמול') / 'שלשום' / 'this_week' ('ריכוז שבועי' / 'השבוע') / 'last_week' ('שבוע שעבר' / 'בשבוע שעבר') / 'this_month' ('מתחילת החודש' / 'החודש') / 'last_month' ('חודש שעבר'). Optional, defaults to today.",
+          },
+          period: {
+            type: Type.STRING,
+            description: "Period of query: 'day' (default for daily), 'week' (for weekly report / 'השבוע' / 'שבוע שעבר'), or 'month' (for monthly report / 'החודש' / 'חודש שעבר').",
+          },
+          customer: {
+            type: Type.STRING,
+            description: "Specific customer name if the user asks about a customer (e.g. 'כמה שעות נעשו היום אצל אסיו?').",
+          },
+          employee: {
+            type: Type.STRING,
+            description: "Specific employee name if the user asks about an employee (e.g. 'כמה שעות יוסף דיווח שבוע שעבר?', 'מה ודים עשה היום?', 'כמה שעות עשה גיא?').",
+          },
+          searchQuery: {
+            type: Type.STRING,
+            description: "Free search term or query (e.g. 'גיבוי', 'שרת', 'תקלה').",
+          },
+        },
+      },
+    },
+  ];
+
+  // System Instruction
+  const systemInstruction = `You are a dedicated work-hours logging and reporting assistant for TECH-SELECT employees ("שעות לחיוב לקוח"). Speak short, practical, natural Hebrew.
+
+ABSOLUTE DOMAIN RESTRICTION (חוק ברזל - מיקוד מוחלט בדיווחי שעות TECH-SELECT בלבד):
+- You are STRICTLY and EXCLUSIVELY a work-hours logging and hours-reporting assistant for TECH-SELECT.
+- NEVER answer general knowledge questions, recipes (מתכונים, עוגות, בישול, אוכל), weather, news, politics, sports, jokes, riddles, stories, homework, general programming/coding questions, or casual off-topic conversation.
+- If the user asks ANYTHING unrelated to logging client billable hours, editing/undoing work entries, or checking employee/customer hours reports in TECH-SELECT, you MUST NOT call any tools and MUST reply ONLY with this exact single sentence:
+  "אני עוזר ייעודי לתיעוד שעות לחיוב לקוח ובדיקת דיווחים של TECH-SELECT בלבד. אשמח לעזור לך לתעד פעילות שבוצעה עבור לקוח או לבדוק דיווחי שעות."
+
+CURRENT SYSTEM CONTEXT:
+- ${jCtx.fullDateDescription}
+- Employee name: "${user.name}". Employee email: "${user.email}".
+- The employee name comes STRICTLY from the signed-in user. NEVER ask for employee name under any circumstances.
+
+MICROSOFT LISTS DUAL-WRITE SYNCHRONIZATION (סנכרון כפול מול אפליקציית Lists):
+- All hours entries confirmed in the system are automatically dual-written to both the customer's Excel file in SharePoint AND to the centralized Microsoft Lists app (https://techselectltd.sharepoint.com/sites/Customers/Lists/List).
+- In Microsoft Lists, the fields are structured in this EXACT order:
+  1. כותרת (Title): "טיקט [מספר]" אם צוין טיקט, או תקציר תמציתי של מה שנעשה.
+  2. סוג (Work Type Choice): אך ורק אחת מ-3 האפשרויות: "טיקטים" (תמיכה מרחוק, טלפוני, קריאות שירות), "פרויקטים" (שדרוגים, מיגרציות, הקמות), "ביקור" (נוכחות פיזית/הגעה לאתר הלקוח).
+  3. לקוח (Customer): שם הלקוח (לדוגמה: "אסיו Asio", "הייספ לאב HSL").
+  4. משתמש (User / Handler): בעמודת "משתמש" ב-Lists נשלחת כתובת המייל של מקים התיעוד לפי ה-SSO שלו ("${user.email || "g@tech-select.co.il"}"). שמו מוצג כ-"${user.name}".
+  5. שעת התחלה (Start Time): HH:MM (לדוגמה: 08:45, 09:00).
+  6. שעת סיום (End Time): HH:MM (לדוגמה: 09:15, 10:00).
+  7. תאריך (Date): DD/MM/YYYY.
+  8. כמה זמן הושקע (Duration): מספר שעות בפורמט עשרוני (לדוגמה: 0.50, 1.00).
+  9. מה נעשה (Description): פירוט מקצועי מלא של מה שבוצע בפועל.
+
+MANAGER & AUDIT CAPABILITY - HOURS REPORT, DOCUMENTATION INSPECTION & QUERIES (דוחות, ריכוז יומי/שבועי, בדיקת תיעודים, שעות לפי לקוח ועובד):
+- ROUTING DECISION TREE (עץ החלטות חובה):
+  1. The Microsoft Lists (LISTS) app is your primary database (DB) for ALL performance reports, documentation checks, and summaries.
+  2. If the user asks ANY question or query about hours, documentations, work performed, or summaries:
+     * "כמה שעות נעשו היום אצל לקוח X?" / "כמה שעות עשינו השבוע אצל X?" / "מה עשו אצל לקוח X?" -> IMMEDIATELY call get_today_hours_summary({ customer: "X", date: "today" })!
+     * "כמה אנשים תיעדו היום?" / "מי תיעד היום?" / "מי דיווח שעות היום?" -> IMMEDIATELY call get_today_hours_summary({ date: "today" })!
+     * "לבדוק לגבי תיעודים שעובדים עשו" / "מה העובדים תיעדו היום?" / "מה נרשם היום?" -> IMMEDIATELY call get_today_hours_summary({ date: "today" })!
+     * "כמה שעות תועדו מתחילת החודש?" / "כמה שעות נרשמו החודש?" / "ריכוז חודשי" / "דוח חודשי" -> IMMEDIATELY call get_today_hours_summary({ period: "month", date: "this_month" })!
+     * "ריכוז שבועי" / "דוח שבועי" / "כמה שעות נרשמו השבוע?" -> IMMEDIATELY call get_today_hours_summary({ period: "week", date: "this_week" })!
+     * "ריכוז יומי" / "דוח שעות להיום" / "דוח שעות לאתמול" -> IMMEDIATELY call get_today_hours_summary({ date: "today" }) (or "yesterday")!
+     * "מה ודים עשה היום/השבוע?" / "כמה שעות עשה גיא?" -> IMMEDIATELY call get_today_hours_summary({ employee: "שם העובד", date: "today" })!
+  3. ABSOLUTE PROHIBITION FOR QUERIES:
+     - DO NOT call propose_entries, DO NOT call find_customer, DO NOT ask "מי הלקוח שעבורו בוצעה העבודה?", and DO NOT ask "כמה שעות לתעד עבור הפעילות"!
+     - The user is checking information, NOT recording a new entry!
+
+ULTRA-FAST SINGLE-STEP LOGGING WORKFLOW (הכנת כרטיס חיוב מיידית בתור אחד!):
+- When the employee describes work performed for a customer (via text or voice):
+  * CALL propose_entries DIRECTLY IN YOUR VERY FIRST STEP!
+  * DO NOT call find_customer, find_month_target, read_sheet_structure, or find_duplicates before propose_entries — propose_entries ALREADY verifies the customer in SharePoint (bilingual Hebrew/English), locates the monthly Excel file, inspects the tabs, and checks duplicates automatically in one fast pass!
+  * Only if NO customer name was mentioned at all in the message/history, ask briefly: "עבור איזה לקוח בוצעה הפעילות?"
+
+EXTRACTION RULES FOR propose_entries:
+1. Customer: Pass the customer name in customerName (supports Hebrew or English). For example, "וט מגן" / "ווט מגן" maps to Vet Magen / Vet-Magen, "אוביה" / "אובייה" / "יוביה" maps to Ubeya / UBEYA, "קיסר" maps to Caesar Digum, "מטריקס" to Matrix, "הייספ לאב" to HSL / HiSep, etc.
+2. Date: default today (${jCtx.todayIso}, Asia/Jerusalem). Understand "אתמול" (${jCtx.yesterdayIso}), "ביום ראשון", "שלשום", or explicit dates/months (e.g. if the user says "נובמבר" or specifies a month, pass the appropriate YYYY-MM-DD in that month).
+3. Duration / משך זמן (רציף ומהיר - ללא עצירות מיותרות):
+   - Round to 15 minutes (0.25, 0.5, 0.75, 1, 1.5, 2...).
+   - If the employee did NOT specify duration, default to "1 שעה" (60 minutes, isTimeSuggested = true) and call propose_entries immediately without asking!
+4. Work type / Tab selection (חוק עדיפות עליונה: פרויקט גובר על ביקור!):
+   - Project work ("פרויקט", "של פרויקט", "במסגרת פרויקט", "FAT", "הלבנה לקראת התקנה", "שדרוג שרת", "מיגרציה", "הקמה", "הטמעה") -> ALWAYS "פרויקטים" (EVEN IF the employee mentions physical arrival like "הגעה", "ביקור", or "באתר" for that project!).
+   - On-site visit ("הייתי אצל", "ביקור", "הגעתי פיזית", "הגעה") ONLY when NO project is mentioned -> "ביקור באתר".
+   - Remote support / phone / tickets ("דיברתי", "התחברתי", "טלפון", "מרחוק", "תמיכה", "טיקט") -> "טיקטים".
+5. Description (ניסוח מקצועי ברמת Senior IT / System Engineer):
+   - Start with "[שם פרטי] כתב: [התיאור המקצועי המלא]".
+   - Write a clear, professional Hebrew technical description preserving all technical details, server/user names, and actions performed.
+6. Contact person & Ticket number: extract if mentioned.
+7. Start time / End time: extract if mentioned, otherwise propose_entries calculates them automatically.
+8. Multiple Employees / Team Work (חוק ברזל - רשימת עובדים סגורה בלבד!):
+   - Closed list of existing TECH-SELECT employees: [${KNOWN_TEAM_MEMBERS.map((m) => m.name).join(", ")}].
+   - Default is 1 employee ("${user.name}").
+   - When a name is mentioned in the user's message, search for it ONLY in the existing employees list above. NEVER add new/unlisted names from user input to assignedEmployees! Any person mentioned who is NOT in the closed employee list above (e.g. a client user or contact person) belongs in contactPerson or description, NEVER in assignedEmployees.
+9. NEVER call write_rows before explicit user confirmation ("כן", "מאשר", "תזין").`;
+
+  // Build Conversation Contents for Gemini
+  const contents: any[] = [];
+
+  // Append history
+  for (const h of history) {
+    if (h.role === "user" || h.role === "model") {
+      contents.push({
+        role: h.role,
+        parts: [{ text: h.text }],
+      });
+    }
+  }
+
+  // Active drafts context if present
+  let activeDraftsPrompt = "";
+  if (activeDrafts.length > 0) {
+    activeDraftsPrompt = `\n[טיוטות פתוחות בממשק כרגע (ניתן לשנות טאב או שעות לפי בקשת המשתמש): ${JSON.stringify(
+      activeDrafts.map((d) => ({
+        id: d.id,
+        customerName: d.customerName,
+        date: d.date,
+        duration: d.durationFormatted,
+        durationMinutes: d.durationMinutes,
+        startTime: d.startTime,
+        endTime: d.endTime,
+        isTimeSuggested: d.isTimeSuggested,
+        workType: d.workType,
+        description: d.description,
+        fileId: d.fileId,
+        fileName: d.fileName,
+        targetRow: d.targetRow,
+        isReady: d.isReadyForConfirmation,
+        assignedEmployees: d.assignedEmployees,
+      }))
+    )}]`;
+  }
+
+  // Safe timeout wrapper for tools to ensure assistant never hangs on slow Graph calls
+  const withSafeTimeout = async <T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> => {
+    return Promise.race([
+      promise,
+      new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+    ]);
+  };
+
+  // Resilient multi-model executor with auto-retry and fallback on 429 rate limits
+  const CANDIDATE_GEMINI_MODELS = [
+    "gemini-3-flash-preview",
+    "gemini-2.5-flash",
+    "gemini-flash-latest",
+  ];
+
+  const generateWithFallback = async (
+    requestContents: any[],
+    requestConfig?: any,
+    timeoutMs = 35000
+  ): Promise<any> => {
+    let lastErr: any = null;
+    for (const modelName of CANDIDATE_GEMINI_MODELS) {
+      try {
+        const res = await withSafeTimeout(
+          ai.models.generateContent({
+            model: modelName,
+            contents: requestContents,
+            config: requestConfig,
+          }),
+          timeoutMs,
+          null as any
+        );
+        if (res) return res;
+      } catch (err: any) {
+        lastErr = err;
+        const errMsg = err?.message || String(err);
+        console.warn(`[Gemini Assistant] Model ${modelName} warning: ${errMsg}. Trying next candidate model...`);
+        if (errMsg.includes("429") || errMsg.includes("RESOURCE_EXHAUSTED") || errMsg.includes("quota")) {
+          await new Promise((r) => setTimeout(r, 400));
+        }
+      }
+    }
+    if (lastErr) {
+      const is429 = String(lastErr?.message || lastErr).includes("429") || String(lastErr?.message || lastErr).includes("RESOURCE_EXHAUSTED");
+      if (is429) {
+        throw new Error("עומס זמני בשירות ה-AI של Google Gemini (קוד 429). אנא נסה שוב בעוד מספר שניות.");
+      }
+      throw lastErr;
+    }
+    return null;
+  };
+
+  const OFF_TOPIC_REFUSAL_MSG =
+    "אני עוזר ייעודי לתיעוד שעות לחיוב לקוח ובדיקת דיווחים של TECH-SELECT בלבד. אשמח לעזור לך לתעד פעילות שבוצעה עבור לקוח או לבדוק דיווחי שעות.";
+
+  // Fast deterministic off-topic detector (blocks recipes, food, weather, jokes, sports, general trivia in <1ms)
+  const isDefinitelyOffTopic = (text: string): boolean => {
+    const clean = text.trim();
+    if (!clean) return false;
+    const hasWorkContext =
+      /(?:לקוח|שעה|שעות|דקות|טיקט|קריאה|שרת|מחשב|רשת|מדפסת|מייל|אאוטלוק|אופיס|ענן|גיבוי|פיירוול|סוויץ|ביקור|פרויקט|תמיכה|חיוב|תיעוד|תיעדתי|דיווח|אקסל|ליסט|lists|excel|sharepoint|vpn|dns|ip|ad|sql|ציוד|התקנה|תקלה|משתמש|סיסמה)/i.test(
+        clean
+      );
+    if (hasWorkContext) return false;
+
+    const offTopicPattern =
+      /(?:מתכון|עוגה|עוגת|שוקולד|אפייה|בישול|אוכל|פיצה|פסטה|מרק|סלט|קפה|מסעדה|מזג\s*ה?אוויר|בדיחה|ספר\s+לי\s+סיפור|שיר|חמשיר|כדורגל|כדורסל|מונדיאל|פוליטיקה|ראש\s+הממשלה|מניה|מניות|קריפטו|ביטקוין|הורוסקופ|מזל\s+אסטרולוגי|תרגם\s+לי\s+שיר|סרטים|נטפליקס|recipe|chocolate\s+cake|weather|tell\s+me\s+a\s+joke)/i;
+    return offTopicPattern.test(clean);
+  };
+
+  // STEP 1: Fast Parallel Audio Transcription + Extraction
+  let userTranscript: string | undefined = undefined;
+  let transcribePromise: Promise<string | undefined> | null = null;
+
+  if (audio && audio.data) {
+    transcribePromise = (async () => {
+      try {
+        const transcribeRes = await generateWithFallback(
+          [
+            {
+              inlineData: {
+                mimeType: audio.mimeType || "audio/webm",
+                data: audio.data,
+              },
+            },
+            {
+              text: "תמלל את הדיבור בהקלטה לעברית באופן מדויק ונאמן למקור. החזר אך ורק את טקסט התמלול המדויק ללא שום הערות או תוספות.",
+            },
+          ],
+          undefined,
+          18000
+        );
+        return transcribeRes?.text?.trim() || undefined;
+      } catch (transcribeErr) {
+        console.warn("[Assistant Transcribe] Fast transcribe error:", transcribeErr);
+        return undefined;
+      }
+    })();
+  }
+
+  // Format a comprehensive, clean Hebrew reply from a DailyHoursReportResult
+  const formatHoursSummaryReply = (
+    report: any,
+    opts: {
+      reqEmployee?: string;
+      reqCustomer?: string;
+      accessScope: UserAccessScope;
+    }
+  ): string => {
+    const periodLabel = report.periodTitle || (report.isToday ? `היום (${report.date})` : report.date);
+    const empLabel = opts.reqEmployee || report.filterEmployee;
+    const custLabel = opts.reqCustomer || report.filterCustomer;
+
+    if (!report || report.totalEntries === 0) {
+      if (empLabel && custLabel) {
+        return `לא נמצאו דיווחי שעות עבור **${empLabel}** אצל הלקוח **${custLabel}** ב${periodLabel}.`;
+      }
+      if (empLabel) {
+        return `לא נמצאו דיווחי שעות עבור **${empLabel}** ב${periodLabel}.`;
+      }
+      if (custLabel) {
+        return `לא נמצאו דיווחי שעות אצל הלקוח **${custLabel}** ב${periodLabel}.`;
+      }
+      return `לא נמצאו דיווחי שעות ב${periodLabel}.`;
+    }
+
+    const lines: string[] = [];
+    if (empLabel) {
+      lines.push(
+        `📊 **סיכום שעות עבור ${empLabel} — ${periodLabel}${custLabel ? ` (לקוח: ${custLabel})` : ""}:**`
+      );
+      lines.push(
+        `סה"כ: **${report.totalHoursFormatted}** (${report.totalEntries} דיווחים ב-${report.activeCustomersCount} לקוחות)`
+      );
+      if (Array.isArray(report.byCustomer) && report.byCustomer.length > 0) {
+        lines.push(`\n**חלוקה לפי לקוחות:**`);
+        for (const c of report.byCustomer.slice(0, 12)) {
+          lines.push(`• **${c.customerName}**: ${c.totalHoursFormatted} (${c.entriesCount} דיווחים)`);
+        }
+      }
+      if (Array.isArray(report.entries) && report.entries.length > 0) {
+        lines.push(`\n**פירוט דיווחים:**`);
+        for (const ent of report.entries.slice(0, 12)) {
+          const timeRange =
+            ent.startTime && ent.endTime ? ` (${ent.startTime}–${ent.endTime})` : "";
+          const cleanDesc = String(ent.description || "")
+            .replace(/^[^:]{2,25}\s+כתב:\s*/i, "")
+            .trim();
+          lines.push(
+            `- **[${ent.date}] ${ent.customerName}** — ${ent.durationHours} שעות${timeRange} [${ent.workType}]: ${cleanDesc}`
+          );
+        }
+        if (report.entries.length > 12) {
+          lines.push(`*(ועוד ${report.entries.length - 12} דיווחים נוספים)*`);
+        }
+      }
+    } else if (custLabel) {
+      lines.push(`📊 **סיכום שעות אצל ${custLabel} — ${periodLabel}:**`);
+      lines.push(
+        `סה"כ: **${report.totalHoursFormatted}** (${report.totalEntries} דיווחים ע"י ${report.activeEmployeesCount} עובדים)`
+      );
+      if (Array.isArray(report.byEmployee) && report.byEmployee.length > 0) {
+        lines.push(`\n**לפי עובד:**`);
+        for (const e of report.byEmployee) {
+          lines.push(`• **${e.employeeName}**: ${e.totalHoursFormatted} (${e.entriesCount} דיווחים)`);
+        }
+      }
+      if (Array.isArray(report.entries) && report.entries.length > 0) {
+        lines.push(`\n**פירוט פעילויות:**`);
+        for (const ent of report.entries.slice(0, 10)) {
+          const cleanDesc = String(ent.description || "")
+            .replace(/^[^:]{2,25}\s+כתב:\s*/i, "")
+            .trim();
+          lines.push(
+            `- **[${ent.date}] ${ent.employeeName}** (${ent.durationHours} שעות, ${ent.workType}): ${cleanDesc}`
+          );
+        }
+      }
+    } else {
+      const scopeSubtitle =
+        opts.accessScope.role === "team_manager"
+          ? ` (צוות ${opts.accessScope.userName})`
+          : "";
+      lines.push(`📊 **ריכוז שעות${scopeSubtitle} — ${periodLabel}:**`);
+      lines.push(
+        `סה"כ: **${report.totalHoursFormatted}** (${report.totalEntries} דיווחים | ${report.activeEmployeesCount} עובדים | ${report.activeCustomersCount} לקוחות)`
+      );
+      if (Array.isArray(report.byEmployee) && report.byEmployee.length > 0) {
+        lines.push(`\n**פירוט לפי עובדים:**`);
+        for (const e of report.byEmployee) {
+          const custs = Array.isArray(e.customers) && e.customers.length > 0 ? ` — ${e.customers.slice(0, 4).join(", ")}` : "";
+          lines.push(`• **${e.employeeName}**: ${e.totalHoursFormatted} (${e.entriesCount} דיווחים${custs})`);
+        }
+      }
+    }
+
+    return lines.join("\n");
+  };
+
+  // Fast deterministic hours query detector & executor (handles "כמה שעות יוסף דיווח שבוע שעבר?" in 1 step with strict RBAC)
+  const tryExecuteFastHoursQuery = async (rawText: string): Promise<string | null> => {
+    const clean = rawText.trim();
+    if (!clean) return null;
+
+    // Must not be a logging command ("תתעד", "תרשום", "תוסיף", "תזין", "הייתי אצל", "עבדתי על")
+    const isLoggingCommand =
+      /^(?:תתעד|תרשום|תוסיף|תזין|תעדכן|תפתח|תבטל|מחק|אשר|מאשר|כן\b|לא\b)/i.test(clean) ||
+      /(?:תתעד\s+לי|תרשום\s+לי|תתעד\s+בשם|נא\s+לתעד|רוצה\s+לתעד)/i.test(clean);
+    if (isLoggingCommand) return null;
+
+    // Check if the message is asking a question about hours/reports
+    const isHoursQuestion =
+      /(?:כמה\s+שעות|כמה\s+זמן|כמה\s+תיעד|כמה\s+דיווח|כמה\s+אנשים\s+תיעדו|מי\s+תיעד|מי\s+דיווח|מה\s+[^\s]+\s+(?:עשה|עשתה|תיעד|תיעדה|דיווח|דיווחה)|ריכוז\s+(?:יומי|שבועי|חודשי|שעות)|דוח\s+(?:יומי|שבועי|חודשי|שעות)|סיכום\s+שעות)/i.test(
+        clean
+      );
+    if (!isHoursQuestion) return null;
+
+    // Determine date & period
+    let reqDate = "today";
+    let reqPeriod: "day" | "week" | "month" | undefined = "day";
+
+    if (/שבוע\s+שעבר|בשבוע\s+שעבר|שבוע\s+קודם|השבוע\s+הקודם/i.test(clean)) {
+      reqDate = "last_week";
+      reqPeriod = "week";
+    } else if (/השבוע|מתחילת\s+השבוע|ריכוז\s+שבועי|דוח\s+שבועי|בשבוע\s+הזה/i.test(clean)) {
+      reqDate = "this_week";
+      reqPeriod = "week";
+    } else if (/חודש\s+שעבר|בחודש\s+שעבר|חודש\s+קודם|החודש\s+הקודם/i.test(clean)) {
+      reqDate = "last_month";
+      reqPeriod = "month";
+    } else if (/החודש|מתחילת\s+החודש|ריכוז\s+חודשי|דוח\s+חודשי|בחודש\s+הזה/i.test(clean)) {
+      reqDate = "this_month";
+      reqPeriod = "month";
+    } else if (/שלשום/i.test(clean)) {
+      reqDate = "שלשום";
+      reqPeriod = "day";
+    } else if (/אתמול/i.test(clean)) {
+      reqDate = "yesterday";
+      reqPeriod = "day";
+    } else {
+      const explicitDateMatch = clean.match(/\b(\d{1,2}[./-]\d{1,2}(?:[./-]\d{2,4})?|\d{4}-\d{2}-\d{2})\b/);
+      if (explicitDateMatch) {
+        reqDate = explicitDateMatch[1];
+        reqPeriod = "day";
+      }
+    }
+
+    // Detect employee mentioned in the query
+    let reqEmployee: string | undefined = undefined;
+    const isAskingAboutSelf = /(?:תיעדתי|דיווחתי|עשיתי|השעות\s+שלי|שלי\s+היום|שלי\s+השבוע|שלי\s+שבוע)/i.test(clean);
+    if (isAskingAboutSelf) {
+      reqEmployee = user.name;
+    } else {
+      const allMembers = getKnownTeamMembers();
+      for (const tm of allMembers) {
+        const candidates = [tm.name, tm.shortName, ...(tm.aliases || [])].filter(
+          (a) => a && a.trim().length >= 2 && !["גיא", "אירית", "ניב", "ודים", "יוסף", "אבי", "מתן", "רועי", "שלום", "אופק"].every(() => false)
+        );
+        const matched = candidates.some((cand) => {
+          const cTrim = cand.trim();
+          if (!cTrim || cTrim.includes("@")) return false;
+          const escaped = cTrim.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          const regex = new RegExp(`(?:^|[\\s,?!.'"״׳א-ת])${escaped}(?=$|[\\s,?!.'"״׳])`, "i");
+          // Match exact token or with Hebrew prefix ב/ל/של/מ
+          const tokenRegex = new RegExp(`(?:^|\\s)(?:של\\s+|ל|מ|ו)?${escaped}(?:\\s|[?!.,]|$)`, "i");
+          return tokenRegex.test(clean) || regex.test(clean);
+        });
+        if (matched) {
+          reqEmployee = tm.name;
+          break;
+        }
+      }
+    }
+
+    // Detect customer if explicitly asked (e.g. "אצל אסיו", "עבור אסיו")
+    let reqCustomer: string | undefined = undefined;
+    const custCandidate = extractCustomerCandidate(clean);
+    if (custCandidate && (!reqEmployee || !reqEmployee.includes(custCandidate))) {
+      reqCustomer = custCandidate;
+    }
+
+    // Enforce RBAC via resolveUserAccessScope
+    const accessScope = await resolveUserAccessScope(user, activeEnv);
+
+    if (reqEmployee) {
+      const allowed = canUserViewEmployee(accessScope, reqEmployee);
+      if (!allowed) {
+        if (accessScope.role === "team_manager") {
+          return `אין לך הרשאה לצפות בדיווחי השעות של **${reqEmployee}**. כמנהל צוות, באפשרותך לצפות בדיווחי השעות שלך ושל חברי הצוות המשויכים אליך בלבד (${(accessScope.allowedEmployees || []).join(", ")}).`;
+        }
+        return `אין לך הרשאה לצפות בדיווחי השעות של עובדים אחרים (**${reqEmployee}**). באפשרותך לבדוק את דיווחי השעות האישיים שלך בלבד.`;
+      }
+    } else if (accessScope.role === "employee") {
+      // Regular employee asking a general hours question ("כמה שעות דווחו השבוע?") -> lock to their own hours
+      reqEmployee = accessScope.userName;
+    }
+
+    const report = await withSafeTimeout(
+      getDailyHoursReport(
+        {
+          date: reqDate,
+          period: reqPeriod,
+          customer: reqCustomer,
+          employee: reqEmployee,
+          userEmail: user.email,
+        },
+        activeEnv
+      ),
+      20000,
+      {
+        date: jCtx.todayIso,
+        isToday: reqDate === "today",
+        totalHours: 0,
+        totalMinutes: 0,
+        totalHoursFormatted: "0 שעות",
+        totalEntries: 0,
+        activeEmployeesCount: 0,
+        activeCustomersCount: 0,
+        byEmployee: [],
+        byCustomer: [],
+        entries: [],
+        lastUpdated: Date.now(),
+        periodTitle: reqDate === "last_week" ? "שבוע שעבר" : "היום",
+        filterCustomer: reqCustomer,
+        filterEmployee: reqEmployee,
+      } as any
+    );
+
+    return formatHoursSummaryReply(report, {
+      reqEmployee,
+      reqCustomer,
+      accessScope,
+    });
+  };
+
+  // If text message (no audio), check off-topic immediately before any LLM call
+  if (!audio?.data && message && isDefinitelyOffTopic(message)) {
+    return {
+      reply: OFF_TOPIC_REFUSAL_MSG,
+      transcript: undefined,
+      drafts: activeDrafts,
+      writtenEntries: [],
+      undoneCardIds: [],
+      isConfirmed: false,
+      suggestedAction: "none",
+    };
+  }
+
+  // If text message is a direct hours/reporting question (e.g., "כמה שעות יוסף דיווח שבוע שעבר?"), answer deterministically with full RBAC!
+  if (!audio?.data && message && activeDrafts.length === 0) {
+    const fastQueryReply = await tryExecuteFastHoursQuery(message);
+    if (fastQueryReply) {
+      return {
+        reply: fastQueryReply,
+        transcript: undefined,
+        drafts: activeDrafts,
+        writtenEntries: [],
+        undoneCardIds: [],
+        isConfirmed: false,
+        suggestedAction: "none",
+      };
+    }
+  }
+
+  // If audio was provided, pass the inline audio directly into the first turn so tool extraction starts at t=0ms in parallel with transcription!
+  const initialUserParts: any[] = [];
+  if (audio && audio.data) {
+    initialUserParts.push({
+      inlineData: {
+        mimeType: audio.mimeType || "audio/webm",
+        data: audio.data,
+      },
+    });
+    initialUserParts.push({
+      text: `העובד הקליט הודעה קולית לתיעוד שעות או בדיקת דיווחים. חלץ את הפרטים וקרא מיד ל-propose_entries (או לכלי המתאים). אם ההקלטה אינה קשורה כלל לתיעוד שעות עבודה או ללקוחות TECH-SELECT (למשל שאלה על מתכון או נושא כללי), אל תקרא לשום כלי והחזר סירוב מנומס קצר.${activeDraftsPrompt}`,
+    });
+  } else {
+    initialUserParts.push({
+      text: `${(message || "").trim()}${activeDraftsPrompt}`,
+    });
+  }
+
+  contents.push({
+    role: "user",
+    parts: initialUserParts,
+  });
+
+  let effectiveUserText = (message || "").trim();
+
+  // Track state across tool calls
+  let collectedDrafts: HoursAssistantEntryDraft[] = [...activeDrafts];
+  const newWrittenEntries: WrittenEntryResult[] = [];
+  const undoneCardIds: string[] = [];
+  let isConfirmed = false;
+
+  // Tool execution loop (max 3 iterations for speed)
+  let loopCount = 0;
+  let finalResponseText = "";
+  let wasHoursSummaryQuery = false;
+
+  while (loopCount < 3) {
+    loopCount++;
+
+    const response = await generateWithFallback(
+      contents,
+      {
+        systemInstruction,
+        tools: [{ functionDeclarations: toolDeclarations }],
+      },
+      35000
+    );
+
+    if (!response) {
+      finalResponseText = "אירעה השהיה בתקשורת עם השרת. נא לחזור על הפעולה.";
+      break;
+    }
+
+    const candidate = response.candidates?.[0];
+    if (candidate?.content) {
+      contents.push(candidate.content);
+    }
+
+    const calls = response.functionCalls;
+    if (!calls || calls.length === 0) {
+      finalResponseText = response.text || "";
+      break;
+    }
+
+    // Ensure transcript is resolved if we need effectiveUserText inside tools
+    if (transcribePromise && !userTranscript) {
+      userTranscript = await transcribePromise;
+      transcribePromise = null;
+      if (userTranscript) {
+        effectiveUserText = userTranscript;
+        if (isDefinitelyOffTopic(userTranscript)) {
+          return {
+            reply: OFF_TOPIC_REFUSAL_MSG,
+            transcript: userTranscript,
+            drafts: activeDrafts,
+            writtenEntries: [],
+            undoneCardIds: [],
+            isConfirmed: false,
+            suggestedAction: "none",
+          };
+        }
+      }
+    }
+
+    // Execute tool calls and group responses into a single user turn
+    const responseParts: any[] = [];
+    let shouldFastExitLoop = false;
+
+    for (const call of calls) {
+      const { name, args } = call;
+      let toolResult: any = {};
+
+      try {
+        if (name === "find_customer") {
+          const query = String(args.query || "");
+          const matches = await withSafeTimeout(findCustomer(query, activeEnv), 10000, []);
+          const topMatches = matches.slice(0, 5).map((m) => ({
+            name: m.customer.name,
+            webUrl: m.customer.webUrl,
+            driveId: m.customer.driveId,
+            score: m.score,
+            matchReason: m.matchReason,
+          }));
+
+          const isAmbiguous =
+            topMatches.length > 1 &&
+            topMatches[0].score < 0.95 &&
+            topMatches[1].score > 0.4 &&
+            Math.abs(topMatches[0].score - topMatches[1].score) < 0.2;
+
+          toolResult = {
+            query,
+            isAmbiguous,
+            matches: topMatches,
+            bestMatch: topMatches[0] || null,
+          };
+        } else if (name === "find_month_target") {
+          const customerFolderName = String(args.customerFolderName || "");
+          const date = String(args.date || jCtx.todayIso);
+          const target = await withSafeTimeout(
+            findMonthTarget(customerFolderName, date, activeEnv),
+            10000,
+            { found: false, searchPattern: date } as any
+          );
+          toolResult = target;
+        } else if (name === "read_sheet_structure") {
+          const fileId = String(args.fileId || "");
+          const structure = await withSafeTimeout(
+            readSheetStructure(fileId, activeEnv),
+            10000,
+            { totalDataRows: 0, nextEmptyRowAddress: "Row 2", headers: [] } as any
+          );
+          toolResult = structure;
+        } else if (name === "find_duplicates") {
+          const fileId = String(args.fileId || "");
+          const date = String(args.date || jCtx.todayIso);
+          const dupRes = await withSafeTimeout(
+            findDuplicates(
+              fileId,
+              {
+                employee: user.name,
+                date,
+                start: typeof args.start === "string" ? args.start : undefined,
+                duration: typeof args.duration === "string" ? args.duration : undefined,
+              },
+              activeEnv
+            ),
+            8000,
+            { hasDuplicates: false, duplicates: [] }
+          );
+          toolResult = dupRes;
+        } else if (name === "propose_entries") {
+          const rawEntries: any[] = Array.isArray(args.entries) ? args.entries : [];
+          const enriched: HoursAssistantEntryDraft[] = [];
+          const rejectedCustomerNames: string[] = [];
+
+          for (const raw of rawEntries) {
+            const rawCustomerName = String(raw.customerName || "").trim();
+            if (!rawCustomerName) {
+              rejectedCustomerNames.push("(ללא שם לקוח)");
+              continue;
+            }
+
+            const date = String(raw.date || jCtx.todayIso).trim();
+
+            // 1. Verify & resolve customer in SharePoint (bilingual Hebrew/English + phonetic + consonant skeleton + Gemini fallback)
+            const customerCheck = await withSafeTimeout(
+              checkCustomerExistsInSharePoint(rawCustomerName, activeEnv),
+              8500,
+              { exists: false, bestMatch: null, score: 0, checkedLanguages: ["hebrew", "english"] }
+            );
+
+            if (!customerCheck.exists || !customerCheck.bestMatch) {
+              if (rawCustomerName.length >= 2) {
+                console.log(`[propose_entries] Proceeding with employee-provided customer "${rawCustomerName}"`);
+              } else {
+                rejectedCustomerNames.push(rawCustomerName);
+                continue;
+              }
+            }
+
+            const customerName =
+              customerCheck.exists && customerCheck.score >= 0.65 && customerCheck.customerName
+                ? customerCheck.customerName
+                : rawCustomerName;
+
+            // 2. Locate the monthly Excel file using the resolved SharePoint CustomerFolder (if live folder matched) or resolved customer name
+            const targetCustomerInput =
+              customerCheck.bestMatch?.customer?.id &&
+              !String(customerCheck.bestMatch.customer.id).startsWith("dict_") &&
+              !String(customerCheck.bestMatch.customer.id).startsWith("cust_")
+                ? customerCheck.bestMatch.customer
+                : customerName;
+
+            const initialMt = await withSafeTimeout(
+              findMonthTarget(targetCustomerInput, date, activeEnv),
+              9000,
+              { found: false, availableFiles: [] } as any
+            );
+
+            const rawDuration = raw.duration || "";
+            const parsedDuration = roundToQuarterHour(rawDuration);
+            const hasUserSpecifiedDuration = Boolean(rawDuration && String(rawDuration).trim().length > 0 && parsedDuration.minutes > 0);
+            let minutes = hasUserSpecifiedDuration ? parsedDuration.minutes : 60;
+            let hours = hasUserSpecifiedDuration ? parsedDuration.hours : 1;
+            let formatted = hasUserSpecifiedDuration ? parsedDuration.formatted : "1 שעה";
+
+            const matchingActiveDraft = (activeDrafts || []).find(
+              (d) =>
+                (raw.id && d.id === raw.id) ||
+                (d.customerName && customerName && d.customerName.toLowerCase() === customerName.toLowerCase())
+            );
+
+            const rawWorkType = String(raw.workType || matchingActiveDraft?.activityType || matchingActiveDraft?.workType || "").trim();
+            const rawDesc = String(raw.description || matchingActiveDraft?.description || "").trim();
+            const desc = prefixDescriptionWithAuthor(rawDesc, user?.name, user?.email);
+            const isExplicitProjectInText = inferWorkType(desc + " " + effectiveUserText) === "project";
+            const inferredCategory: TabSemanticType = isExplicitProjectInText
+              ? "project"
+              : inferWorkType((rawWorkType ? rawWorkType + " " : "") + desc);
+            const semanticActivityType =
+              matchingActiveDraft?.activityType ||
+              (isExplicitProjectInText
+                ? "פרויקטים"
+                : rawWorkType && !["שעות", "Sheet1"].includes(rawWorkType)
+                ? rawWorkType.includes("פרויקט") || rawWorkType.includes("פרוייקט") || rawWorkType.toLowerCase().includes("project")
+                  ? "פרויקטים"
+                  : rawWorkType.includes("ביקור") || rawWorkType.toLowerCase().includes("onsite") || rawWorkType.toLowerCase().includes("visit") || rawWorkType.includes("הגעה")
+                  ? "ביקור באתר"
+                  : "טיקטים"
+                : inferredCategory === "onsite"
+                ? "ביקור באתר"
+                : inferredCategory === "project"
+                ? "פרויקטים"
+                : "טיקטים");
+            const effectivePreferredTab = isExplicitProjectInText ? "פרויקטים" : rawWorkType;
+
+            let startTime = String(raw.startTime || "").trim();
+            let endTime = String(raw.endTime || "").trim();
+            let isTimeSuggested = false;
+
+            if (startTime && endTime && startTime !== endTime) {
+              isTimeSuggested = Boolean(raw.isTimeSuggested ?? false);
+              const mS = startTime.match(/^(\d{1,2}):(\d{2})/);
+              const mE = endTime.match(/^(\d{1,2}):(\d{2})/);
+              if (mS && mE) {
+                let diff = (parseInt(mE[1], 10) * 60 + parseInt(mE[2], 10)) - (parseInt(mS[1], 10) * 60 + parseInt(mS[2], 10));
+                if (diff <= 0) diff += 24 * 60;
+                if (diff > 0) {
+                  minutes = diff;
+                  hours = +(diff / 60).toFixed(2);
+                  const dh = Math.floor(diff / 60);
+                  const dm = diff % 60;
+                  formatted = dh > 0 && dm > 0 ? `${dh}:${String(dm).padStart(2, "0")} שעות` : dh > 0 ? `${dh} ${dh === 1 ? "שעה" : "שעות"}` : `${dm} דקות`;
+                }
+              }
+            } else if (startTime && (!endTime || endTime === startTime)) {
+              endTime = calculateEndTime(startTime, minutes || 60);
+              isTimeSuggested = false;
+            } else if (!startTime && endTime) {
+              startTime = calculateStartTime(endTime, minutes || 60);
+              isTimeSuggested = false;
+            } else if (matchingActiveDraft?.startTime && matchingActiveDraft?.endTime && matchingActiveDraft.startTime !== matchingActiveDraft.endTime && !matchingActiveDraft.isTimeSuggested) {
+              startTime = matchingActiveDraft.startTime;
+              endTime = matchingActiveDraft.endTime;
+              isTimeSuggested = false;
+            } else {
+              const suggested = suggestStartEndTimes(minutes || 60);
+              startTime = suggested.startTime;
+              endTime = suggested.endTime;
+              isTimeSuggested = !hasUserSpecifiedDuration;
+            }
+
+            const missingFields: string[] = [];
+            if (!customerName) missingFields.push("לקוח");
+            if (!date) missingFields.push("תאריך");
+            if (!desc) missingFields.push("תיאור");
+
+            const isReady = missingFields.length === 0;
+            const draftId = matchingActiveDraft?.id || `card_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+
+            let fileId: string | undefined = matchingActiveDraft?.fileId;
+            let driveId: string | undefined = matchingActiveDraft?.driveId;
+            let fileName: string | undefined = matchingActiveDraft?.fileName;
+            let filePath: string | undefined = matchingActiveDraft?.filePath;
+            let webUrl: string | undefined = matchingActiveDraft?.webUrl;
+            let targetRow: number | string | undefined = matchingActiveDraft?.targetRow;
+            let duplicateWarning: string | null = null;
+            let mappedRow: Record<string, any> | undefined = undefined;
+            let availableFiles: Array<{ fileId: string; fileName: string; webUrl?: string }> =
+              matchingActiveDraft?.availableFiles || [];
+
+            let targetTabName: string = matchingActiveDraft?.targetTabName || effectivePreferredTab || "שעות";
+            let detectedTabType: TabSemanticType = matchingActiveDraft?.detectedTabType || inferredCategory;
+            let availableTabs: Array<{ name: string; detectedType: TabSemanticType; isSelected: boolean }> =
+              matchingActiveDraft?.availableTabs || [];
+            let needsUserTabChoice = matchingActiveDraft?.needsUserTabChoice ?? false;
+            let tabChoiceReason = matchingActiveDraft?.tabChoiceReason || "";
+            let tabHeaders: string[] = matchingActiveDraft?.headers || [];
+            let unmappedFields: string[] = matchingActiveDraft?.unmappedFields || [];
+            let columnMapping: Array<{ field: string; label: string; headerName?: string; isExists: boolean; value?: any }> =
+              matchingActiveDraft?.columnMapping || [];
+
+            try {
+              if (customerName) {
+                const mt =
+                  initialMt && initialMt.found
+                    ? initialMt
+                    : customerName.toLowerCase() !== rawCustomerName.toLowerCase()
+                    ? await withSafeTimeout(
+                        findMonthTarget(customerName, date, activeEnv),
+                        8000,
+                        { found: false, availableFiles: [] } as any
+                      )
+                    : initialMt;
+
+                if (mt.availableFiles && Array.isArray(mt.availableFiles)) {
+                  availableFiles = mt.availableFiles;
+                }
+                if (mt.found && mt.fileId) {
+                  fileId = mt.fileId;
+                  driveId = mt.driveId;
+                  fileName = mt.fileName;
+                  filePath = mt.filePath;
+                  webUrl = mt.webUrl;
+
+                  // Inspect file worksheets AND check duplicates IN PARALLEL with fast timeouts
+                  const [inspection, dup] = await Promise.all([
+                    withSafeTimeout(
+                      inspectWorkbookFile(fileId, activeEnv, driveId, customerName, {
+                        preferredTabName: effectivePreferredTab,
+                        quickMode: true,
+                      }),
+                      5500,
+                      null
+                    ),
+                    withSafeTimeout(
+                      findDuplicates(fileId, { employee: user.name, date }, activeEnv, driveId),
+                      3500,
+                      { hasDuplicates: false, duplicates: [] }
+                    ),
+                  ]);
+
+                  if (inspection && inspection.worksheets.length > 0) {
+                    const choice = chooseTargetWorksheet(inspection, {
+                      preferredTabName: effectivePreferredTab,
+                      entryDescription: desc,
+                      entryType: inferredCategory,
+                    });
+
+                    const chosenTab = choice.selectedTab;
+                    targetTabName = chosenTab.name;
+                    detectedTabType = chosenTab.detectedType;
+                    availableTabs = choice.availableTabs;
+                    needsUserTabChoice = choice.needsUserChoice;
+                    tabChoiceReason = choice.choiceReason;
+                    tabHeaders = chosenTab.headers;
+                    unmappedFields = chosenTab.unmappedFields;
+
+                    columnMapping = [
+                      {
+                        field: "date",
+                        label: "תאריך",
+                        headerName: chosenTab.fieldToColIndex.date !== undefined ? chosenTab.headers[chosenTab.fieldToColIndex.date] : undefined,
+                        isExists: chosenTab.fieldToColIndex.date !== undefined,
+                        value: date,
+                      },
+                      {
+                        field: "employee",
+                        label: "עובד / טכנאי",
+                        headerName: chosenTab.fieldToColIndex.employee !== undefined ? chosenTab.headers[chosenTab.fieldToColIndex.employee] : undefined,
+                        isExists: chosenTab.fieldToColIndex.employee !== undefined,
+                        value: user.name,
+                      },
+                      {
+                        field: "duration",
+                        label: "משך / שעות",
+                        headerName: chosenTab.fieldToColIndex.duration_hours !== undefined ? chosenTab.headers[chosenTab.fieldToColIndex.duration_hours] : undefined,
+                        isExists: chosenTab.fieldToColIndex.duration_hours !== undefined,
+                        value: formatted,
+                      },
+                      {
+                        field: "startTime",
+                        label: "שעת התחלה",
+                        headerName: chosenTab.fieldToColIndex.start_time !== undefined ? chosenTab.headers[chosenTab.fieldToColIndex.start_time] : undefined,
+                        isExists: chosenTab.fieldToColIndex.start_time !== undefined,
+                        value: startTime,
+                      },
+                      {
+                        field: "endTime",
+                        label: "שעת סיום",
+                        headerName: chosenTab.fieldToColIndex.end_time !== undefined ? chosenTab.headers[chosenTab.fieldToColIndex.end_time] : undefined,
+                        isExists: chosenTab.fieldToColIndex.end_time !== undefined,
+                        value: endTime,
+                      },
+                      {
+                        field: "description",
+                        label: "תיאור חיוב",
+                        headerName: chosenTab.fieldToColIndex.description !== undefined ? chosenTab.headers[chosenTab.fieldToColIndex.description] : undefined,
+                        isExists: chosenTab.fieldToColIndex.description !== undefined,
+                        value: desc,
+                      },
+                      {
+                        field: "contactPerson",
+                        label: "איש קשר",
+                        headerName: chosenTab.fieldToColIndex.contact_person !== undefined ? chosenTab.headers[chosenTab.fieldToColIndex.contact_person] : undefined,
+                        isExists: chosenTab.fieldToColIndex.contact_person !== undefined,
+                        value: raw.contactPerson || matchingActiveDraft?.contactPerson,
+                      },
+                      {
+                        field: "ticketNumber",
+                        label: "מספר קריאה",
+                        headerName: chosenTab.fieldToColIndex.ticket_number !== undefined ? chosenTab.headers[chosenTab.fieldToColIndex.ticket_number] : undefined,
+                        isExists: chosenTab.fieldToColIndex.ticket_number !== undefined,
+                        value: raw.ticketNumber || matchingActiveDraft?.ticketNumber,
+                      },
+                    ];
+
+                    const offset = chosenTab.headerRowIndex !== undefined ? chosenTab.headerRowIndex + 2 : 2;
+                    targetRow = chosenTab.totalDataRows + offset;
+                  } else {
+                    targetTabName = rawWorkType || "שעות";
+                    targetRow = matchingActiveDraft?.targetRow || 2;
+                  }
+
+                  if (dup.hasDuplicates) {
+                    duplicateWarning = `נמצאו ${dup.duplicates.length} דיווחים קודמים עבורך בתאריך זה (${date})`;
+                  }
+
+                  mappedRow = buildEnrichedRowPayload({
+                    date,
+                    userName: user.name,
+                    hours,
+                    minutes,
+                    formatted,
+                    workType: semanticActivityType,
+                    desc,
+                    startTime,
+                    endTime,
+                    contactPerson: raw.contactPerson || matchingActiveDraft?.contactPerson,
+                    ticketNumber: raw.ticketNumber || matchingActiveDraft?.ticketNumber,
+                    customerName,
+                    userOverride: {
+                      "סוג פעילות": semanticActivityType,
+                      "סוג הפעילות": semanticActivityType,
+                      activityType: semanticActivityType,
+                    },
+                  });
+                }
+              }
+            } catch (enrichErr) {
+              console.warn("[propose_entries] auto-enrich error:", enrichErr);
+            }
+
+            const projectMatch = (rawDesc + " " + rawWorkType).match(/(?:פרויקט|פרוייקט|project)\s+(?:-|:)?\s*([^\s,.;]+)/i);
+            const projectName = projectMatch ? projectMatch[1] : undefined;
+
+            const detectedAssigned =
+              Array.isArray(raw.assignedEmployees) && raw.assignedEmployees.length > 0
+                ? resolveKnownEmployeeList(raw.assignedEmployees, user.name)
+                : matchingActiveDraft?.assignedEmployees && matchingActiveDraft.assignedEmployees.length > 0
+                ? resolveKnownEmployeeList(matchingActiveDraft.assignedEmployees, user.name)
+                : extractAssignedEmployees(rawDesc + " " + effectiveUserText, user.name);
+
+            const assignedEmployees = resolveKnownEmployeeList(detectedAssigned, user.name);
+
+            enriched.push({
+              id: draftId,
+              customerName,
+              projectName,
+              customerFolder: customerName,
+              fileId,
+              driveId,
+              fileName,
+              filePath,
+              webUrl,
+              targetRow,
+              date,
+              durationMinutes: minutes,
+              durationHours: hours,
+              durationFormatted: formatted,
+              startTime,
+              endTime,
+              isTimeSuggested,
+              contactPerson: raw.contactPerson || matchingActiveDraft?.contactPerson,
+              ticketNumber: raw.ticketNumber || matchingActiveDraft?.ticketNumber,
+              workType: semanticActivityType,
+              activityType: semanticActivityType,
+              targetTabName,
+              detectedTabType,
+              availableTabs,
+              needsUserTabChoice,
+              tabChoiceReason,
+              headers: tabHeaders,
+              unmappedFields,
+              columnMapping,
+              description: desc,
+              duplicateWarning,
+              isReadyForConfirmation: isReady,
+              missingFields,
+              mappedRow,
+              availableFiles,
+              assignedEmployees,
+            });
+          }
+
+          if (rawEntries.length > 0 && enriched.length === 0) {
+            toolResult = {
+              success: false,
+              blocked: true,
+              error: `חל איסור מוחלט לפתוח כרטיס דיווח: הלקוח (${rejectedCustomerNames.join(", ")}) אינו קיים ב-SharePoint (נבדק בעברית ובאנגלית). חובה לעצור ולשאול את העובד מי הלקוח.`,
+              checkedLanguages: ["hebrew", "english"],
+              rejectedCustomers: rejectedCustomerNames,
+            };
+            responseParts.push({
+              functionResponse: {
+                name,
+                response: toolResult,
+              },
+            });
+            continue;
+          }
+
+          collectedDrafts = enriched;
+          toolResult = {
+            success: true,
+            count: enriched.length,
+            entries: enriched,
+          };
+
+          // FAST-PATH EARLY EXIT: Skip redundant second LLM round-trip once drafts are ready!
+          if (enriched.length === 1) {
+            const d = enriched[0];
+            finalResponseText =
+              d.assignedEmployees && d.assignedEmployees.length > 1
+                ? `הכנתי כרטיס דיווח צוותי עבור ${d.customerName} (${d.assignedEmployees.join(", ")}). מאשר להזין?`
+                : `הכנתי את כרטיס הדיווח עבור ${d.customerName} (${d.durationFormatted}). מאשר להזין?`;
+          } else if (enriched.length > 1) {
+            finalResponseText = `הכנתי ${enriched.length} כרטיסי דיווח לאישורך. מאשר להזין?`;
+          }
+          shouldFastExitLoop = true;
+        } else if (name === "write_rows") {
+          // Stage 4 Safety: Enforce that write_rows can ONLY be executed with an explicit user confirmation
+          const rawUserMsg = (message || "").trim();
+          const isExplicitConfirmAction = action === "confirm_entry" || action === "confirm_all";
+          const isExplicitConfirmMessage =
+            /^(כן|מאשר|תאשר|תזין|תרשום|אישור|אשר|מאושר|נכון|מדויק|מדויק תזין|סבבה תרשום|סבבה|yes|confirm|approve)$/i.test(rawUserMsg) ||
+            /(מאשר|תזין|תרשום את זה|תאשר את זה|תכניס לקובץ)/.test(rawUserMsg);
+          const isUserConfirmed = isExplicitConfirmAction || isExplicitConfirmMessage;
+
+          if (!isUserConfirmed) {
+            toolResult = {
+              error: "פעולת כתיבה נדחתה על ידי השרת: לא התקבל אישור מפורש מהמשתמש ('כן' / 'מאשר' / לחיצה על כפתור). עליך להציג את פרטי הדיווח כטיוטה באמצעות propose_entries ולבקש את אישור המשתמש לפני הכתיבה.",
+            };
+            responseParts.push({
+              functionResponse: {
+                name,
+                response: toolResult,
+              },
+            });
+            continue;
+          }
+
+          const fileId = String(args.fileId || "");
+          const rawRows: any[] = Array.isArray(args.rows) ? args.rows : [];
+          const matchingDraft = collectedDrafts.find((d) => d.fileId === fileId);
+          const rawActivity =
+            rawRows[0]?.activityType ||
+            rawRows[0]?.["סוג פעילות"] ||
+            rawRows[0]?.["סוג הפעילות"] ||
+            (rawRows[0]?.workType && !["שעות", "Sheet1"].includes(rawRows[0].workType) ? rawRows[0].workType : "") ||
+            (rawRows[0]?.["סוג עבודה"] && !["שעות", "Sheet1"].includes(rawRows[0]["סוג עבודה"]) ? rawRows[0]["סוג עבודה"] : "") ||
+            matchingDraft?.activityType ||
+            (matchingDraft?.workType && !["שעות", "Sheet1"].includes(matchingDraft.workType) ? matchingDraft.workType : "") ||
+            (inferWorkType(rawRows[0]?.description || matchingDraft?.description || "") === "onsite" ? "ביקור באתר" : inferWorkType(rawRows[0]?.description || matchingDraft?.description || "") === "project" ? "פרויקטים" : "טיקטים");
+
+          const targetExcelTab = matchingDraft?.targetTabName || rawRows[0]?.targetTabName || "שעות";
+
+          const rows: any[] = [];
+          for (const r of rawRows) {
+            const rowEmployees = (
+              Array.isArray(r.assignedEmployees) && r.assignedEmployees.length > 0
+                ? r.assignedEmployees
+                : Array.isArray(matchingDraft?.assignedEmployees) && matchingDraft.assignedEmployees.length > 0
+                ? matchingDraft.assignedEmployees
+                : [
+                    r.employeeName ||
+                    r["עובד"] ||
+                    r.userName ||
+                    user.name,
+                  ]
+            ).map((e: any) => String(e).trim()).filter(Boolean);
+
+            const effectiveEmployees = resolveKnownEmployeeList(rowEmployees, user.name);
+
+            for (const empName of effectiveEmployees) {
+              const empEmail = resolveEmployeeEmail(empName, user.email);
+              rows.push(
+                buildEnrichedRowPayload({
+                  date: r.date || r.תאריך || matchingDraft?.date || jCtx.todayIso,
+                  userName: empName,
+                  userEmail: empEmail,
+                  userId: user.id || user.oid || "",
+                  userOid: user.oid || user.id || "",
+                  userUpn: empEmail,
+                  hours:
+                    typeof r.hours === "number"
+                      ? r.hours
+                      : typeof r.משך === "number"
+                      ? r.משך
+                      : typeof r.שעות === "number"
+                      ? r.שעות
+                      : matchingDraft?.durationHours || 1,
+                  workType: rawActivity,
+                  desc: r.description || r.תיאור || matchingDraft?.description || "",
+                  startTime: r.startTime || r["שעת התחלה"] || matchingDraft?.startTime,
+                  endTime: r.endTime || r["שעת סיום"] || matchingDraft?.endTime,
+                  contactPerson: r.contactPerson || r["איש קשר"] || matchingDraft?.contactPerson,
+                  ticketNumber: r.ticketNumber || r["מספר טיקט"] || r["מספר קריאה"] || matchingDraft?.ticketNumber,
+                  customerName: r.customer || r.לקוח || matchingDraft?.customerName,
+                  userOverride: {
+                    ...r,
+                    "סוג פעילות": rawActivity,
+                    "סוג הפעילות": rawActivity,
+                    activityType: rawActivity,
+                    משתמש: empName,
+                    "שם משתמש": empName,
+                    "שם המשתמש": empName,
+                    עובד: empName,
+                    "שם עובד": empName,
+                    מטפל: empName,
+                    user: empName,
+                    username: empEmail,
+                    userEmail: empEmail,
+                    employeeEmail: empEmail,
+                    userId: user.id || user.oid || "",
+                    userOid: user.oid || user.id || "",
+                    userUpn: empEmail,
+                  },
+                })
+              );
+            }
+          }
+
+          const writeRes = await withSafeTimeout(
+            writeRows(fileId, rows, user, activeEnv, matchingDraft?.driveId, targetExcelTab),
+            30000,
+            { success: false, rowAddress: "", webUrl: "" } as any
+          );
+
+          isConfirmed = true;
+          const rowNumMatch = (writeRes.rowAddress || "").match(/\d+/);
+          const baseTargetRow = rowNumMatch ? parseInt(rowNumMatch[0], 10) : 1;
+
+          for (let i = 0; i < rows.length; i++) {
+            const r = rows[i];
+            const targetRow = baseTargetRow + i;
+            const itemId = writeRes.listItemIds?.[i] || (i === 0 ? writeRes.listItemId : undefined);
+            const rowHours = Number(r.hours ?? r.משך ?? r.שעות ?? matchingDraft?.durationHours ?? 1);
+            const rowMins = Number(r.durationMinutes ?? matchingDraft?.durationMinutes ?? Math.round(rowHours * 60));
+            const rowStart = String(r.startTime || r["שעת התחלה"] || matchingDraft?.startTime || "").trim();
+            const rowEnd = String(r.endTime || r["שעת סיום"] || matchingDraft?.endTime || "").trim();
+            const fallbackTimes = (!rowStart || !rowEnd) ? suggestStartEndTimes(rowMins) : null;
+            const writtenItem: WrittenEntryResult = {
+              id: i === 0 ? (matchingDraft?.id || `written_${Date.now()}_${i}`) : `${matchingDraft?.id || `written_${Date.now()}`}_emp_${i}`,
+              fileId,
+              driveId: writeRes.driveId || matchingDraft?.driveId,
+              itemId: fileId,
+              fileName: matchingDraft?.fileName || "hours.xlsx",
+              filePath: matchingDraft?.filePath || "",
+              sheetName: writeRes.sheetName || targetExcelTab,
+              webUrl: writeRes.webUrl || matchingDraft?.webUrl || "",
+              targetRow,
+              rowAddress: writeRes.rowAddress || `Row ${targetRow}`,
+              writtenValues: writeRes.writtenValues,
+              entryId: `${writeRes.entryId || `entry_${Date.now()}`}_${i}`,
+              customerName: r.customer || r.לקוח || matchingDraft?.customerName || "לקוח",
+              date: r.date || r.תאריך || jCtx.todayIso,
+              startTime: rowStart || fallbackTimes?.startTime,
+              endTime: rowEnd || fallbackTimes?.endTime,
+              durationHours: rowHours,
+              durationMinutes: rowMins,
+              durationFormatted: matchingDraft?.durationFormatted || `${rowHours} שעות`,
+              description: r.description || r.תיאור || "",
+              workType: rawActivity,
+              employeeName: r.userName || r.employeeName || r.עובד || user.name,
+              writtenAt: writeRes.writtenAt || Date.now(),
+              expiresAt: (writeRes.writtenAt || Date.now()) + 10 * 60 * 1000,
+              canUndo: true,
+              listItemId: itemId,
+              listItemWebUrl: writeRes.listItemWebUrl,
+              listsSyncResult: writeRes.listsSyncResult,
+              skippedOccupiedRows: writeRes.skippedOccupiedRows,
+            };
+            newWrittenEntries.push(writtenItem);
+          }
+
+          collectedDrafts = [];
+          toolResult = {
+            success: true,
+            writeRes,
+          };
+          finalResponseText = "נרשם בהצלחה ✓";
+          shouldFastExitLoop = true;
+        } else if (name === "undo_row") {
+          const fileId = String(args.fileId || "");
+          const rowAddress = String(args.rowAddress || "");
+          const matchingWritten =
+            (params.writtenEntries || []).find((w) => w.fileId === fileId || w.rowAddress === rowAddress) ||
+            (params.writtenEntries || [])[0];
+          const effectiveFileId = fileId || matchingWritten?.fileId;
+          const effectiveRowAddress = rowAddress || matchingWritten?.rowAddress;
+          const undoRes = await withSafeTimeout(
+            undoRow({
+              driveId: matchingWritten?.driveId,
+              itemId: effectiveFileId,
+              fileId: effectiveFileId,
+              rowAddress: effectiveRowAddress,
+              writtenValues: matchingWritten?.writtenValues,
+              writtenAt: matchingWritten?.writtenAt,
+              sheetName: matchingWritten?.sheetName,
+            }, user, activeEnv),
+            15000,
+            { success: false } as any
+          );
+          if (undoRes && (undoRes as any).success && matchingWritten?.id) {
+            undoneCardIds.push(matchingWritten.id);
+          }
+          toolResult = undoRes;
+          finalResponseText = (undoRes as any)?.success ? "הדיווח בוטל ונמחק בהצלחה." : "לא ניתן היה לבטל את השורה.";
+          shouldFastExitLoop = true;
+        } else if (name === "get_today_hours_summary") {
+          wasHoursSummaryQuery = true;
+          const reqDate = args.date ? String(args.date).trim() : undefined;
+          const reqPeriod = args.period ? (String(args.period).trim() as any) : undefined;
+          const reqCustomer = args.customer ? String(args.customer).trim() : undefined;
+          let reqEmployee = args.employee ? String(args.employee).trim() : undefined;
+          const reqQuery = args.searchQuery ? String(args.searchQuery).trim() : undefined;
+
+          // Enforce strict RBAC on get_today_hours_summary tool calls
+          const accessScope = await resolveUserAccessScope(user, activeEnv);
+          if (reqEmployee && !canUserViewEmployee(accessScope, reqEmployee)) {
+            const deniedMsg =
+              accessScope.role === "team_manager"
+                ? `אין לך הרשאה לצפות בדיווחי השעות של **${reqEmployee}**. כמנהל צוות, באפשרותך לצפות בדיווחי השעות שלך ושל חברי הצוות המשויכים אליך בלבד (${(accessScope.allowedEmployees || []).join(", ")}).`
+                : `אין לך הרשאה לצפות בדיווחי השעות של עובדים אחרים (**${reqEmployee}**). באפשרותך לבדוק את דיווחי השעות האישיים שלך בלבד.`;
+            toolResult = {
+              success: false,
+              error: deniedMsg,
+            };
+            finalResponseText = deniedMsg;
+            shouldFastExitLoop = true;
+          } else {
+            if (!reqEmployee && accessScope.role === "employee") {
+              reqEmployee = accessScope.userName;
+            }
+
+            const report = await withSafeTimeout(
+              getDailyHoursReport(
+                {
+                  date: reqDate,
+                  period: reqPeriod,
+                  customer: reqCustomer,
+                  employee: reqEmployee,
+                  query: reqQuery,
+                  userEmail: user.email,
+                },
+                activeEnv
+              ),
+              20000,
+              {
+                date: jCtx.todayIso,
+                isToday: true,
+                totalHours: 0,
+                totalMinutes: 0,
+                totalHoursFormatted: "0 שעות",
+                totalEntries: 0,
+                activeEmployeesCount: 0,
+                activeCustomersCount: 0,
+                byEmployee: [],
+                byCustomer: [],
+                entries: [],
+                lastUpdated: Date.now(),
+                periodTitle: "היום",
+                filterCustomer: reqCustomer,
+                filterEmployee: reqEmployee,
+              } as any
+            );
+
+            toolResult = {
+              success: true,
+              date: report.date,
+              isToday: report.isToday,
+              periodTitle: report.periodTitle || (report.isToday ? "היום" : report.date),
+              filterCustomer: report.filterCustomer || reqCustomer,
+              filterEmployee: report.filterEmployee || reqEmployee,
+              totalHours: report.totalHours,
+              totalHoursFormatted: report.totalHoursFormatted,
+              totalEntries: report.totalEntries,
+              exportUrl: `/api/hours/export-excel?date=${encodeURIComponent(report.date || "")}&period=${encodeURIComponent(reqPeriod || "")}&customer=${encodeURIComponent(reqCustomer || "")}&employee=${encodeURIComponent(reqEmployee || "")}`,
+              activeEmployeesCount: report.activeEmployeesCount,
+              activeCustomersCount: report.activeCustomersCount,
+              activeEmployeesList: (report.byEmployee || []).map(
+                (e: any) => `${e.employeeName} (${e.totalHoursFormatted})`
+              ),
+              hasEntries: report.totalEntries > 0,
+              scanError: (report as any).scanError,
+            };
+
+            finalResponseText = formatHoursSummaryReply(report, {
+              reqEmployee,
+              reqCustomer,
+              accessScope,
+            });
+            shouldFastExitLoop = true;
+          }
+        }
+      } catch (toolErr: any) {
+        console.error(`[Assistant Tool ${name}] Error:`, toolErr);
+        toolResult = { error: toolErr?.message || "Tool execution failed" };
+      }
+
+      responseParts.push({
+        functionResponse: {
+          name,
+          response: toolResult,
+        },
+      });
+    }
+
+    if (shouldFastExitLoop) {
+      break;
+    }
+
+    if (responseParts.length > 0) {
+      contents.push({
+        role: "user",
+        parts: responseParts,
+      });
+    }
+  }
+
+  // Ensure audio transcript is resolved if still running
+  if (transcribePromise && !userTranscript) {
+    userTranscript = await transcribePromise;
+    transcribePromise = null;
+    if (userTranscript) {
+      effectiveUserText = userTranscript;
+      if (isDefinitelyOffTopic(userTranscript)) {
+        return {
+          reply: OFF_TOPIC_REFUSAL_MSG,
+          transcript: userTranscript,
+          drafts: activeDrafts,
+          writtenEntries: [],
+          undoneCardIds: [],
+          isConfirmed: false,
+          suggestedAction: "none",
+        };
+      }
+    }
+  }
+
+  // Parse [תמלול]: ... if present
+  let cleanReply = finalResponseText.trim();
+  const transcriptMatch = cleanReply.match(/^\[תמלול\]:\s*(.+)$/m);
+  if (transcriptMatch) {
+    if (!userTranscript) {
+      userTranscript = transcriptMatch[1].trim();
+    }
+    cleanReply = cleanReply.replace(/^\[תמלול\]:\s*.+$/m, "").trim();
+  }
+
+  // DETERMINISTIC RECOVERY & ANTI-LOOP SHIELD:
+  // If no drafts were produced yet by the model/tools, analyze message and recent history
+  const isDomainRefusal = cleanReply.includes("עוזר ייעודי לתיעוד שעות לחיוב לקוח");
+  if (collectedDrafts.length === 0 && !isDomainRefusal && !wasHoursSummaryQuery) {
+    const durationAnalysis = roundToQuarterHour(effectiveUserText);
+    const hasExplicitDuration =
+      durationAnalysis.hours > 0 &&
+      /(?:שעתיים|שעה|חצי\s*שעה|רבע\s*שעה|דקות|\d+(?:\.\d+)?\s*(?:שעות|שעה|h|hours))/i.test(effectiveUserText);
+
+    let detectedCustomer = extractCustomerCandidate(effectiveUserText);
+    let detectedDesc = effectiveUserText;
+
+    // If employee replied with just duration (e.g. "שעתיים", "שעה וחצי", "1.5 שעות"),
+    // recover customer & technical description from prior user turns in history!
+    if (hasExplicitDuration && !detectedCustomer && history.length > 0) {
+      const priorUserTurns = [...history].reverse().filter((h) => h.role === "user");
+      for (const prior of priorUserTurns) {
+        const custFromPrior = extractCustomerCandidate(prior.text);
+        if (custFromPrior) {
+          detectedCustomer = custFromPrior;
+          detectedDesc = prior.text;
+          break;
+        }
+      }
+    }
+
+    // Also check activeDrafts if user is updating duration on existing draft
+    if (hasExplicitDuration && !detectedCustomer && (params.activeDrafts || []).length > 0) {
+      const existing = (params.activeDrafts || [])[0];
+      if (existing.customerName) {
+        detectedCustomer = existing.customerName;
+        detectedDesc = existing.description;
+      }
+    }
+
+    if (detectedCustomer) {
+      const finalMinutes = hasExplicitDuration ? durationAnalysis.minutes : 60;
+      const finalHours = hasExplicitDuration ? durationAnalysis.hours : 1;
+      const finalFormatted = hasExplicitDuration ? durationAnalysis.formatted : "60 דקות (1 שעה - ברירת מחדל)";
+
+      const descPrefixed = prefixDescriptionWithAuthor(detectedDesc, user.name, user.email);
+      const inferredCat = inferWorkType(descPrefixed);
+      const times = suggestStartEndTimes(finalMinutes);
+
+      collectedDrafts.push({
+        id: `card_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        customerName: detectedCustomer,
+        customerFolder: detectedCustomer,
+        date: jCtx.todayIso,
+        durationMinutes: finalMinutes,
+        durationHours: finalHours,
+        durationFormatted: finalFormatted,
+        startTime: times.startTime,
+        endTime: times.endTime,
+        isTimeSuggested: true,
+        workType: inferredCat === "onsite" ? "ביקור באתר" : inferredCat === "project" ? "פרויקטים" : "טיקטים",
+        description: descPrefixed,
+        isReadyForConfirmation: true,
+        availableTabs: [],
+        columnMapping: [],
+        headers: [],
+        unmappedFields: [],
+        needsUserTabChoice: false,
+      });
+
+      cleanReply = hasExplicitDuration
+        ? "הכנתי את פרטי הדיווח בכרטיס למטה. מאשר להזין?"
+        : `הכנתי את כרטיס הדיווח עבור ${detectedCustomer} (הגדרתי שעה 1 כברירת מחדל, ניתן לערוך בכרטיס או ללחוץ אשר). מאשר להזין?`;
+    }
+  }
+
+  // Construct intelligent, non-looping reply
+  let dynamicReply = cleanReply;
+  if (!dynamicReply) {
+    if (collectedDrafts.length > 0) {
+      dynamicReply = "הכנתי את פרטי הדיווח בכרטיס למטה. מאשר להזין?";
+    } else {
+      const custInMsg = extractCustomerCandidate(effectiveUserText);
+      if (custInMsg) {
+        dynamicReply = `מה בוצע עבור ${custInMsg}? (ניתן לתאר את הפעילות החופשית).`;
+      } else {
+        dynamicReply = "עבור איזה לקוח בוצעה הפעילות ומה נעשה?";
+      }
+    }
+  }
+
+  return {
+    reply: dynamicReply,
+    transcript: userTranscript,
+    drafts: collectedDrafts,
+    writtenEntries: newWrittenEntries,
+    undoneCardIds,
+    isConfirmed,
+    suggestedAction: isConfirmed
+      ? "none"
+      : collectedDrafts.some((d) => d.isReadyForConfirmation)
+      ? "confirm"
+      : "clarify",
+  };
+}

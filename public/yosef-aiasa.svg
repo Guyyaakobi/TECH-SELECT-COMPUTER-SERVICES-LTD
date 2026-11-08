@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <radialGradient id="yosefBg" cx="50%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#142c2e" />
+      <stop offset="60%" stop-color="#0a1a1c" />
+      <stop offset="100%" stop-color="#020809" />
+    </radialGradient>
+
+    <!-- Studio Backlight -->
+    <radialGradient id="yosefRim" cx="50%" cy="30%" r="50%">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0.25" />
+      <stop offset="60%" stop-color="#06b6d4" stop-opacity="0.15" />
+      <stop offset="100%" stop-color="#0284c7" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Skin Tone Gradients -->
+    <linearGradient id="yosefSkin" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e2b492" />
+      <stop offset="40%" stop-color="#ce9a75" />
+      <stop offset="85%" stop-color="#b67f5b" />
+      <stop offset="100%" stop-color="#9d6744" />
+    </linearGradient>
+
+    <linearGradient id="yosefSkinShadow" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#000000" stop-opacity="0" />
+      <stop offset="100%" stop-color="#693b22" stop-opacity="0.35" />
+    </linearGradient>
+
+    <!-- Hair Gradient -->
+    <linearGradient id="yosefHair" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#241e1c" />
+      <stop offset="40%" stop-color="#140f0e" />
+      <stop offset="100%" stop-color="#080504" />
+    </linearGradient>
+
+    <!-- Executive Dark Teal/Navy Blazer -->
+    <linearGradient id="yosefBlazer" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#143033" />
+      <stop offset="50%" stop-color="#0c2022" />
+      <stop offset="100%" stop-color="#051012" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="400" height="400" fill="url(#yosefBg)" />
+  <circle cx="200" cy="180" r="160" fill="url(#yosefRim)" />
+
+  <!-- Attire -->
+  <g id="clothing">
+    <path d="M 165 285 L 200 375 L 235 285 Z" fill="#081415" />
+    <path d="M 40 400 C 50 325 95 295 145 282 L 200 318 L 255 282 C 305 295 350 325 360 400 Z" fill="url(#yosefBlazer)" />
+    <path d="M 145 282 L 195 365 L 170 375 L 122 300 Z" fill="#1d454a" stroke="#051012" stroke-width="1.5" />
+    <path d="M 255 282 L 205 365 L 230 375 L 278 300 Z" fill="#1d454a" stroke="#051012" stroke-width="1.5" />
+  </g>
+
+  <!-- Neck -->
+  <g id="neck">
+    <path d="M 162 218 L 162 282 Q 200 302 238 282 L 238 218 Z" fill="url(#yosefSkin)" />
+    <path d="M 162 218 L 162 250 Q 200 270 238 250 L 238 218 Z" fill="url(#yosefSkinShadow)" opacity="0.55" />
+  </g>
+
+  <!-- Head & Ears -->
+  <g id="head">
+    <path d="M 126 178 C 117 178 117 212 129 216 C 130 212 130 188 129 178 Z" fill="#b67f5b" />
+    <path d="M 274 178 C 283 178 283 212 271 216 C 270 212 270 188 271 178 Z" fill="#b67f5b" />
+    <path d="M 128 162 C 126 108 158 92 200 92 C 242 92 274 108 272 162 C 272 205 260 250 200 252 C 140 250 128 205 128 162 Z" fill="url(#yosefSkin)" />
+    <path d="M 128 162 C 126 108 158 92 200 92 C 242 92 274 108 272 162 C 272 205 260 250 200 252 C 140 250 128 205 128 162 Z" fill="url(#yosefSkinShadow)" />
+  </g>
+
+  <!-- Hair -->
+  <g id="hair">
+    <path d="M 126 150 C 122 98 146 64 200 62 C 254 64 278 98 274 150 C 268 128 258 104 242 92 C 226 80 210 78 200 78 C 190 78 174 80 158 92 C 142 104 132 128 126 150 Z" fill="url(#yosefHair)" />
+    <path d="M 152 88 Q 170 68 188 76 Q 200 64 215 74 Q 232 66 248 86 Q 225 78 200 80 Q 175 78 152 88 Z" fill="#201917" />
+  </g>
+
+  <!-- Eyes, Eyebrows -->
+  <g id="eyes">
+    <path d="M 146 152 C 158 145 178 145 186 150 C 178 149 158 149 146 154 Z" fill="#140f0e" />
+    <path d="M 254 152 C 242 145 222 145 214 150 C 222 149 242 149 254 154 Z" fill="#140f0e" />
+    <path d="M 154 167 Q 169 159 183 167 Q 169 174 154 167 Z" fill="#ffffff" stroke="#5d3928" stroke-width="1.1" />
+    <circle cx="169" cy="167" r="4.8" fill="#281a14" />
+    <circle cx="169" cy="167" r="2.8" fill="#090503" />
+    <circle cx="167.6" cy="165.5" r="1.1" fill="#ffffff" />
+    <path d="M 217 167 Q 231 159 246 167 Q 231 174 217 167 Z" fill="#ffffff" stroke="#5d3928" stroke-width="1.1" />
+    <circle cx="231" cy="167" r="4.8" fill="#281a14" />
+    <circle cx="231" cy="167" r="2.8" fill="#090503" />
+    <circle cx="229.6" cy="165.5" r="1.1" fill="#ffffff" />
+  </g>
+
+  <!-- Features -->
+  <g id="features">
+    <path d="M 197 158 L 194 195 Q 187 198 186 201 Q 200 204 214 201 Q 213 198 206 195 L 203 158" fill="none" stroke="#965636" stroke-width="1.6" stroke-linecap="round" />
+    <path d="M 183 220 Q 200 226 217 220" fill="none" stroke="#481f18" stroke-width="1.8" stroke-linecap="round" />
+    <path d="M 185 221 Q 200 229 215 221 Q 200 225 185 221 Z" fill="#b06757" />
+  </g>
+
+  <!-- Rim Ring -->
+  <circle cx="200" cy="200" r="196" fill="none" stroke="url(#yosefRim)" stroke-width="4" opacity="0.7" />
+</svg>
