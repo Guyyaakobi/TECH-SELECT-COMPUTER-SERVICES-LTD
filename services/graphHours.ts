@@ -905,7 +905,9 @@ export async function detectAndListCustomers(
                     targetFile.fileId,
                     env,
                     targetFile.driveId || assioCustomer.driveId,
-                    "ביקור באתר"
+                    "ביקור באתר",
+                    {},
+                    true
                   );
                 }
               } catch (bgErr) {
@@ -3943,13 +3945,15 @@ export async function readSheetStructure(
   fileId: string,
   env?: any,
   explicitDriveId?: string,
-  targetWorkType?: string
+  targetWorkType?: string,
+  sessionHeaders: Record<string, string> = {},
+  allowAutoCompact: boolean = false
 ): Promise<SheetStructureResult> {
   const driveId = await resolveDriveForItem(fileId, explicitDriveId, env);
 
   // 1. Fetch all worksheets from Excel workbook
   const sheetsUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets?$top=20`;
-  const sheetsRes = await fetchGraph(sheetsUrl, { method: "GET" }, env);
+  const sheetsRes = await fetchGraph(sheetsUrl, { method: "GET", headers: sessionHeaders }, env);
   if (!sheetsRes.ok) {
     const err = await sheetsRes.text().catch(() => "");
     throw new Error(`שגיאה בקריאת גליונות עבודה מקובץ Excel (${sheetsRes.status}): ${err}`);
@@ -3968,7 +3972,7 @@ export async function readSheetStructure(
 
   // 2. Check for Excel Table specifically on this worksheet
   const tablesUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/tables?$top=10`;
-  const tablesRes = await fetchGraph(tablesUrl, { method: "GET" }, env);
+  const tablesRes = await fetchGraph(tablesUrl, { method: "GET", headers: sessionHeaders }, env);
 
   if (tablesRes.ok) {
     const tablesData: any = await tablesRes.json();
@@ -3981,7 +3985,7 @@ export async function readSheetStructure(
 
       // Get Table Headers
       const headerUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${tableId}/headerRowRange`;
-      const headerRes = await fetchGraph(headerUrl, { method: "GET" }, env);
+      const headerRes = await fetchGraph(headerUrl, { method: "GET", headers: sessionHeaders }, env);
       let headers: string[] = [];
       if (headerRes.ok) {
         const headerData: any = await headerRes.json();
@@ -3991,7 +3995,7 @@ export async function readSheetStructure(
 
       // Get Table Rows
       const rowsUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${tableId}/rows?$top=999`;
-      const rowsRes = await fetchGraph(rowsUrl, { method: "GET" }, env);
+      const rowsRes = await fetchGraph(rowsUrl, { method: "GET", headers: sessionHeaders }, env);
       let last5Rows: any[][] = [];
       let totalDataRows = 0;
       let allRows: any[][] = [];
@@ -4029,7 +4033,7 @@ export async function readSheetStructure(
 
   // 3. No Excel Table on this worksheet -> Read the used range of the matched worksheet
   const usedRangeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/usedRange`;
-  const usedRangeRes = await fetchGraph(usedRangeUrl, { method: "GET" }, env);
+  const usedRangeRes = await fetchGraph(usedRangeUrl, { method: "GET", headers: sessionHeaders }, env);
   let values: any[][] = [];
   let formulas: any[][] = [];
   let fullAddress = "A1";
@@ -4042,7 +4046,7 @@ export async function readSheetStructure(
   } else {
     // If usedRange returned 404 (e.g. newly initialized month file with no data rows yet), attempt reading top range A1:Z25
     const fallbackRangeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='A1:Z25')`;
-    const fallbackRes = await fetchGraph(fallbackRangeUrl, { method: "GET" }, env);
+    const fallbackRes = await fetchGraph(fallbackRangeUrl, { method: "GET", headers: sessionHeaders }, env);
     if (fallbackRes.ok) {
       const fbData: any = await fallbackRes.json();
       values = fbData.values || [];
@@ -4183,9 +4187,10 @@ export async function readSheetStructure(
     lastOccupiedRowOffset = r;
   }
 
-  // If this plain-range sheet has pre-filled calendar template rows (or displaced rows / swapped dates / stray Col I)
-  // AND already has real activity entries (like "אסיו" -> "ביקור באתר"), automatically compact, repair dates, and style as a clean table!
+  // Only run background auto-compaction when explicitly requested (e.g. one-time sheet repair),
+  // NEVER during writeRows or undoRow where the caller manages its own workbook session!
   if (
+    allowAutoCompact &&
     dataRows.length > 0 &&
     dateColIdx !== -1 &&
     (hadCalendarTemplateRows || hadDisplacedRows || hadDateOrFormatIssues || hadExtraneousCols)
@@ -4198,11 +4203,11 @@ export async function readSheetStructure(
         sheetName,
         headers,
         startColLetter,
-        startRowIndex,
+        startRowIndex: startRowIndex - 1,
         headerRowOffset,
         values,
         formulas,
-        sessionHeaders: {},
+        sessionHeaders,
         env,
       });
       if (compacted && compacted.compactedRows.length > 0) {
@@ -4845,11 +4850,14 @@ export async function compactAndStylePlainSheet(params: {
   values: any[][];
   formulas: any[][];
   additionalRowsToAppend?: any[][];
+  overrideCompactedRows?: any[][];
   sessionHeaders: Record<string, string>;
   env?: any;
 }): Promise<{
   compactedRows: any[][];
+  normalizedAppendedRows: any[][];
   writtenRowAddress: string;
+  firstAddedRowNumber: number;
   lastAddedRowNumber: number;
   totalsRowNumber: number;
 }> {
@@ -4865,6 +4873,7 @@ export async function compactAndStylePlainSheet(params: {
     values,
     formulas,
     additionalRowsToAppend = [],
+    overrideCompactedRows,
     sessionHeaders,
     env,
   } = params;
@@ -4962,74 +4971,53 @@ export async function compactAndStylePlainSheet(params: {
     return rowOut;
   };
 
-  interface SortableRowItem {
-    row: any[];
-    sortDate: string;
-    sortTime: string;
-    originalOrder: number;
-    isNewlyAdded: boolean;
+  let compactedRows: any[][] = [];
+  const normalizedAppendedRows: any[][] = [];
+  let firstAddedIdx = 0;
+
+  if (Array.isArray(overrideCompactedRows)) {
+    compactedRows = overrideCompactedRows.map((r) => normalizeSingleRow(r));
+    firstAddedIdx = Math.max(compactedRows.length - 1, 0);
+  } else {
+    // 1. Keep all existing real activity rows in their EXACT top-to-bottom worksheet order (never reorder upward!)
+    for (let r = headerRowOffset + 1; r < values.length; r++) {
+      const row = values[r] || [];
+      const rowFormulas = formulas[r] || [];
+      const analysis = analyzeWorksheetRow(row, rowFormulas, headers, 0);
+      if (analysis.isTotals || !analysis.hasUserData) continue;
+
+      const extraColI =
+        row.length > numCols && row[numCols] !== null && row[numCols] !== undefined
+          ? String(row[numCols]).trim()
+          : "";
+      const normRow = normalizeSingleRow(row, extraColI);
+      compactedRows.push(normRow);
+    }
+
+    firstAddedIdx = compactedRows.length;
+
+    // 2. Always append new row(s) downwards at the very bottom (כלפי מטה), right above the "סה"כ" row!
+    for (const newRow of additionalRowsToAppend) {
+      const normRow = normalizeSingleRow(newRow);
+      normalizedAppendedRows.push(normRow);
+      compactedRows.push(normRow);
+    }
   }
 
-  const allItems: SortableRowItem[] = [];
-  let orderCounter = 0;
-
-  for (let r = headerRowOffset + 1; r < values.length; r++) {
-    const row = values[r] || [];
-    const rowFormulas = formulas[r] || [];
-    const analysis = analyzeWorksheetRow(row, rowFormulas, headers, 0);
-    if (analysis.isTotals || !analysis.hasUserData) continue;
-
-    const extraColI =
-      row.length > numCols && row[numCols] !== null && row[numCols] !== undefined
-        ? String(row[numCols]).trim()
-        : "";
-    const normRow = normalizeSingleRow(row, extraColI);
-    const dStr = dateColIdx !== -1 ? String(normRow[dateColIdx] || "") : "";
-    const tStr = startColHeaderIdx !== -1 ? String(normRow[startColHeaderIdx] || "") : "";
-
-    allItems.push({
-      row: normRow,
-      sortDate: parseDateToSortableIso(dStr),
-      sortTime: tStr || "99:99",
-      originalOrder: orderCounter++,
-      isNewlyAdded: false,
-    });
-  }
-
-  for (const newRow of additionalRowsToAppend) {
-    const normRow = normalizeSingleRow(newRow);
-    const dStr = dateColIdx !== -1 ? String(normRow[dateColIdx] || "") : "";
-    const tStr = startColHeaderIdx !== -1 ? String(normRow[startColHeaderIdx] || "") : "";
-
-    allItems.push({
-      row: normRow,
-      sortDate: parseDateToSortableIso(dStr),
-      sortTime: tStr || "99:99",
-      originalOrder: orderCounter++,
-      isNewlyAdded: true,
-    });
-  }
-
-  // Sort chronologically by date, then start time, preserving insertion order for ties
-  allItems.sort((a, b) => {
-    if (a.sortDate !== b.sortDate) return a.sortDate.localeCompare(b.sortDate);
-    if (a.sortTime !== b.sortTime) return a.sortTime.localeCompare(b.sortTime);
-    return a.originalOrder - b.originalOrder;
-  });
-
-  const compactedRows = allItems.map((item) => item.row);
-  let lastAddedIdx = -1;
-  allItems.forEach((item, idx) => {
-    if (item.isNewlyAdded) lastAddedIdx = idx;
-  });
-  if (lastAddedIdx === -1 && compactedRows.length > 0) {
-    lastAddedIdx = compactedRows.length - 1;
-  }
+  const lastAddedIdx =
+    normalizedAppendedRows.length > 0
+      ? firstAddedIdx + normalizedAppendedRows.length - 1
+      : Math.max(compactedRows.length - 1, 0);
 
   const lastDataRowNum = firstDataRowNum + Math.max(compactedRows.length - 1, 0);
   const totalsRowNum = firstDataRowNum + compactedRows.length;
+  const firstAddedRowNumber =
+    normalizedAppendedRows.length > 0 ? firstDataRowNum + firstAddedIdx : firstDataRowNum + Math.max(lastAddedIdx, 0);
   const lastAddedRowNumber = firstDataRowNum + Math.max(lastAddedIdx, 0);
-  const writtenRowAddress = `${startColLetter}${lastAddedRowNumber}:${endColLetter}${lastAddedRowNumber}`;
+  const writtenRowAddress =
+    normalizedAppendedRows.length > 1
+      ? `${startColLetter}${firstAddedRowNumber}:${endColLetter}${lastAddedRowNumber}`
+      : `${startColLetter}${lastAddedRowNumber}:${endColLetter}${lastAddedRowNumber}`;
 
   // Build the "סה"כ" summary row immediately below the data rows
   const totalsRow = new Array(numCols).fill("");
@@ -5131,7 +5119,9 @@ export async function compactAndStylePlainSheet(params: {
 
   return {
     compactedRows,
+    normalizedAppendedRows,
     writtenRowAddress,
+    firstAddedRowNumber,
     lastAddedRowNumber,
     totalsRowNumber: totalsRowNum,
   };
@@ -6443,7 +6433,7 @@ export async function writeRows(
 
   try {
     // 2. Read current sheet structure under this drive and specific workType tab (ביקור באתר, טיקטים, פרוייקטים)
-    const structure = await readSheetStructure(fileId, env, driveId, targetWorkType);
+    const structure = await readSheetStructure(fileId, env, driveId, targetWorkType, sessionHeaders, false);
     const headers = structure.headers;
     const sheetName = structure.sheetName || targetWorkType || "";
 
@@ -6479,6 +6469,7 @@ export async function writeRows(
 
     let writtenRowAddress = "";
     let skippedOccupiedRows = 0;
+    let effectiveWrittenValues: any[][] = rowValuesMatrix;
 
     // CASE A: Excel Table
     if (structure.isTable && structure.tableId) {
@@ -6567,10 +6558,9 @@ export async function writeRows(
     else {
       const sheetId = structure.sheetId!;
       const startColLetter = structure.startColLetter || "A";
-      const dateColIdx = headers.findIndex((h) => isDateHeader(normalizeCustomerString(String(h || "")).toLowerCase()));
 
       let handledByTableCompactor = false;
-      if (dateColIdx !== -1) {
+      if (headers.length > 0) {
         try {
           const usedRangeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/usedRange(valuesOnly=false)`;
           const usedRangeRes = await fetchGraph(usedRangeUrl, { method: "GET", headers: sessionHeaders }, env);
@@ -6615,6 +6605,9 @@ export async function writeRows(
             });
 
             writtenRowAddress = compactedResult.writtenRowAddress;
+            if (compactedResult.normalizedAppendedRows.length > 0) {
+              effectiveWrittenValues = compactedResult.normalizedAppendedRows;
+            }
             handledByTableCompactor = true;
           }
         } catch (compactWriteErr) {
@@ -6714,7 +6707,7 @@ export async function writeRows(
       entryId,
       timestamp: now,
       writtenAt: now,
-      writtenValues: rowValuesMatrix,
+      writtenValues: effectiveWrittenValues,
       skippedOccupiedRows,
     };
 
@@ -7026,6 +7019,9 @@ export async function undoRow(
     throw new Error("לא סופקו מזהה קובץ או כתובת שורה לביטול");
   }
 
+  // Clear deduplication cache so re-logging an undone entry always writes to Excel
+  recentExcelWritesCache.clear();
+
   const now = Date.now();
   const TEN_MINUTES_MS = 10 * 60 * 1000;
 
@@ -7079,13 +7075,20 @@ export async function undoRow(
   }
 
   try {
-    // 3. Inspect sheet structure to determine if target sheet contains an Excel Table
-    const structure = await readSheetStructure(fileId, activeEnv, driveId, targetSheet);
+    // 3. Inspect sheet structure using the active workbook session (and allowAutoCompact = false)
+    const structure = await readSheetStructure(fileId, activeEnv, driveId, targetSheet, sessionHeaders, false);
     const isTable = structure.isTable && !!structure.tableId;
     const tableId = structure.tableId;
     const targetSheetId = structure.sheetId;
     const cleanSheetName = structure.sheetName || targetSheet;
+    const headers = structure.headers || [];
     const expectedValues = params.writtenValues?.[0];
+
+    const rawDesc = String((params as any).description || "").trim();
+    const coreDesc = rawDesc
+      .replace(/^\s*\(?נכתב\s+ע["״']י[^):]*\)?\s*[:\-–]?\s*/i, "")
+      .replace(/^[\u0590-\u05FF\w\s]+?\s+כתב:\s*/i, "")
+      .trim();
 
     // Microsoft Graph requires either the worksheet ID (GUID) without quotes:
     // .../workbook/worksheets/{id}
@@ -7108,21 +7111,28 @@ export async function undoRow(
         matchedIndex = parseInt(rowIdxMatch[1], 10);
       }
 
-      const rowsUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${tableId}/rows?$top=100`;
+      const rowsUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${tableId}/rows?$top=200`;
       const rowsRes = await fetchGraph(rowsUrl, { method: "GET", headers: sessionHeaders }, activeEnv);
       if (rowsRes.ok) {
         const rowsData: any = await rowsRes.json();
         const tRows: any[] = rowsData.value || [];
 
         // Search from bottom up for the matching written row
-        if (matchedIndex === -1 && expectedValues && expectedValues.length > 0) {
+        if (matchedIndex === -1) {
           for (let i = tRows.length - 1; i >= 0; i--) {
             const rVals = tRows[i].values?.[0] || [];
-            const matches = expectedValues.some((ev: any) => {
-              if (!ev || String(ev).trim().length < 3) return false;
-              return rVals.some((cv: any) => String(cv || "").includes(String(ev)));
-            });
-            if (matches) {
+            const rowJoined = rVals.map((cv: any) => String(cv ?? "")).join(" ");
+            const descMatch =
+              (coreDesc.length >= 3 && rowJoined.includes(coreDesc)) ||
+              (rawDesc.length >= 3 && rowJoined.includes(rawDesc));
+            const valMatch =
+              expectedValues &&
+              expectedValues.length > 0 &&
+              expectedValues.some((ev: any) => {
+                if (!ev || String(ev).trim().length < 4) return false;
+                return rVals.some((cv: any) => String(cv || "").includes(String(ev).trim()));
+              });
+            if (descMatch || valMatch) {
               matchedIndex = tRows[i].index !== undefined ? tRows[i].index : i;
               break;
             }
@@ -7152,38 +7162,168 @@ export async function undoRow(
             console.warn("[undoRow] table row range lookup:", trErr);
           }
 
-          // Attempt A1: Delete Table Row Range with shift Up
+          // Attempt A1: Direct Table Row DELETE
           try {
-            const delTableRangeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${tableId}/rows/itemAt(index=${matchedIndex})/range/delete`;
-            const delRangeRes = await fetchGraph(
-              delTableRangeUrl,
-              { method: "POST", headers: sessionHeaders, body: JSON.stringify({ shift: "Up" }) },
-              activeEnv
-            );
-            if (delRangeRes.ok || delRangeRes.status === 204) {
+            const delTableUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${tableId}/rows/itemAt(index=${matchedIndex})`;
+            const delRes = await fetchGraph(delTableUrl, { method: "DELETE", headers: sessionHeaders }, activeEnv);
+            if (delRes.ok || delRes.status === 204) {
               rowDeletedSuccessfully = true;
             }
-          } catch (delRangeErr) {
-            console.warn("[undoRow] delTableRange error:", delRangeErr);
+          } catch (delErr) {
+            console.warn("[undoRow] delTable error:", delErr);
           }
 
-          // Attempt A2: Direct Table Row DELETE
+          // Attempt A2: Delete Table Row Range with shift Up
           if (!rowDeletedSuccessfully) {
             try {
-              const delTableUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${tableId}/rows/itemAt(index=${matchedIndex})`;
-              const delRes = await fetchGraph(delTableUrl, { method: "DELETE", headers: sessionHeaders }, activeEnv);
-              if (delRes.ok || delRes.status === 204) {
+              const delTableRangeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/tables/${tableId}/rows/itemAt(index=${matchedIndex})/range/delete`;
+              const delRangeRes = await fetchGraph(
+                delTableRangeUrl,
+                { method: "POST", headers: sessionHeaders, body: JSON.stringify({ shift: "Up" }) },
+                activeEnv
+              );
+              if (delRangeRes.ok || delRangeRes.status === 204) {
                 rowDeletedSuccessfully = true;
               }
-            } catch (delErr) {
-              console.warn("[undoRow] delTable error:", delErr);
+            } catch (delRangeErr) {
+              console.warn("[undoRow] delTableRange error:", delRangeErr);
             }
           }
         }
       }
     }
 
-    // CASE B: WORKSHEET RANGE / FULL ROW DELETION (or Table fallback)
+    // CASE B: PLAIN-RANGE WORKSHEET DELETION (e.g. "ביקור באתר", "טיקטים", "פרויקטים")
+    // Uses compactAndStylePlainSheet with the target row removed so the row is cleanly deleted,
+    // all below rows & the "סה"כ" summary row shift up by 1, and =SUM(...) formulas update accurately!
+    if (!rowDeletedSuccessfully && !isTable && targetSheetId && headers.length > 0) {
+      try {
+        const usedRangeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${targetSheetId}/usedRange(valuesOnly=false)`;
+        const usedRangeRes = await fetchGraph(usedRangeUrl, { method: "GET", headers: sessionHeaders }, activeEnv);
+        if (usedRangeRes.ok) {
+          const usedRangeData: any = await usedRangeRes.json();
+          const rawAddress: string = usedRangeData.address || "Sheet1!A1:Z50";
+          const rangePart = rawAddress.includes("!") ? rawAddress.split("!")[1] : rawAddress;
+          const addrMatch = rangePart.match(/^([A-Z]+)(\d+)/i);
+          const usedStartRowIndex = addrMatch ? parseInt(addrMatch[2], 10) - 1 : 0;
+          const usedValues: any[][] = usedRangeData.values || [];
+          const usedFormulas: any[][] = usedRangeData.formulas || [];
+
+          let headerRowOffset = 0;
+          const firstHeaderNorm = normalizeCustomerString(String(headers[0] || "")).toLowerCase();
+          for (let r = 0; r < Math.min(usedValues.length, 35); r++) {
+            const rCells = usedValues[r] || [];
+            if (
+              rCells.some(
+                (c: any) => normalizeCustomerString(String(c || "")).toLowerCase() === firstHeaderNorm
+              )
+            ) {
+              headerRowOffset = r;
+              break;
+            }
+          }
+
+          interface ExistingActivityEntry {
+            rawRow: any[];
+            excelRowNum: number;
+            rowText: string;
+          }
+
+          const existingEntries: ExistingActivityEntry[] = [];
+          for (let r = headerRowOffset + 1; r < usedValues.length; r++) {
+            const row = usedValues[r] || [];
+            const rowFormulas = usedFormulas[r] || [];
+            const analysis = analyzeWorksheetRow(row, rowFormulas, headers, 0);
+            if (analysis.isTotals || !analysis.hasUserData) continue;
+
+            existingEntries.push({
+              rawRow: row,
+              excelRowNum: usedStartRowIndex + r + 1,
+              rowText: row.map((c: any) => String(c ?? "").trim()).join(" "),
+            });
+          }
+
+          if (existingEntries.length > 0) {
+            const targetRowNumber = actualRowNum || rowNumber;
+            let removeIdx = -1;
+
+            // 1. Search from bottom to top for content match (description or expectedValues)
+            const matchingIndices: number[] = [];
+            for (let i = existingEntries.length - 1; i >= 0; i--) {
+              const entry = existingEntries[i];
+              const hasDescMatch =
+                (coreDesc.length >= 3 && entry.rowText.includes(coreDesc)) ||
+                (rawDesc.length >= 3 && entry.rowText.includes(rawDesc));
+
+              let cellOverlap = 0;
+              let hasLongCellMatch = false;
+              if (expectedValues && expectedValues.length > 0) {
+                for (const ev of expectedValues) {
+                  const evStr = String(ev ?? "").trim();
+                  if (!evStr) continue;
+                  if (entry.rawRow.some((cv: any) => String(cv ?? "").trim() === evStr || (evStr.length >= 4 && String(cv ?? "").includes(evStr)))) {
+                    cellOverlap++;
+                    if (evStr.length >= 6) hasLongCellMatch = true;
+                  }
+                }
+              }
+
+              if (hasDescMatch || hasLongCellMatch || cellOverlap >= 3) {
+                matchingIndices.push(i);
+              }
+            }
+
+            if (matchingIndices.length > 0) {
+              // If one of the content-matching rows also matches the exact Excel row number, prefer it;
+              // otherwise pick the bottom-most matching row (matchingIndices[0]).
+              const exactRowMatch = matchingIndices.find(
+                (idx) => existingEntries[idx].excelRowNum === targetRowNumber
+              );
+              removeIdx = exactRowMatch !== undefined ? exactRowMatch : matchingIndices[0];
+            }
+
+            // 2. If no content match, match by Excel row number
+            if (removeIdx === -1 && targetRowNumber > 0) {
+              removeIdx = existingEntries.findIndex((e) => e.excelRowNum === targetRowNumber);
+            }
+
+            // 3. Fallback: remove the bottom-most activity row (since rows are always appended at the bottom)
+            if (removeIdx === -1) {
+              removeIdx = existingEntries.length - 1;
+            }
+
+            if (removeIdx !== -1) {
+              actualRowNum = existingEntries[removeIdx].excelRowNum;
+              const remainingRows = existingEntries
+                .filter((_, idx) => idx !== removeIdx)
+                .map((e) => e.rawRow);
+
+              await compactAndStylePlainSheet({
+                driveId,
+                fileId,
+                sheetId: targetSheetId,
+                sheetName: cleanSheetName,
+                headers,
+                startColLetter: structure.startColLetter || "A",
+                startRowIndex: usedStartRowIndex,
+                headerRowOffset,
+                values: usedValues,
+                formulas: usedFormulas,
+                overrideCompactedRows: remainingRows,
+                sessionHeaders,
+                env: activeEnv,
+              });
+
+              rowDeletedSuccessfully = true;
+            }
+          }
+        }
+      } catch (plainDelErr) {
+        console.warn("[undoRow] compactAndStylePlainSheet deletion fallback notice:", plainDelErr);
+      }
+    }
+
+    // CASE C: FALLBACK WORKSHEET RANGE / FULL ROW DELETION
     if (!rowDeletedSuccessfully) {
       const targetRowNumber = actualRowNum || rowNumber;
 
@@ -7422,7 +7562,7 @@ export async function updateWrittenExcelRow(
         }
       } catch {}
 
-      const structure = await readSheetStructure(fileId, activeEnv, driveId, targetSheet || params.workType);
+      const structure = await readSheetStructure(fileId, activeEnv, driveId, targetSheet || params.workType, sessionHeaders, false);
       const headers = structure.headers;
       const sheetId = structure.sheetId;
 

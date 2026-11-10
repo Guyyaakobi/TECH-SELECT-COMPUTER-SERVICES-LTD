@@ -807,7 +807,7 @@ export async function processAssistantChat(
       customerName: existing?.customerName || (rawUndo as any)?.customerName,
       date: existing?.date || (rawUndo as any)?.date,
       description: existing?.description || (rawUndo as any)?.description,
-      employeeName: user.name,
+      employeeName: existing?.employeeName || (rawUndo as any)?.employeeName || user.name,
       employeeEmail: user.email,
     };
 
@@ -1190,10 +1190,20 @@ export async function processAssistantChat(
     const writeRes = await writeRows(targetDraft.fileId, rowsPayload, user, activeEnv, targetDraft.driveId, effectiveExcelTab);
     const rowNumMatch = (writeRes.rowAddress || "").match(/\d+/);
     const baseRowNum = rowNumMatch ? parseInt(rowNumMatch[0], 10) : 1;
+    const colRangeMatch = (writeRes.rowAddress || "").match(/(?:.*!)?([A-Z]+)\d+(?::([A-Z]+)\d+)?/i);
+    const startColLet = colRangeMatch ? colRangeMatch[1] : "A";
+    const endColLet = colRangeMatch ? (colRangeMatch[2] || colRangeMatch[1]) : "H";
 
     const newWrittenItems: WrittenEntryResult[] = effectiveEmployees.map((empName, idx) => {
       const targetRow = baseRowNum + idx;
       const itemId = writeRes.listItemIds?.[idx] || (idx === 0 ? writeRes.listItemId : undefined);
+      const specificRowAddr =
+        writeRes.rowAddress && !writeRes.rowAddress.startsWith("Table:")
+          ? `${startColLet}${targetRow}:${endColLet}${targetRow}`
+          : writeRes.rowAddress || `Row ${targetRow}`;
+      const specificWrittenValues = writeRes.writtenValues?.[idx]
+        ? [writeRes.writtenValues[idx]]
+        : writeRes.writtenValues;
       return {
         id: idx === 0 ? targetDraft.id : `${targetDraft.id}_emp_${idx}`,
         fileId: targetDraft.fileId,
@@ -1204,8 +1214,8 @@ export async function processAssistantChat(
         sheetName: writeRes.sheetName || effectiveExcelTab,
         webUrl: writeRes.webUrl || targetDraft.webUrl || "",
         targetRow,
-        rowAddress: writeRes.rowAddress || `Row ${targetRow}`,
-        writtenValues: writeRes.writtenValues,
+        rowAddress: specificRowAddr,
+        writtenValues: specificWrittenValues,
         entryId: `${writeRes.entryId || targetDraft.id}_${idx}`,
         customerName: targetDraft.customerName,
         date: targetDraft.date,
@@ -2672,6 +2682,12 @@ EXTRACTION RULES FOR propose_entries:
               writtenValues: matchingWritten?.writtenValues,
               writtenAt: matchingWritten?.writtenAt,
               sheetName: matchingWritten?.sheetName,
+              listItemId: matchingWritten?.listItemId,
+              customerName: matchingWritten?.customerName,
+              date: matchingWritten?.date,
+              description: matchingWritten?.description,
+              employeeName: matchingWritten?.employeeName || user.name,
+              employeeEmail: user.email,
             }, user, activeEnv),
             15000,
             { success: false } as any

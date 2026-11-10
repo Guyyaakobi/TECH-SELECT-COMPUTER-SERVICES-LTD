@@ -1251,6 +1251,9 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
             writtenAt: targetEntry.writtenAt,
             sheetName: targetEntry.sheetName,
             customerName: targetEntry.customerName,
+            date: targetEntry.date,
+            description: targetEntry.description,
+            employeeName: targetEntry.employeeName,
             listItemId: targetEntry.listItemId,
           }
         : undefined;

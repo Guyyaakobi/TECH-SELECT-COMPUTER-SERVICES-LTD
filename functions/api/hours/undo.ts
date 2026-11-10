@@ -55,6 +55,12 @@ export async function onRequestPost(context: any): Promise<Response> {
         writtenValues: body.writtenValues,
         writtenAt: body.writtenAt,
         sheetName: body.sheetName,
+        listItemId: body.listItemId,
+        customerName: body.customerName,
+        date: body.date,
+        description: body.description,
+        employeeName: body.employeeName || auth.user?.name,
+        employeeEmail: body.employeeEmail || auth.user?.email,
       },
       auth.user,
       env
