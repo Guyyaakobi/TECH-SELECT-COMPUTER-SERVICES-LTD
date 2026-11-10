@@ -884,6 +884,37 @@ export async function detectAndListCustomers(
           detectedStructure: "libraries",
           items: allCustomers,
         };
+
+        // Trigger one-time background compaction & date repair for "אסיו" -> "ביקור באתר"
+        const assioCustomer = allCustomers.find((c) => {
+          const n = normalizeCustomerString(c.name || "").toLowerCase();
+          return n.includes("אסיו") || n.includes("assio") || n.includes("asio");
+        });
+        if (assioCustomer) {
+          Promise.resolve()
+            .then(async () => {
+              try {
+                const todayIso = new Date().toISOString().split("T")[0];
+                const targetFile = await findMonthTarget(
+                  assioCustomer,
+                  todayIso,
+                  env
+                );
+                if (targetFile?.fileId) {
+                  await readSheetStructure(
+                    targetFile.fileId,
+                    env,
+                    targetFile.driveId || assioCustomer.driveId,
+                    "ביקור באתר"
+                  );
+                }
+              } catch (bgErr) {
+                console.warn("[detectAndListCustomers] Background Assio sheet repair notice:", bgErr);
+              }
+            })
+            .catch(() => {});
+        }
+
         return {
           siteId,
           detectedStructure: "libraries",
@@ -3464,50 +3495,21 @@ export async function inspectWorkbookFile(
           const dataRows: any[][] = [];
           const dataFormulas: any[][] = [];
           let firstTemplateOffset = -1;
-          let lastOccupiedRowOffset = headerRowIndex;
           for (let r = headerRowIndex + 1; r < values.length; r++) {
             const row = values[r] || [];
             const rowForms = formulas[r] || [];
-            // Check if totals row
-            const isTotals = row.some((c: any) =>
-              typeof c === "string" && ["סה״כ", "סה\"כ", "סך הכל", "סיכום", "total"].some((k) => c.toLowerCase().includes(k))
-            );
-            if (isTotals) break;
+            const rowAnalysis = analyzeWorksheetRow(row, rowForms, headers, 0);
+            if (rowAnalysis.isTotals) continue;
 
-            let hasUserData = false;
-            for (let c = 0; c < Math.min(row.length, headers.length); c++) {
-              const v = row[c];
-              const f = rowForms[c];
-              const strVal = v !== null && v !== undefined ? String(v).trim() : "";
-              const strForm = f !== null && f !== undefined ? String(f).trim() : "";
-              const isFormula = strForm.startsWith("=");
-              const isZero =
-                strVal === "0" ||
-                strVal === "0.0" ||
-                strVal === "0.00" ||
-                strVal === "0:00" ||
-                strVal === "00:00" ||
-                (strVal !== "" && !isNaN(Number(strVal)) && Number(strVal) === 0);
-              if (!isFormula && strVal !== "" && !isZero) {
-                hasUserData = true;
-                break;
-              }
-            }
-            if (!hasUserData) {
+            if (!rowAnalysis.hasUserData) {
               if (firstTemplateOffset === -1) firstTemplateOffset = r;
               continue;
             }
-            dataRows.push(row);
-            dataFormulas.push(rowForms);
-            lastOccupiedRowOffset = r;
+            dataRows.push(row.slice(0, headers.length));
+            dataFormulas.push(rowForms.slice(0, headers.length));
           }
 
-          totalDataRows =
-            lastOccupiedRowOffset > headerRowIndex
-              ? lastOccupiedRowOffset - headerRowIndex
-              : firstTemplateOffset !== -1
-              ? Math.max(0, firstTemplateOffset - (headerRowIndex + 1))
-              : 0;
+          totalDataRows = dataRows.length;
           recentRows = dataRows.slice(-3);
           const sampleForms = dataFormulas.length > 0 ? dataFormulas : firstTemplateOffset !== -1 && formulas[firstTemplateOffset] ? [formulas[firstTemplateOffset]] : formulas;
           formats = detectRowFormats(headers, dataRows, sampleForms);
@@ -4102,69 +4104,117 @@ export async function readSheetStructure(
   }
 
   // Scan rows below header row for data, available template slots, and totals/summary row
-  const dataRows: any[][] = [];
-  const dataFormulas: any[][] = [];
+  const startColIdx = columnLetterToIndex(startColLetter);
+  const endColLetter = indexToColumnLetter(startColIdx + Math.max(headers.length, 1) - 1);
+
+  const sheetHint = detectSheetMonthYearHint(values, headerRowOffset, headers);
+  let dataRows: any[][] = [];
+  let dataFormulas: any[][] = [];
   let totalsRowOffset = -1;
   let lastOccupiedRowOffset = headerRowOffset;
   let firstTemplateSlotOffset = -1;
-  const totalsKeywords = ["סה״כ", "סה\"כ", "סך הכל", "סיכום", "total", "totals", "sum"];
+  let hadCalendarTemplateRows = false;
+  let hadDisplacedRows = false;
+  let hadDateOrFormatIssues = false;
+  let hadExtraneousCols = false;
+
+  const dayColIdx = headers.findIndex((h) => isDayHeader(normalizeCustomerString(String(h || "")).toLowerCase()));
+  const dateColIdx = headers.findIndex((h) => isDateHeader(normalizeCustomerString(String(h || "")).toLowerCase()));
 
   for (let r = headerRowOffset + 1; r < values.length; r++) {
     const row = values[r] || [];
     const rowFormulas = formulas[r] || [];
 
-    // Check if this row is a totals row first
-    const isTotals =
-      row.some(
-        (c: any) => typeof c === "string" && totalsKeywords.some((k) => c.toLowerCase().includes(k))
-      ) ||
-      rowFormulas.some(
-        (f: any) =>
-          typeof f === "string" &&
-          (f.startsWith("=SUM") ||
-            f.startsWith("=SUBTOTAL") ||
-            f.toLowerCase().includes("sum(") ||
-            f.toLowerCase().includes("subtotal("))
-      );
+    const analysis = analyzeWorksheetRow(row, rowFormulas, headers, 0);
 
-    if (isTotals) {
-      totalsRowOffset = r;
-      break;
-    }
-
-    // Check if row is empty or only contains pre-filled template formulas / 0.00 placeholders
-    let hasUserData = false;
-    const maxCols = Math.min(Math.max(row.length, rowFormulas.length), headers.length);
-    for (let c = 0; c < maxCols; c++) {
-      const v = row[c];
-      const f = rowFormulas[c];
-      const strVal = v !== null && v !== undefined ? String(v).trim() : "";
-      const strForm = f !== null && f !== undefined ? String(f).trim() : "";
-      const isFormulaCell = strForm.startsWith("=");
-      const isZeroPlaceholder =
-        strVal === "0" ||
-        strVal === "0.0" ||
-        strVal === "0.00" ||
-        strVal === "0:00" ||
-        strVal === "00:00" ||
-        (strVal !== "" && !isNaN(Number(strVal)) && Number(strVal) === 0);
-
-      if (!isFormulaCell && strVal !== "" && !isZeroPlaceholder) {
-        hasUserData = true;
-        break;
+    if (analysis.isTotals) {
+      if (totalsRowOffset === -1) {
+        totalsRowOffset = r;
       }
+      continue;
     }
 
-    if (!hasUserData) {
+    if (!analysis.hasUserData) {
+      if (analysis.isCalendarTemplateRow) {
+        hadCalendarTemplateRows = true;
+      }
       if (firstTemplateSlotOffset === -1) {
         firstTemplateSlotOffset = r;
       }
       continue;
     }
 
-    dataRows.push(row);
-    dataFormulas.push(rowFormulas);
+    // Check if this real activity row was displaced below empty/template rows
+    const expectedRowOffset = headerRowOffset + 1 + dataRows.length;
+    if (r !== expectedRowOffset) {
+      hadDisplacedRows = true;
+    }
+
+    // Check if there are stray values in columns beyond headers.length (e.g. Col I employee names outside table)
+    for (let extraC = headers.length; extraC < Math.min(row.length, headers.length + 2); extraC++) {
+      const extraVal = row[extraC] !== null && row[extraC] !== undefined ? String(row[extraC]).trim() : "";
+      if (extraVal !== "") {
+        hadExtraneousCols = true;
+      }
+    }
+
+    // Check if date or day has formatting issues (e.g. MM/DD/YYYY 11/05/2026 or short day א' instead of ראשון)
+    if (dateColIdx !== -1) {
+      const rawDateCell = row[dateColIdx];
+      const rawDayCell = dayColIdx !== -1 ? String(row[dayColIdx] || "").trim() : "";
+      const repairedDate = repairAndFormatDateForSheet(rawDateCell, "DD/MM/YYYY", {
+        rawDayVal: rawDayCell,
+        sheetMonth: sheetHint.month,
+        sheetYear: sheetHint.year,
+      });
+      if (repairedDate && String(rawDateCell ?? "").trim() !== repairedDate) {
+        hadDateOrFormatIssues = true;
+      }
+      if (dayColIdx !== -1 && repairedDate) {
+        const expectedFullDay = getHebrewDay(repairedDate, "full");
+        if (expectedFullDay && rawDayCell !== expectedFullDay) {
+          hadDateOrFormatIssues = true;
+        }
+      }
+    }
+
+    dataRows.push(row.slice(0, headers.length));
+    dataFormulas.push(rowFormulas.slice(0, headers.length));
     lastOccupiedRowOffset = r;
+  }
+
+  // If this plain-range sheet has pre-filled calendar template rows (or displaced rows / swapped dates / stray Col I)
+  // AND already has real activity entries (like "אסיו" -> "ביקור באתר"), automatically compact, repair dates, and style as a clean table!
+  if (
+    dataRows.length > 0 &&
+    dateColIdx !== -1 &&
+    (hadCalendarTemplateRows || hadDisplacedRows || hadDateOrFormatIssues || hadExtraneousCols)
+  ) {
+    try {
+      const compacted = await compactAndStylePlainSheet({
+        driveId,
+        fileId,
+        sheetId,
+        sheetName,
+        headers,
+        startColLetter,
+        startRowIndex,
+        headerRowOffset,
+        values,
+        formulas,
+        sessionHeaders: {},
+        env,
+      });
+      if (compacted && compacted.compactedRows.length > 0) {
+        dataRows = compacted.compactedRows;
+        dataFormulas = compacted.compactedRows.map((r) => r.map(() => ""));
+        firstTemplateSlotOffset = -1;
+        lastOccupiedRowOffset = headerRowOffset + dataRows.length;
+        totalsRowOffset = headerRowOffset + dataRows.length + 1;
+      }
+    } catch (compactErr) {
+      console.warn(`[readSheetStructure] Auto-compact notice for "${sheetName}":`, compactErr);
+    }
   }
 
   // Capture formulas from either existing rows or template rows so detectRowFormats knows which columns have formulas
@@ -4178,25 +4228,17 @@ export async function readSheetStructure(
   const hasTotalsRow = totalsRowOffset !== -1;
 
   // Calculate next empty row number:
-  // Always append AFTER the last occupied user data row!
-  // If no user data rows exist yet, use the first template slot (or row after header).
-  let nextEmptyRowNumber =
-    lastOccupiedRowOffset > headerRowOffset
-      ? startRowIndex + lastOccupiedRowOffset + 1
-      : firstTemplateSlotOffset !== -1
-      ? startRowIndex + firstTemplateSlotOffset
-      : startRowIndex + headerRowOffset + 1;
+  // If real user data rows exist (and are compacted starting at headerRowOffset + 1), the next row is right after them!
+  // If no user data rows exist yet, start right at headerRowOffset + 1 (Row 2).
+  let nextEmptyRowNumber = startRowIndex + headerRowOffset + 1 + totalDataRows;
   let totalsRowAddress: string | undefined = undefined;
 
-  const startColIdx = columnLetterToIndex(startColLetter);
-  const endColLetter = indexToColumnLetter(startColIdx + Math.max(headers.length, 1) - 1);
-
   if (hasTotalsRow) {
-    const actualTotalsRowNumber = startRowIndex + totalsRowOffset;
+    const actualTotalsRowNumber =
+      hadCalendarTemplateRows && totalDataRows === 0
+        ? startRowIndex + totalsRowOffset
+        : Math.max(startRowIndex + headerRowOffset + 1 + totalDataRows, startRowIndex + totalsRowOffset);
     totalsRowAddress = `${startColLetter}${actualTotalsRowNumber}:${endColLetter}${actualTotalsRowNumber}`;
-    if (nextEmptyRowNumber > actualTotalsRowNumber) {
-      nextEmptyRowNumber = actualTotalsRowNumber;
-    }
   }
 
   const nextEmptyRowAddress = `${startColLetter}${nextEmptyRowNumber}:${endColLetter}${nextEmptyRowNumber}`;
@@ -4222,6 +4264,876 @@ export async function readSheetStructure(
     fieldToColIndex: semanticMapping.fieldToColIndex,
     colIndexToField: semanticMapping.colIndexToField,
     unmappedFields: semanticMapping.unmappedFields,
+  };
+}
+
+/**
+ * Analyzes a worksheet row to distinguish between:
+ * 1. Totals / Summary row (`isTotals = true`, e.g. `סה"כ` or `=SUM(...)`)
+ * 2. Empty pre-filled calendar template row (`isCalendarTemplateRow = true, hasUserData = false`,
+ *    where only `יום` and `תאריך` are pre-filled while hours are `0.00` and start/end/description are empty)
+ * 3. Genuine logged activity row (`hasUserData = true`)
+ */
+export function analyzeWorksheetRow(
+  rowVals: any[],
+  rowForms: any[],
+  headers: string[],
+  startColIdx: number = 0
+): {
+  hasUserData: boolean;
+  isTotals: boolean;
+  isCalendarTemplateRow: boolean;
+} {
+  const totalsKeywords = ["סה״כ", "סה\"כ", "סך הכל", "סיכום", "total", "totals", "sum"];
+  let isTotals = false;
+  let hasNonDateDayData = false;
+  let hasDateOrDayData = false;
+  let hasActivityColsInSheet = false;
+
+  const numHeaders = headers.length;
+  for (let hIdx = 0; hIdx < numHeaders; hIdx++) {
+    const normH = normalizeCustomerString(String(headers[hIdx] || "")).toLowerCase();
+    if (!isDayHeader(normH) && !isDateHeader(normH) && normH !== "") {
+      hasActivityColsInSheet = true;
+      break;
+    }
+  }
+
+  const maxCols = numHeaders > 0 ? startColIdx + numHeaders : Math.max(rowVals.length, rowForms.length);
+  const scanCols = Math.min(Math.max(rowVals.length, rowForms.length), maxCols);
+
+  for (let c = startColIdx; c < scanCols; c++) {
+    const hIdx = c - startColIdx;
+    const rawHeader = hIdx >= 0 && hIdx < numHeaders ? String(headers[hIdx] || "").trim() : "";
+    const normHeader = normalizeCustomerString(rawHeader).toLowerCase();
+
+    const v = rowVals[c];
+    const f = rowForms[c];
+    const strVal = v !== null && v !== undefined ? String(v).trim() : "";
+    const strForm = f !== null && f !== undefined ? String(f).trim() : "";
+
+    if (strVal !== "" && totalsKeywords.some((kw) => strVal.toLowerCase().includes(kw))) {
+      isTotals = true;
+    }
+    if (strForm !== "" && strForm !== "=") {
+      const lowerF = strForm.toLowerCase();
+      if (
+        lowerF.startsWith("=sum") ||
+        lowerF.startsWith("=subtotal") ||
+        lowerF.includes("sum(") ||
+        lowerF.includes("subtotal(")
+      ) {
+        isTotals = true;
+      }
+    }
+
+    const isFormulaCell = strForm.startsWith("=");
+    const isZeroPlaceholder =
+      strVal === "0" ||
+      strVal === "0.0" ||
+      strVal === "0.00" ||
+      strVal === "0:00" ||
+      strVal === "00:00" ||
+      (strVal !== "" && !isNaN(Number(strVal)) && Number(strVal) === 0);
+
+    if (isDayHeader(normHeader) || isDateHeader(normHeader)) {
+      if (!isFormulaCell && strVal !== "" && !isZeroPlaceholder) {
+        hasDateOrDayData = true;
+      }
+      continue;
+    }
+
+    if (isFormulaCell) {
+      if (
+        isHoursHeader(normHeader) &&
+        strVal !== "" &&
+        !isZeroPlaceholder &&
+        !isNaN(Number(strVal)) &&
+        Number(strVal) > 0
+      ) {
+        hasNonDateDayData = true;
+      }
+      continue;
+    }
+
+    if (strVal !== "" && !isZeroPlaceholder) {
+      hasNonDateDayData = true;
+    }
+  }
+
+  if (isTotals) {
+    return { hasUserData: false, isTotals: true, isCalendarTemplateRow: false };
+  }
+
+  const hasUserData = hasActivityColsInSheet ? hasNonDateDayData : (hasNonDateDayData || hasDateOrDayData);
+  const isCalendarTemplateRow = !hasUserData && hasDateOrDayData;
+
+  return { hasUserData, isTotals: false, isCalendarTemplateRow };
+}
+
+/**
+ * Scans date cells in a worksheet to determine the dominant month (1..12) and year (e.g. 2026).
+ * Used to disambiguate and auto-repair US-formatted dates like `11/05/2026` -> `05/11/2026`.
+ */
+function detectSheetMonthYearHint(
+  values: any[][],
+  headerRowOffset: number,
+  headers: string[]
+): { month?: number; year?: number } {
+  const dateColIdx = headers.findIndex((h) => isDateHeader(normalizeCustomerString(String(h || "")).toLowerCase()));
+  if (dateColIdx === -1) return {};
+
+  const monthCounts = new Map<number, number>();
+  const yearCounts = new Map<number, number>();
+
+  for (let r = headerRowOffset + 1; r < values.length; r++) {
+    const raw = values[r]?.[dateColIdx];
+    if (raw === null || raw === undefined || raw === "") continue;
+    const str = String(raw).trim();
+    const dmy = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+    if (dmy) {
+      const p1 = parseInt(dmy[1], 10);
+      const p2 = parseInt(dmy[2], 10);
+      const y = parseInt(dmy[3], 10);
+      if (y >= 2020 && y <= 2035) {
+        yearCounts.set(y, (yearCounts.get(y) || 0) + 1);
+      }
+      // If p1 > 12 (e.g. 13/11/2026..30/11/2026), p2 is guaranteed to be the month! Give it high weight.
+      if (p1 > 12 && p2 >= 1 && p2 <= 12) {
+        monthCounts.set(p2, (monthCounts.get(p2) || 0) + 5);
+      } else if (p2 > 12 && p1 >= 1 && p1 <= 12) {
+        monthCounts.set(p1, (monthCounts.get(p1) || 0) + 5);
+      } else if (p2 >= 1 && p2 <= 12) {
+        monthCounts.set(p2, (monthCounts.get(p2) || 0) + 1);
+      }
+    }
+  }
+
+  let bestMonth: number | undefined;
+  let bestMonthCount = 0;
+  for (const [m, count] of monthCounts.entries()) {
+    if (count > bestMonthCount) {
+      bestMonthCount = count;
+      bestMonth = m;
+    }
+  }
+
+  let bestYear: number | undefined;
+  let bestYearCount = 0;
+  for (const [y, count] of yearCounts.entries()) {
+    if (count > bestYearCount) {
+      bestYearCount = count;
+      bestYear = y;
+    }
+  }
+
+  return { month: bestMonth, year: bestYear };
+}
+
+function doesDateMatchHebrewDay(day: number, month: number, year: number, rawDayVal?: string): boolean {
+  if (!rawDayVal) return false;
+  const cleanDay = rawDayVal.replace(/['"״׳\s]/g, "").trim();
+  if (!cleanDay) return false;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
+
+  const dt = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  if (dt.getUTCMonth() !== month - 1 || dt.getUTCDate() !== day) return false;
+  const dow = dt.getUTCDay();
+  const shortLetters = ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
+  const fullDays = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
+  return (
+    cleanDay === shortLetters[dow] ||
+    cleanDay === fullDays[dow] ||
+    cleanDay === `יום${fullDays[dow]}` ||
+    fullDays[dow].includes(cleanDay)
+  );
+}
+
+/**
+ * Parses, auto-repairs (including Excel serial dates and US MM/DD/YYYY swapped dates like 11/05/2026 -> 05/11/2026),
+ * and formats a date into Israeli DD/MM/YYYY format.
+ */
+export function repairAndFormatDateForSheet(
+  dateVal: any,
+  targetFormat: string = "DD/MM/YYYY",
+  hints?: { rawDayVal?: string; sheetMonth?: number; sheetYear?: number }
+): string {
+  if (dateVal === null || dateVal === undefined || dateVal === "") return "";
+
+  let year = 0;
+  let month = 0;
+  let day = 0;
+
+  // 1. Handle Excel serial date numbers (e.g. 46331 -> 05/11/2026)
+  if (
+    typeof dateVal === "number" ||
+    (typeof dateVal === "string" && /^\d{5}(\.\d+)?$/.test(dateVal.trim()))
+  ) {
+    const serial = Math.floor(Number(dateVal));
+    if (serial > 35000 && serial < 70000) {
+      const utcMs = Math.round((serial - 25569) * 86400 * 1000);
+      const dt = new Date(utcMs);
+      year = dt.getUTCFullYear();
+      month = dt.getUTCMonth() + 1;
+      day = dt.getUTCDate();
+    }
+  }
+
+  const clean = String(dateVal).trim();
+  if (!year) {
+    const isoMatch = clean.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+    if (isoMatch) {
+      year = parseInt(isoMatch[1], 10);
+      month = parseInt(isoMatch[2], 10);
+      day = parseInt(isoMatch[3], 10);
+    } else {
+      const dmyMatch = clean.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+      if (dmyMatch) {
+        day = parseInt(dmyMatch[1], 10);
+        month = parseInt(dmyMatch[2], 10);
+        year = parseInt(dmyMatch[3], 10);
+      }
+    }
+  }
+
+  if (!year || !month || !day) return clean;
+
+  // 2. Auto-repair US MM/DD/YYYY swapped dates:
+  // Case A: month > 12 and day <= 12 (e.g. 11/25/2026 parsed as day=11, month=25)
+  if (month > 12 && day >= 1 && day <= 12) {
+    const tmp = day;
+    day = month;
+    month = tmp;
+  }
+  // Case B: both day <= 12 and month <= 12 and day !== month (e.g. "11/05/2026", "11/08/2026", "11/10/2026")
+  else if (day >= 1 && day <= 12 && month >= 1 && month <= 12 && day !== month) {
+    let shouldSwap = false;
+
+    // Check Hebrew day-of-week match first (deterministic proof!)
+    if (hints?.rawDayVal) {
+      const matchesAsIs = doesDateMatchHebrewDay(day, month, year, hints.rawDayVal);
+      const matchesSwapped = doesDateMatchHebrewDay(month, day, year, hints.rawDayVal);
+      if (matchesSwapped && !matchesAsIs) {
+        shouldSwap = true;
+      } else if (!matchesAsIs && !matchesSwapped && hints?.sheetMonth) {
+        if (day === hints.sheetMonth && month !== hints.sheetMonth) {
+          shouldSwap = true;
+        }
+      }
+    } else if (hints?.sheetMonth) {
+      // If sheet is clearly for month M (e.g. 11) and date was written as 11/05/2026 (day=11, month=5)
+      if (day === hints.sheetMonth && month !== hints.sheetMonth) {
+        shouldSwap = true;
+      }
+    }
+
+    if (shouldSwap) {
+      const tmp = day;
+      day = month;
+      month = tmp;
+    }
+  }
+
+  const dd = String(day).padStart(2, "0");
+  const mm = String(month).padStart(2, "0");
+  const yyyy = String(year);
+
+  if (targetFormat === "DD.MM.YYYY") {
+    return `${dd}.${mm}.${yyyy}`;
+  }
+  if (targetFormat === "YYYY-MM-DD") {
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+export function formatTimeForSheet(timeVal: any): string {
+  if (timeVal === null || timeVal === undefined || timeVal === "") return "";
+  if (typeof timeVal === "number" && timeVal >= 0 && timeVal < 1) {
+    const totalMins = Math.round(timeVal * 24 * 60);
+    const h = Math.floor(totalMins / 60) % 24;
+    const m = totalMins % 60;
+    return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  }
+  const clean = String(timeVal).trim();
+  if (/^\d+(\.\d+)?$/.test(clean)) {
+    const num = Number(clean);
+    if (num >= 0 && num < 1) {
+      const totalMins = Math.round(num * 24 * 60);
+      const h = Math.floor(totalMins / 60) % 24;
+      const m = totalMins % 60;
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+  }
+  const tMatch = clean.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (tMatch) {
+    return `${tMatch[1].padStart(2, "0")}:${tMatch[2]}`;
+  }
+  return clean;
+}
+
+function parseDateToSortableIso(dateStr: string): string {
+  const clean = String(dateStr || "").trim();
+  const dmy = clean.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+  if (dmy) {
+    return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+  }
+  const iso = clean.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (iso) {
+    return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+  }
+  return "9999-99-99";
+}
+
+function calculateHoursFromStartEnd(startStr: string, endStr: string): number {
+  const sMatch = String(startStr || "").trim().match(/^(\d{1,2}):(\d{2})/);
+  const eMatch = String(endStr || "").trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!sMatch || !eMatch) return 0;
+  const sMins = parseInt(sMatch[1], 10) * 60 + parseInt(sMatch[2], 10);
+  let eMins = parseInt(eMatch[1], 10) * 60 + parseInt(eMatch[2], 10);
+  if (eMins < sMins) eMins += 24 * 60;
+  return +((eMins - sMins) / 60).toFixed(2);
+}
+
+/**
+ * Builds an explicit Excel numberFormat matrix for a block of rows:
+ * - "@" (Text) for Date, Day, Time, WorkType, Employee, Ticket, and Description columns
+ *   so Excel Online NEVER converts DD/MM/YYYY dates into US MM/DD/YYYY!
+ * - "0.00" for Hours / Duration columns.
+ */
+export function buildRowNumberFormatMatrix(headers: string[], numRows: number): string[][] {
+  const colFormats = headers.map((h) => {
+    const norm = normalizeCustomerString(String(h || "")).toLowerCase();
+    if (isHoursHeader(norm)) {
+      return "0.00";
+    }
+    return "@";
+  });
+  return Array.from({ length: numRows }, () => [...colFormats]);
+}
+
+/**
+ * Applies the clean "טיקטים" / "פרויקטים" table visual styling to a plain-range worksheet:
+ * - Crisp thin borders on all data cells
+ * - White background fill (#FFFFFF) and regular 10pt Arial font on data rows
+ * - Centered alignment for Date, Day, Start/End Time, Hours, Support Type, Employee, Ticket
+ * - Right-aligned wrapped text for Description / Notes column
+ * - Bold summary styling with #DCE6F1 accent fill on the "סה"כ" totals row
+ */
+export async function applyTableStyleToRange(params: {
+  driveId: string;
+  fileId: string;
+  sheetId: string;
+  startColLetter: string;
+  endColLetter: string;
+  firstDataRowNum: number;
+  lastDataRowNum: number;
+  totalsRowNum?: number;
+  headers: string[];
+  sessionHeaders: Record<string, string>;
+  env?: any;
+}): Promise<void> {
+  const {
+    driveId,
+    fileId,
+    sheetId,
+    startColLetter,
+    endColLetter,
+    firstDataRowNum,
+    lastDataRowNum,
+    totalsRowNum,
+    headers,
+    sessionHeaders,
+    env,
+  } = params;
+
+  const startColIdx = columnLetterToIndex(startColLetter);
+  const baseWorksheetUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}`;
+
+  if (lastDataRowNum >= firstDataRowNum) {
+    const dataRangeAddr = `${startColLetter}${firstDataRowNum}:${endColLetter}${lastDataRowNum}`;
+    const dataFormatUrl = `${baseWorksheetUrl}/range(address='${encodeURIComponent(dataRangeAddr)}')/format`;
+
+    await fetchGraph(
+      dataFormatUrl,
+      {
+        method: "PATCH",
+        headers: sessionHeaders,
+        body: JSON.stringify({
+          wrapText: true,
+          verticalAlignment: "Center",
+          horizontalAlignment: "Center",
+        }),
+      },
+      env
+    ).catch(() => {});
+
+    await Promise.all([
+      fetchGraph(
+        `${dataFormatUrl}/fill`,
+        {
+          method: "PATCH",
+          headers: sessionHeaders,
+          body: JSON.stringify({ color: "#FFFFFF" }),
+        },
+        env
+      ).catch(() => {}),
+      fetchGraph(
+        `${dataFormatUrl}/font`,
+        {
+          method: "PATCH",
+          headers: sessionHeaders,
+          body: JSON.stringify({ name: "Arial", size: 10, bold: false, color: "#000000" }),
+        },
+        env
+      ).catch(() => {}),
+    ]);
+
+    const borderSides = [
+      "EdgeTop",
+      "EdgeBottom",
+      "EdgeLeft",
+      "EdgeRight",
+      "InsideHorizontal",
+      "InsideVertical",
+    ];
+    await Promise.all(
+      borderSides.map((side) =>
+        fetchGraph(
+          `${dataFormatUrl}/borders/${side}`,
+          {
+            method: "PATCH",
+            headers: sessionHeaders,
+            body: JSON.stringify({
+              style: "Continuous",
+              color: "#D9D9D9",
+              weight: "Thin",
+            }),
+          },
+          env
+        ).catch(() => {})
+      )
+    );
+
+    // Right-align description/notes columns so Hebrew sentences read naturally from right to left
+    for (let c = 0; c < headers.length; c++) {
+      const normH = normalizeCustomerString(String(headers[c] || "")).toLowerCase();
+      if (isDescriptionHeader(normH) || isNotesHeader(normH)) {
+        const colLet = indexToColumnLetter(startColIdx + c);
+        const descRangeAddr = `${colLet}${firstDataRowNum}:${colLet}${lastDataRowNum}`;
+        await fetchGraph(
+          `${baseWorksheetUrl}/range(address='${encodeURIComponent(descRangeAddr)}')/format`,
+          {
+            method: "PATCH",
+            headers: sessionHeaders,
+            body: JSON.stringify({
+              wrapText: true,
+              horizontalAlignment: "Right",
+              verticalAlignment: "Center",
+            }),
+          },
+          env
+        ).catch(() => {});
+      }
+    }
+  }
+
+  // Style the "סה"כ" Totals Row
+  if (totalsRowNum && totalsRowNum > lastDataRowNum) {
+    const totalsRangeAddr = `${startColLetter}${totalsRowNum}:${endColLetter}${totalsRowNum}`;
+    const totalsFormatUrl = `${baseWorksheetUrl}/range(address='${encodeURIComponent(totalsRangeAddr)}')/format`;
+
+    await Promise.all([
+      fetchGraph(
+        totalsFormatUrl,
+        {
+          method: "PATCH",
+          headers: sessionHeaders,
+          body: JSON.stringify({
+            verticalAlignment: "Center",
+            horizontalAlignment: "Center",
+          }),
+        },
+        env
+      ).catch(() => {}),
+      fetchGraph(
+        `${totalsFormatUrl}/font`,
+        {
+          method: "PATCH",
+          headers: sessionHeaders,
+          body: JSON.stringify({ name: "Arial", size: 10, bold: true, color: "#000000" }),
+        },
+        env
+      ).catch(() => {}),
+      fetchGraph(
+        `${totalsFormatUrl}/fill`,
+        {
+          method: "PATCH",
+          headers: sessionHeaders,
+          body: JSON.stringify({ color: "#F8FAFC" }),
+        },
+        env
+      ).catch(() => {}),
+    ]);
+
+    // Highlight the hours cells in the totals row with the signature #DCE6F1 steel-blue summary fill
+    const hoursColIndices: number[] = [];
+    headers.forEach((h, idx) => {
+      const norm = normalizeCustomerString(String(h || "")).toLowerCase();
+      if (isHoursHeader(norm)) hoursColIndices.push(idx);
+    });
+
+    if (hoursColIndices.length > 0) {
+      const firstH = hoursColIndices[0];
+      const lastH = hoursColIndices[hoursColIndices.length - 1];
+      const sumStartLet = indexToColumnLetter(startColIdx + firstH);
+      const sumEndLet = indexToColumnLetter(startColIdx + lastH);
+      const sumHighlightAddr = `${sumStartLet}${totalsRowNum}:${sumEndLet}${totalsRowNum}`;
+      const sumHighlightUrl = `${baseWorksheetUrl}/range(address='${encodeURIComponent(sumHighlightAddr)}')/format`;
+
+      await Promise.all([
+        fetchGraph(
+          `${sumHighlightUrl}/fill`,
+          {
+            method: "PATCH",
+            headers: sessionHeaders,
+            body: JSON.stringify({ color: "#DCE6F1" }),
+          },
+          env
+        ).catch(() => {}),
+        fetchGraph(
+          `${sumHighlightUrl}/borders/EdgeTop`,
+          {
+            method: "PATCH",
+            headers: sessionHeaders,
+            body: JSON.stringify({ style: "Continuous", color: "#94A3B8", weight: "Thin" }),
+          },
+          env
+        ).catch(() => {}),
+        fetchGraph(
+          `${sumHighlightUrl}/borders/EdgeBottom`,
+          {
+            method: "PATCH",
+            headers: sessionHeaders,
+            body: JSON.stringify({ style: "Double", color: "#64748B", weight: "Thin" }),
+          },
+          env
+        ).catch(() => {}),
+      ]);
+    }
+  }
+}
+
+/**
+ * Transforms a plain-range worksheet (such as "ביקור באתר" / "ביקורים - באתר הלקוח")
+ * into the clean, sequential table layout of "טיקטים" / "פרויקטים":
+ * - Removes empty pre-filled calendar template rows (01/11/2026..30/11/2026 with 0.00 hours)
+ * - Repairs any US MM/DD/YYYY swapped dates (e.g. 11/05/2026 -> 05/11/2026) and sets full Hebrew day names (ראשון..שבת)
+ * - Formats times as HH:MM (09:00, 08:00, 09:45) and hours as 0.00
+ * - Supports multiple entries on the same date, sorted chronologically starting right at Row 2
+ * - Appends a styled "סה"כ" summary row (=SUM(...)) immediately after the last entry and clears old leftover rows
+ */
+export async function compactAndStylePlainSheet(params: {
+  driveId: string;
+  fileId: string;
+  sheetId: string;
+  sheetName: string;
+  headers: string[];
+  startColLetter: string;
+  startRowIndex: number;
+  headerRowOffset: number;
+  values: any[][];
+  formulas: any[][];
+  additionalRowsToAppend?: any[][];
+  sessionHeaders: Record<string, string>;
+  env?: any;
+}): Promise<{
+  compactedRows: any[][];
+  writtenRowAddress: string;
+  lastAddedRowNumber: number;
+  totalsRowNumber: number;
+}> {
+  const {
+    driveId,
+    fileId,
+    sheetId,
+    sheetName,
+    headers,
+    startColLetter,
+    startRowIndex,
+    headerRowOffset,
+    values,
+    formulas,
+    additionalRowsToAppend = [],
+    sessionHeaders,
+    env,
+  } = params;
+
+  const numCols = headers.length;
+  const startColIdx = columnLetterToIndex(startColLetter);
+  const endColLetter = indexToColumnLetter(startColIdx + Math.max(numCols, 1) - 1);
+  const firstDataRowNum = startRowIndex + headerRowOffset + 2; // 1-based Excel row right below header row
+
+  const sheetHint = detectSheetMonthYearHint(values, headerRowOffset, headers);
+
+  const dayColIdx = headers.findIndex((h) => isDayHeader(normalizeCustomerString(String(h || "")).toLowerCase()));
+  const dateColIdx = headers.findIndex((h) => isDateHeader(normalizeCustomerString(String(h || "")).toLowerCase()));
+  const startColHeaderIdx = headers.findIndex((h) =>
+    isStartTimeHeader(normalizeCustomerString(String(h || "")).toLowerCase())
+  );
+  const endColHeaderIdx = headers.findIndex((h) =>
+    isEndTimeHeader(normalizeCustomerString(String(h || "")).toLowerCase())
+  );
+  const hasEmployeeCol = headers.some((h) =>
+    isEmployeeHeader(normalizeCustomerString(String(h || "")).toLowerCase())
+  );
+  const descColIdx = headers.findIndex((h) => {
+    const norm = normalizeCustomerString(String(h || "")).toLowerCase();
+    return isDescriptionHeader(norm) || isNotesHeader(norm);
+  });
+
+  const normalizeSingleRow = (rawRow: any[], extraEmployeeFromColI?: string): any[] => {
+    const rowOut = new Array(numCols).fill("");
+    const rawDayVal = dayColIdx !== -1 ? String(rawRow[dayColIdx] ?? "").trim() : "";
+    const rawDateVal = dateColIdx !== -1 ? rawRow[dateColIdx] : "";
+
+    const repairedDate =
+      dateColIdx !== -1
+        ? repairAndFormatDateForSheet(rawDateVal, "DD/MM/YYYY", {
+            rawDayVal,
+            sheetMonth: sheetHint.month,
+            sheetYear: sheetHint.year,
+          })
+        : "";
+    const repairedDay =
+      dayColIdx !== -1
+        ? (repairedDate ? getHebrewDay(repairedDate, "full") : rawDayVal)
+        : "";
+
+    const normStart =
+      startColHeaderIdx !== -1 ? formatTimeForSheet(rawRow[startColHeaderIdx]) : "";
+    const normEnd =
+      endColHeaderIdx !== -1 ? formatTimeForSheet(rawRow[endColHeaderIdx]) : "";
+    const computedHours = calculateHoursFromStartEnd(normStart, normEnd);
+
+    for (let c = 0; c < numCols; c++) {
+      const normH = normalizeCustomerString(String(headers[c] || "")).toLowerCase();
+      const cellVal = rawRow[c];
+
+      if (c === dayColIdx) {
+        rowOut[c] = repairedDay;
+      } else if (c === dateColIdx) {
+        rowOut[c] = repairedDate;
+      } else if (c === startColHeaderIdx || isStartTimeHeader(normH)) {
+        rowOut[c] = formatTimeForSheet(cellVal);
+      } else if (c === endColHeaderIdx || isEndTimeHeader(normH)) {
+        rowOut[c] = formatTimeForSheet(cellVal);
+      } else if (isHoursHeader(normH)) {
+        const num = typeof cellVal === "number" ? cellVal : parseFloat(String(cellVal ?? ""));
+        if (!isNaN(num) && num > 0) {
+          rowOut[c] = +(num.toFixed(2));
+        } else if (computedHours > 0) {
+          rowOut[c] = computedHours;
+        } else {
+          rowOut[c] = 0;
+        }
+      } else if (isWorkTypeHeader(normH)) {
+        const str = String(cellVal ?? "").trim();
+        rowOut[c] = str || (sheetName.includes("ביקור") ? "ביקור באתר" : sheetName);
+      } else {
+        rowOut[c] = cellVal !== null && cellVal !== undefined ? String(cellVal).trim() : "";
+      }
+    }
+
+    // If an older write placed a distinct technician name in Column I outside the 8-column table (e.g. "אולג"),
+    // ensure it is reflected in the description prefix so nothing is lost when Column I is cleaned up.
+    if (!hasEmployeeCol && extraEmployeeFromColI && descColIdx !== -1) {
+      const extraEmp = extraEmployeeFromColI.trim();
+      const extraFirst = extraEmp.split(/\s+/)[0];
+      const currentDesc = String(rowOut[descColIdx] || "").trim();
+      if (extraFirst && currentDesc && !currentDesc.startsWith(extraFirst)) {
+        const prefixMatch = currentDesc.match(/^([\u0590-\u05FF\w\s]+?)\s+כתב:\s*(.*)$/);
+        if (prefixMatch && !prefixMatch[1].includes(extraFirst)) {
+          rowOut[descColIdx] = `${extraFirst} (${prefixMatch[1].trim()} כתב): ${prefixMatch[2]}`;
+        }
+      }
+    }
+
+    return rowOut;
+  };
+
+  interface SortableRowItem {
+    row: any[];
+    sortDate: string;
+    sortTime: string;
+    originalOrder: number;
+    isNewlyAdded: boolean;
+  }
+
+  const allItems: SortableRowItem[] = [];
+  let orderCounter = 0;
+
+  for (let r = headerRowOffset + 1; r < values.length; r++) {
+    const row = values[r] || [];
+    const rowFormulas = formulas[r] || [];
+    const analysis = analyzeWorksheetRow(row, rowFormulas, headers, 0);
+    if (analysis.isTotals || !analysis.hasUserData) continue;
+
+    const extraColI =
+      row.length > numCols && row[numCols] !== null && row[numCols] !== undefined
+        ? String(row[numCols]).trim()
+        : "";
+    const normRow = normalizeSingleRow(row, extraColI);
+    const dStr = dateColIdx !== -1 ? String(normRow[dateColIdx] || "") : "";
+    const tStr = startColHeaderIdx !== -1 ? String(normRow[startColHeaderIdx] || "") : "";
+
+    allItems.push({
+      row: normRow,
+      sortDate: parseDateToSortableIso(dStr),
+      sortTime: tStr || "99:99",
+      originalOrder: orderCounter++,
+      isNewlyAdded: false,
+    });
+  }
+
+  for (const newRow of additionalRowsToAppend) {
+    const normRow = normalizeSingleRow(newRow);
+    const dStr = dateColIdx !== -1 ? String(normRow[dateColIdx] || "") : "";
+    const tStr = startColHeaderIdx !== -1 ? String(normRow[startColHeaderIdx] || "") : "";
+
+    allItems.push({
+      row: normRow,
+      sortDate: parseDateToSortableIso(dStr),
+      sortTime: tStr || "99:99",
+      originalOrder: orderCounter++,
+      isNewlyAdded: true,
+    });
+  }
+
+  // Sort chronologically by date, then start time, preserving insertion order for ties
+  allItems.sort((a, b) => {
+    if (a.sortDate !== b.sortDate) return a.sortDate.localeCompare(b.sortDate);
+    if (a.sortTime !== b.sortTime) return a.sortTime.localeCompare(b.sortTime);
+    return a.originalOrder - b.originalOrder;
+  });
+
+  const compactedRows = allItems.map((item) => item.row);
+  let lastAddedIdx = -1;
+  allItems.forEach((item, idx) => {
+    if (item.isNewlyAdded) lastAddedIdx = idx;
+  });
+  if (lastAddedIdx === -1 && compactedRows.length > 0) {
+    lastAddedIdx = compactedRows.length - 1;
+  }
+
+  const lastDataRowNum = firstDataRowNum + Math.max(compactedRows.length - 1, 0);
+  const totalsRowNum = firstDataRowNum + compactedRows.length;
+  const lastAddedRowNumber = firstDataRowNum + Math.max(lastAddedIdx, 0);
+  const writtenRowAddress = `${startColLetter}${lastAddedRowNumber}:${endColLetter}${lastAddedRowNumber}`;
+
+  // Build the "סה"כ" summary row immediately below the data rows
+  const totalsRow = new Array(numCols).fill("");
+  const hoursColIndices: number[] = [];
+  headers.forEach((h, idx) => {
+    const norm = normalizeCustomerString(String(h || "")).toLowerCase();
+    if (isHoursHeader(norm)) {
+      hoursColIndices.push(idx);
+    }
+  });
+
+  if (compactedRows.length > 0 && hoursColIndices.length > 0) {
+    const labelColIdx = hoursColIndices[0] > 0 ? hoursColIndices[0] - 1 : 0;
+    totalsRow[labelColIdx] = "סה\"כ";
+    for (const hColIdx of hoursColIndices) {
+      const colLet = indexToColumnLetter(startColIdx + hColIdx);
+      totalsRow[hColIdx] = `=SUM(${colLet}${firstDataRowNum}:${colLet}${lastDataRowNum})`;
+    }
+  }
+
+  const fullWriteMatrix =
+    compactedRows.length > 0 && hoursColIndices.length > 0
+      ? [...compactedRows, totalsRow]
+      : [...compactedRows];
+
+  const lastWriteRowNum = firstDataRowNum + fullWriteMatrix.length - 1;
+  const maxOldRowNum = Math.max(startRowIndex + values.length + 2, lastWriteRowNum + 5, 42);
+  // Clear up to column I (or endColLetter if wider), never touching J1:K1 which is on Row 1
+  const clearEndColIdx = Math.max(startColIdx + numCols, columnLetterToIndex("I"));
+  const clearEndColLetter = indexToColumnLetter(clearEndColIdx);
+  const baseWorksheetUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}`;
+
+  // 1. Clear old rows (including old 30 empty calendar rows, displaced rows 32-39, and stray Col I text)
+  const clearRangeAddr = `${startColLetter}${firstDataRowNum}:${clearEndColLetter}${maxOldRowNum}`;
+  await fetchGraph(
+    `${baseWorksheetUrl}/range(address='${encodeURIComponent(clearRangeAddr)}')/clear`,
+    {
+      method: "POST",
+      headers: sessionHeaders,
+      body: JSON.stringify({ applyTo: "All" }),
+    },
+    env
+  ).catch((err) => {
+    console.warn("[compactAndStylePlainSheet] clear notice:", err);
+  });
+
+  if (fullWriteMatrix.length > 0) {
+    const writeRangeAddr = `${startColLetter}${firstDataRowNum}:${endColLetter}${lastWriteRowNum}`;
+    const numberFormatMatrix = buildRowNumberFormatMatrix(headers, fullWriteMatrix.length);
+
+    // 2. Set explicit numberFormat FIRST ("@" on dates/days/times, "0.00" on hours)
+    // so Excel Online stores DD/MM/YYYY as literal text and NEVER flips it to US MM/DD/YYYY!
+    await fetchGraph(
+      `${baseWorksheetUrl}/range(address='${encodeURIComponent(writeRangeAddr)}')`,
+      {
+        method: "PATCH",
+        headers: sessionHeaders,
+        body: JSON.stringify({ numberFormat: numberFormatMatrix }),
+      },
+      env
+    ).catch((err) => {
+      console.warn("[compactAndStylePlainSheet] numberFormat notice:", err);
+    });
+
+    // 3. Write the compacted data rows + "סה"כ" totals row
+    const writeRes = await fetchGraph(
+      `${baseWorksheetUrl}/range(address='${encodeURIComponent(writeRangeAddr)}')`,
+      {
+        method: "PATCH",
+        headers: sessionHeaders,
+        body: JSON.stringify({
+          values: fullWriteMatrix,
+          numberFormat: numberFormatMatrix,
+        }),
+      },
+      env
+    );
+
+    if (!writeRes.ok) {
+      const errText = await writeRes.text().catch(() => "");
+      throw new Error(`שגיאה בכתיבת טבלה מסודרת ל-Excel (${writeRes.status}): ${errText}`);
+    }
+
+    // 4. Apply clean "טיקטים" / "פרויקטים" table borders, fills, font, and alignment
+    await applyTableStyleToRange({
+      driveId,
+      fileId,
+      sheetId,
+      startColLetter,
+      endColLetter,
+      firstDataRowNum,
+      lastDataRowNum,
+      totalsRowNum: hoursColIndices.length > 0 ? totalsRowNum : undefined,
+      headers,
+      sessionHeaders,
+      env,
+    });
+  }
+
+  return {
+    compactedRows,
+    writtenRowAddress,
+    lastAddedRowNumber,
+    totalsRowNumber: totalsRowNum,
   };
 }
 
@@ -4262,13 +5174,13 @@ function detectRowFormats(
 
       const strVal = String(val).trim();
 
-      // Check date formats: DD/MM/YYYY vs YYYY-MM-DD vs DD.MM.YYYY
+      // Always prefer DD/MM/YYYY for slash-separated dates in Israeli Excel files
       if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(strVal)) {
         dateFormat = "DD/MM/YYYY";
       } else if (/^\d{1,2}\.\d{1,2}\.\d{4}$/.test(strVal)) {
         dateFormat = "DD.MM.YYYY";
       } else if (/^\d{4}-\d{2}-\d{2}$/.test(strVal)) {
-        dateFormat = "YYYY-MM-DD";
+        dateFormat = "DD/MM/YYYY";
       }
 
       // Check time format: "14:30" vs "14:30:00"
@@ -4366,41 +5278,7 @@ export function suggestStartEndTimes(durationMinutes: number): {
 }
 
 function formatDateForSheet(dateStr: any, targetFormat?: string): string {
-  if (!dateStr) return "";
-  const clean = String(dateStr).trim();
-
-  let year = "";
-  let month = "";
-  let day = "";
-
-  const isoMatch = clean.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
-  if (isoMatch) {
-    year = isoMatch[1];
-    month = isoMatch[2].padStart(2, "0");
-    day = isoMatch[3].padStart(2, "0");
-  } else {
-    const dmyMatch = clean.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
-    if (dmyMatch) {
-      day = dmyMatch[1].padStart(2, "0");
-      month = dmyMatch[2].padStart(2, "0");
-      year = dmyMatch[3];
-    }
-  }
-
-  if (!year || !month || !day) return clean;
-
-  if (targetFormat === "DD/MM/YYYY") {
-    return `${day}/${month}/${year}`;
-  }
-  if (targetFormat === "DD.MM.YYYY") {
-    return `${day}.${month}.${year}`;
-  }
-  if (targetFormat === "YYYY-MM-DD") {
-    return `${year}-${month}-${day}`;
-  }
-
-  // Standard business Israeli Excel default
-  return `${day}/${month}/${year}`;
+  return repairAndFormatDateForSheet(dateStr, targetFormat || "DD/MM/YYYY");
 }
 
 function formatHoursForSheet(hoursVal: any, targetFormat?: "decimal" | "hh:mm"): any {
@@ -4415,7 +5293,7 @@ function formatHoursForSheet(hoursVal: any, targetFormat?: "decimal" | "hh:mm"):
     return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
   }
 
-  return num;
+  return +(num.toFixed(2));
 }
 
 function getDurationMinutes(rowObj: Record<string, any>): number {
@@ -4427,9 +5305,10 @@ function getDurationMinutes(rowObj: Record<string, any>): number {
   return 0;
 }
 
-export function getHebrewDay(dateStr: string, format: "short" | "full" = "short"): string {
+export function getHebrewDay(dateStr: string, format: "short" | "full" = "full"): string {
   if (!dateStr) return "";
-  const clean = String(dateStr).trim();
+  const repaired = repairAndFormatDateForSheet(dateStr, "DD/MM/YYYY");
+  const clean = String(repaired || dateStr).trim();
   let year = 0, month = 0, day = 0;
   const iso = clean.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
   if (iso) {
@@ -4817,14 +5696,56 @@ export function resolveCellValueForHeader(
     return "";
   }
 
-  // 2. Direct exact match check
+  // 2. Semantic Date & Day Priority (Always compute accurate DD/MM/YYYY date and full Hebrew day name)
+  if (isDayHeader(normHeader)) {
+    const rawDate =
+      rowObj["תאריך"] ||
+      rowObj["date"] ||
+      rowObj["תאריך עבודה"] ||
+      rowObj["תאריך ביצוע"] ||
+      "";
+    if (rawDate) {
+      return getHebrewDay(String(rawDate), "full") || "ראשון";
+    }
+    const fallbackDay = String(rowObj[rawHeader] || rowObj["יום"] || "").trim();
+    const shortToFull: Record<string, string> = {
+      "א'": "ראשון",
+      "א": "ראשון",
+      "ב'": "שני",
+      "ב": "שני",
+      "ג'": "שלישי",
+      "ג": "שלישי",
+      "ד'": "רביעי",
+      "ד": "רביעי",
+      "ה'": "חמישי",
+      "ה": "חמישי",
+      "ו'": "שישי",
+      "ו": "שישי",
+      "ש'": "שבת",
+      "ש": "שבת",
+    };
+    return shortToFull[fallbackDay] || fallbackDay || "ראשון";
+  }
+
+  if (isDateHeader(normHeader)) {
+    const rawDate =
+      rowObj[rawHeader] ||
+      rowObj["תאריך"] ||
+      rowObj["date"] ||
+      rowObj["תאריך עבודה"] ||
+      rowObj["תאריך ביצוע"] ||
+      "";
+    return rawDate ? repairAndFormatDateForSheet(rawDate, structure.formats.dateFormat || "DD/MM/YYYY") : "";
+  }
+
+  // 3. Direct exact match check
   if (rowObj[rawHeader] !== undefined && rowObj[rawHeader] !== null && String(rowObj[rawHeader]).trim() !== "") {
     const directVal = rowObj[rawHeader];
-    if (isDateHeader(normHeader)) {
-      return formatDateForSheet(directVal, structure.formats.dateFormat);
-    }
     if (isHoursHeader(normHeader)) {
       return formatHoursForSheet(directVal, structure.formats.hoursFormat);
+    }
+    if (isStartTimeHeader(normHeader) || isEndTimeHeader(normHeader)) {
+      return formatTimeForSheet(directVal);
     }
     if (isDescriptionHeader(normHeader)) {
       return prefixDescriptionWithAuthor(directVal, userContext?.name, userContext?.email);
@@ -4832,15 +5753,15 @@ export function resolveCellValueForHeader(
     return directVal;
   }
 
-  // 3. Normalized key match check
+  // 4. Normalized key match check
   for (const [key, val] of Object.entries(rowObj)) {
     if (val !== undefined && val !== null && String(val).trim() !== "") {
       if (normalizeCustomerString(key).toLowerCase() === normHeader) {
-        if (isDateHeader(normHeader)) {
-          return formatDateForSheet(val, structure.formats.dateFormat);
-        }
         if (isHoursHeader(normHeader)) {
           return formatHoursForSheet(val, structure.formats.hoursFormat);
+        }
+        if (isStartTimeHeader(normHeader) || isEndTimeHeader(normHeader)) {
+          return formatTimeForSheet(val);
         }
         if (isDescriptionHeader(normHeader)) {
           return prefixDescriptionWithAuthor(val, userContext?.name, userContext?.email);
@@ -4850,33 +5771,7 @@ export function resolveCellValueForHeader(
     }
   }
 
-  // 4. Semantic Classification Match
-  // A. DAY OF WEEK (יום / יום בשבוע)
-  if (isDayHeader(normHeader)) {
-    const rawDate = rowObj["תאריך"] || rowObj["date"] || rowObj["יום"] || rowObj["תאריך עבודה"] || "";
-    let format: "short" | "full" = "short";
-    if (structure.last5Rows && structure.last5Rows.length > 0) {
-      const sampleVal = String(structure.last5Rows[structure.last5Rows.length - 1]?.[colIdx] || "");
-      if (
-        sampleVal.includes("ראשון") ||
-        sampleVal.includes("שני") ||
-        sampleVal.includes("שלישי") ||
-        sampleVal.includes("רביעי") ||
-        sampleVal.includes("חמישי") ||
-        sampleVal.includes("שישי")
-      ) {
-        format = "full";
-      }
-    }
-    return rawDate ? getHebrewDay(rawDate, format) : (rowObj["יום"] || "א'");
-  }
-
-  // B. DATE (תאריך)
-  if (isDateHeader(normHeader)) {
-    const rawDate = rowObj["תאריך"] || rowObj["date"] || rowObj["תאריך עבודה"] || "";
-    return rawDate ? formatDateForSheet(rawDate, structure.formats.dateFormat) : "";
-  }
-
+  // 5. Semantic Classification Match
   // C. EMPLOYEE / TECHNICIAN (עובד / טכנאי / משתמש)
   if (isEmployeeHeader(normHeader)) {
     return (
@@ -4908,7 +5803,7 @@ export function resolveCellValueForHeader(
     structure.colIndexToField?.[colIdx] === "start_time" ||
     (isStartTimeHeader(normHeader) && (firstStartColIdx === undefined || firstStartColIdx === -1 || firstStartColIdx === colIdx))
   ) {
-    return extractStartTime(rowObj, structure);
+    return formatTimeForSheet(extractStartTime(rowObj, structure));
   }
 
   // E. END TIME (שעת סיום / שעת סיום 1 / שעת יציאה / שעת עזיבה)
@@ -4919,7 +5814,7 @@ export function resolveCellValueForHeader(
     structure.colIndexToField?.[colIdx] === "end_time" ||
     (isEndTimeHeader(normHeader) && (firstEndColIdx === undefined || firstEndColIdx === -1 || firstEndColIdx === colIdx))
   ) {
-    return extractEndTime(rowObj, structure);
+    return formatTimeForSheet(extractEndTime(rowObj, structure));
   }
 
   // If this is a subsequent start/end time column (e.g. a second shift), leave empty
@@ -4943,7 +5838,7 @@ export function resolveCellValueForHeader(
         normHeader === "" ||
         normHeader === prevNorm)
     ) {
-      return extractEndTime(rowObj, structure);
+      return formatTimeForSheet(extractEndTime(rowObj, structure));
     }
   }
 
@@ -4968,7 +5863,7 @@ export function resolveCellValueForHeader(
         normHeader === "" ||
         normHeader === nextNorm)
     ) {
-      return extractStartTime(rowObj, structure);
+      return formatTimeForSheet(extractStartTime(rowObj, structure));
     }
   }
 
@@ -4978,14 +5873,14 @@ export function resolveCellValueForHeader(
     if (structure.headers && colIdx < structure.headers.length - 1) {
       const nextNorm = normalizeCustomerString(String(structure.headers[colIdx + 1] || "")).toLowerCase();
       if (nextNorm === normHeader || isEndTimeHeader(nextNorm)) {
-        return extractStartTime(rowObj, structure);
+        return formatTimeForSheet(extractStartTime(rowObj, structure));
       }
     }
     // If previous column was also "שעה" or "time" -> this is End Time
     if (colIdx > 0 && structure.headers) {
       const prevNorm = normalizeCustomerString(String(structure.headers[colIdx - 1] || "")).toLowerCase();
       if (prevNorm === normHeader || isStartTimeHeader(prevNorm)) {
-        return extractEndTime(rowObj, structure);
+        return formatTimeForSheet(extractEndTime(rowObj, structure));
       }
     }
   }
@@ -5138,10 +6033,10 @@ export function resolveCellValueForHeader(
  *
  * Scans starting from initialRowNumber:
  * - Reads row cells across columns A through Z (or wider if headers span beyond Z).
- * - If a row contains ANY user data value (dates, times, descriptions, employees):
+ * - If a row contains ANY user data value (times, descriptions, employees, positive hours):
  *   "אם יש משהו בשורה אל תדרוס את השורה" -> DO NOT overwrite the row!
  *   Skips this row and advances downwards.
- * - Template rows that only contain pre-filled formulas / 0.00 placeholders in hours columns are recognized as available slots!
+ * - Template rows that only contain pre-filled dates/days + formulas / 0.00 placeholders in hours columns are recognized as available slots!
  * - If a row is identified as a totals/summary row (סה"כ, SUM, SUBTOTAL):
  *   Protects the totals row by inserting empty rows above it with shift: "Down".
  */
@@ -5157,7 +6052,8 @@ export async function findSafeEmptyRowRange(
   totalsRowAddressHint: string | undefined,
   sessionHeaders: Record<string, string>,
   env?: any,
-  headersLength?: number
+  headersLength?: number,
+  headers?: string[]
 ): Promise<{
   targetRowNumber: number;
   targetAddress: string;
@@ -5177,8 +6073,13 @@ export async function findSafeEmptyRowRange(
   const MAX_ROWS_TO_CHECK = 200;
   let totalRowsChecked = 0;
 
-  // Helper to check if a single row has actual user data vs. being empty or only having template formulas (like =G... showing 0.00)
+  // Helper to check if a single row has actual user data vs. being empty or only having template calendar dates/formulas
   const analyzeRowContent = (rowVals: any[], rowForms: any[]) => {
+    if (headers && headers.length > 0) {
+      const res = analyzeWorksheetRow(rowVals, rowForms, headers, startColIdx);
+      return { hasUserData: res.hasUserData, isTotals: res.isTotals };
+    }
+
     let hasUserData = false;
     let isTotals = false;
     const effectiveMaxCol = headersLength && headersLength > 0 ? startColIdx + headersLength : Math.max(rowVals.length, rowForms.length);
@@ -5215,8 +6116,13 @@ export async function findSafeEmptyRowRange(
         strVal === "00:00" ||
         (strVal !== "" && !isNaN(Number(strVal)) && Number(strVal) === 0);
 
-      // A cell has user data if it is NOT a formula cell, NOT a 0.00 placeholder, and has a non-empty value!
-      if (!isFormulaCell && strVal !== "" && !isZeroPlaceholder) {
+      // Ignore pure day-of-week or date cells in Col A / Col B when checking if a calendar template row has user data
+      const isPureCalendarCell =
+        c <= startColIdx + 1 &&
+        (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(strVal) ||
+          ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת", "א'", "ב'", "ג'", "ד'", "ה'", "ו'", "ש'"].includes(strVal));
+
+      if (!isFormulaCell && strVal !== "" && !isZeroPlaceholder && !isPureCalendarCell) {
         hasUserData = true;
       }
     }
@@ -5372,9 +6278,9 @@ export async function findSafeEmptyRowRange(
 /**
  * 5. writeRows(fileId, rows) – rows are objects keyed by the EXISTING header names.
  * - Table -> POST /workbook/tables/{id}/rows/add.
- * - Plain range -> PATCH exactly the next empty row(s). Never overwrite existing data,
- *   formulas, headers, totals or formatting. If a column contains a formula in previous rows,
- *   do not write a value into it.
+ * - Plain range -> Compacts and styles the worksheet in the clean "טיקטים" / "פרויקטים" table style,
+ *   removing empty pre-filled calendar rows, repairing DD/MM/YYYY dates, sorting chronologically,
+ *   and updating the "סה"כ" summary row.
  * - Uses resolveCellValueForHeader to guarantee ALL columns in any tab are populated.
  * - Use a workbook session (persistChanges=true), close it afterwards.
  * - Retry 409/423/429 up to 3 times with backoff, then return a clear Hebrew error.
@@ -5551,8 +6457,8 @@ export async function writeRows(
       // If two distinct columns received the identical start time string (e.g. "09:00"),
       // and the sheet has not received the calculated end time in any column,
       // the second occurrence is guaranteed to be the exit/end time column!
-      const stVal = extractStartTime(rowObj, structure);
-      const etVal = extractEndTime(rowObj, structure);
+      const stVal = formatTimeForSheet(extractStartTime(rowObj, structure));
+      const etVal = formatTimeForSheet(extractEndTime(rowObj, structure));
       if (stVal && etVal && stVal !== etVal) {
         const stColIndices: number[] = [];
         rowVals.forEach((val, idx) => {
@@ -5614,14 +6520,37 @@ export async function writeRows(
         writtenRowAddress = addRowData.address || `Table:${structure.tableName}[Row:${addRowData.index ?? 0}]`;
       }
 
-      // Enable text wrapping on the written table row so complete technician documentation is fully visible
+      // Enforce DD/MM/YYYY text format on Date/Day/Time columns and wrapText on the written table row
       if (writtenRowAddress && !writtenRowAddress.startsWith("Table:")) {
         try {
           let addr = writtenRowAddress;
           if (addr.includes("!")) addr = addr.split("!")[1];
-          const formatUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${structure.sheetId}/range(address='${encodeURIComponent(addr)}')/format`;
+          const rangeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${structure.sheetId}/range(address='${encodeURIComponent(addr)}')`;
+          const numFmtMatrix = buildRowNumberFormatMatrix(headers, rowValuesMatrix.length);
+          // For formula columns in Excel tables (where cell value is null), do not overwrite the formula
+          const nonNullPatches = rowValuesMatrix.every((r) => r.every((c) => c !== null));
+          if (nonNullPatches) {
+            await fetchGraph(
+              rangeUrl,
+              {
+                method: "PATCH",
+                headers: sessionHeaders,
+                body: JSON.stringify({ numberFormat: numFmtMatrix }),
+              },
+              env
+            ).catch(() => {});
+            await fetchGraph(
+              rangeUrl,
+              {
+                method: "PATCH",
+                headers: sessionHeaders,
+                body: JSON.stringify({ values: rowValuesMatrix, numberFormat: numFmtMatrix }),
+              },
+              env
+            ).catch(() => {});
+          }
           await fetchGraph(
-            formatUrl,
+            `${rangeUrl}/format`,
             {
               method: "PATCH",
               headers: sessionHeaders,
@@ -5630,95 +6559,138 @@ export async function writeRows(
             env
           );
         } catch (fmtErr) {
-          console.warn("[writeRows] table wrapText notice:", fmtErr);
+          console.warn("[writeRows] table wrapText/numberFormat notice:", fmtErr);
         }
       }
     }
-    // CASE B: Plain Range
+    // CASE B: Plain Range (e.g. "ביקור באתר", "טיקטים", "פרויקטים")
     else {
-      const sheetId = structure.sheetId;
-
-      // Calculate dynamic write range address covering all columns of rowValuesMatrix
-      const numCols = rowValuesMatrix[0]?.length || Math.max(headers.length, 1);
-      const numRows = rowValuesMatrix.length;
+      const sheetId = structure.sheetId!;
       const startColLetter = structure.startColLetter || "A";
-      const startColIdx = columnLetterToIndex(startColLetter);
-      const endColLetter = indexToColumnLetter(startColIdx + numCols - 1);
-      const initialRowNumber = structure.nextEmptyRowNumber || (structure.totalDataRows + 2);
+      const dateColIdx = headers.findIndex((h) => isDateHeader(normalizeCustomerString(String(h || "")).toLowerCase()));
 
-      // Rule: "אם יש משהו בשורה אל תדרוס את השורה"
-      // Verify that candidate row(s) have no user data before writing, while recognizing pre-filled template formula rows!
-      const safeRowResult = await findSafeEmptyRowRange(
-        driveId,
-        fileId,
-        sheetId,
-        initialRowNumber,
-        numRows,
-        startColLetter,
-        endColLetter,
-        Boolean(structure.hasTotalsRow),
-        structure.totalsRowAddress,
-        sessionHeaders,
-        env,
-        headers.length
-      );
+      let handledByTableCompactor = false;
+      if (dateColIdx !== -1) {
+        try {
+          const usedRangeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/usedRange(valuesOnly=false)`;
+          const usedRangeRes = await fetchGraph(usedRangeUrl, { method: "GET", headers: sessionHeaders }, env);
+          if (usedRangeRes.ok) {
+            const usedRangeData: any = await usedRangeRes.json();
+            const rawAddress: string = usedRangeData.address || "Sheet1!A1:Z50";
+            const rangePart = rawAddress.includes("!") ? rawAddress.split("!")[1] : rawAddress;
+            const addrMatch = rangePart.match(/^([A-Z]+)(\d+)/i);
+            const usedStartRowIndex = addrMatch ? parseInt(addrMatch[2], 10) - 1 : 0;
+            const usedValues: any[][] = usedRangeData.values || [];
+            const usedFormulas: any[][] = usedRangeData.formulas || [];
 
-      const targetAddress = safeRowResult.targetAddress;
-      skippedOccupiedRows = safeRowResult.skippedOccupiedRows;
+            // Locate headerRowOffset inside usedValues
+            let headerRowOffset = 0;
+            const firstHeaderNorm = normalizeCustomerString(String(headers[0] || "")).toLowerCase();
+            for (let r = 0; r < Math.min(usedValues.length, 35); r++) {
+              const rCells = usedValues[r] || [];
+              if (
+                rCells.some(
+                  (c: any) => normalizeCustomerString(String(c || "")).toLowerCase() === firstHeaderNorm
+                )
+              ) {
+                headerRowOffset = r;
+                break;
+              }
+            }
 
-      if (skippedOccupiedRows > 0) {
-        console.log(
-          `[writeRows] נמנעה דריסה של ${skippedOccupiedRows} שורות קיימות! הנתונים הוזנו בבטחה לשורה ${safeRowResult.targetRowNumber} (${targetAddress}).`
-        );
-      }
+            const compactedResult = await compactAndStylePlainSheet({
+              driveId,
+              fileId,
+              sheetId,
+              sheetName,
+              headers,
+              startColLetter,
+              startRowIndex: usedStartRowIndex,
+              headerRowOffset,
+              values: usedValues,
+              formulas: usedFormulas,
+              additionalRowsToAppend: rowValuesMatrix,
+              sessionHeaders,
+              env,
+            });
 
-      // Preserve existing Excel formulas in the target row!
-      // When a template row already has formulas in columns like "סה"כ שעות בפועל" or "שעות לחיוב לקוח",
-      // keep the exact formula string (starting with "=") in the payload so Excel calculates it automatically from Start & End Time!
-      const finalWriteMatrix = rowValuesMatrix.map((rowVals, rIdx) => {
-        const existingFormulas = safeRowResult.existingFormulasMatrix?.[rIdx] || [];
-        return rowVals.map((cellVal, cIdx) => {
-          const existingFormula = existingFormulas[cIdx];
-          if (typeof existingFormula === "string" && existingFormula.startsWith("=")) {
-            return existingFormula;
+            writtenRowAddress = compactedResult.writtenRowAddress;
+            handledByTableCompactor = true;
           }
-          return cellVal;
-        });
-      });
-
-      // Write values (preserving formulas where they exist) to validated target address via PATCH
-      const writeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${encodeURIComponent(targetAddress)}')`;
-      const writeRes = await fetchGraph(
-        writeUrl,
-        {
-          method: "PATCH",
-          headers: sessionHeaders,
-          body: JSON.stringify({ values: finalWriteMatrix }),
-        },
-        env
-      );
-
-      if (!writeRes.ok) {
-        const err = await writeRes.text().catch(() => "");
-        throw new Error(`שגיאה בכתיבת שורות לגיליון Excel (${writeRes.status}): ${err}`);
+        } catch (compactWriteErr) {
+          console.warn("[writeRows] compactAndStylePlainSheet fallback notice:", compactWriteErr);
+        }
       }
 
-      writtenRowAddress = targetAddress;
+      if (!handledByTableCompactor) {
+        // Fallback: Direct row range write with explicit numberFormat and table styling
+        const numCols = rowValuesMatrix[0]?.length || Math.max(headers.length, 1);
+        const numRows = rowValuesMatrix.length;
+        const startColIdx = columnLetterToIndex(startColLetter);
+        const endColLetter = indexToColumnLetter(startColIdx + numCols - 1);
+        const initialRowNumber = structure.nextEmptyRowNumber || (structure.totalDataRows + 2);
 
-      // Enable text wrapping on the written range so complete technician documentation is fully visible
-      try {
-        const formatUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${encodeURIComponent(targetAddress)}')/format`;
+        const safeRowResult = await findSafeEmptyRowRange(
+          driveId,
+          fileId,
+          sheetId,
+          initialRowNumber,
+          numRows,
+          startColLetter,
+          endColLetter,
+          Boolean(structure.hasTotalsRow),
+          structure.totalsRowAddress,
+          sessionHeaders,
+          env,
+          headers.length,
+          headers
+        );
+
+        const targetAddress = safeRowResult.targetAddress;
+        skippedOccupiedRows = safeRowResult.skippedOccupiedRows;
+
+        const numFmtMatrix = buildRowNumberFormatMatrix(headers, numRows);
+        const writeUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${encodeURIComponent(targetAddress)}')`;
+
         await fetchGraph(
-          formatUrl,
+          writeUrl,
           {
             method: "PATCH",
             headers: sessionHeaders,
-            body: JSON.stringify({ wrapText: true }),
+            body: JSON.stringify({ numberFormat: numFmtMatrix }),
+          },
+          env
+        ).catch(() => {});
+
+        const writeRes = await fetchGraph(
+          writeUrl,
+          {
+            method: "PATCH",
+            headers: sessionHeaders,
+            body: JSON.stringify({ values: rowValuesMatrix, numberFormat: numFmtMatrix }),
           },
           env
         );
-      } catch (fmtErr) {
-        console.warn("[writeRows] range wrapText notice:", fmtErr);
+
+        if (!writeRes.ok) {
+          const err = await writeRes.text().catch(() => "");
+          throw new Error(`שגיאה בכתיבת שורות לגיליון Excel (${writeRes.status}): ${err}`);
+        }
+
+        writtenRowAddress = targetAddress;
+
+        await applyTableStyleToRange({
+          driveId,
+          fileId,
+          sheetId,
+          startColLetter,
+          endColLetter,
+          firstDataRowNum: safeRowResult.targetRowNumber,
+          lastDataRowNum: safeRowResult.targetRowNumber + numRows - 1,
+          headers,
+          sessionHeaders,
+          env,
+        });
       }
     }
 
@@ -6505,8 +7477,8 @@ export async function updateWrittenExcelRow(
         resolveCellValueForHeader(headerName, colIdx, rowObj, structure, user)
       );
 
-      const stVal = extractStartTime(rowObj, structure);
-      const etVal = extractEndTime(rowObj, structure);
+      const stVal = formatTimeForSheet(extractStartTime(rowObj, structure));
+      const etVal = formatTimeForSheet(extractEndTime(rowObj, structure));
       if (stVal && etVal && stVal !== etVal) {
         const stColIndices: number[] = [];
         resolvedUpdatedRow.forEach((val, idx) => {
@@ -6520,6 +7492,7 @@ export async function updateWrittenExcelRow(
       }
 
       const updatedRowValues = [resolvedUpdatedRow];
+      const numFmtMatrix = buildRowNumberFormatMatrix(headers, 1);
 
       const rowMatch = targetAddress.match(/(\d+)/);
       const rowNum = rowMatch ? parseInt(rowMatch[1], 10) : Number(params.targetRow) || 0;
@@ -6530,12 +7503,21 @@ export async function updateWrittenExcelRow(
         const endColLetter = indexToColumnLetter(startColIdx + Math.max(headers.length, 1) - 1);
         const rangeAddr = `${startColLetter}${rowNum}:${endColLetter}${rowNum}`;
         const patchUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}/range(address='${encodeURIComponent(rangeAddr)}')`;
+        await fetchGraph(
+          patchUrl,
+          {
+            method: "PATCH",
+            headers: sessionHeaders,
+            body: JSON.stringify({ numberFormat: numFmtMatrix }),
+          },
+          activeEnv
+        ).catch(() => {});
         const patchRes = await fetchGraph(
           patchUrl,
           {
             method: "PATCH",
             headers: sessionHeaders,
-            body: JSON.stringify({ values: updatedRowValues }),
+            body: JSON.stringify({ values: updatedRowValues, numberFormat: numFmtMatrix }),
           },
           activeEnv
         );

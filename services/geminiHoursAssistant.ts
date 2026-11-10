@@ -219,11 +219,12 @@ export function buildEnrichedRowPayload(params: {
     "תאריך עבודה": date,
     "תאריך ביצוע": date,
 
-    יום: hebrewDayShort,
-    "יום בשבוע": hebrewDayShort,
-    "יום עבודה": hebrewDayShort,
+    יום: hebrewDayFull,
+    "יום בשבוע": hebrewDayFull,
+    "יום עבודה": hebrewDayFull,
     "יום מלא": hebrewDayFull,
-    day: hebrewDayShort,
+    "יום קצר": hebrewDayShort,
+    day: hebrewDayFull,
 
     עובד: userName,
     "שם עובד": userName,
