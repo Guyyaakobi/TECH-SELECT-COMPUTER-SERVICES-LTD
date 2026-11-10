@@ -525,6 +525,7 @@ import {
   doesEmployeeMatchQuery,
   resolveUserAccessScope,
   canUserViewEmployee,
+  clearRecentListsWritesCache,
 } from "./sharepointLists";
 import {
   expandBilingualCustomerQueries,
@@ -4652,6 +4653,11 @@ export async function applyTableStyleToRange(params: {
     env,
   } = params;
 
+  // Guard Cloudflare Worker subrequest budget so cosmetic formatting never starves critical operations
+  if (getWorkerSubrequestCount() >= 38) {
+    return;
+  }
+
   const startColIdx = columnLetterToIndex(startColLetter);
   const baseWorksheetUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}/workbook/worksheets/${sheetId}`;
 
@@ -4659,6 +4665,7 @@ export async function applyTableStyleToRange(params: {
     const dataRangeAddr = `${startColLetter}${firstDataRowNum}:${endColLetter}${lastDataRowNum}`;
     const dataFormatUrl = `${baseWorksheetUrl}/range(address='${encodeURIComponent(dataRangeAddr)}')/format`;
 
+    // Execute sequentially on the same workbook session (with maxRetries=1) to prevent 423 WorkbookBusy retry storms
     await fetchGraph(
       dataFormatUrl,
       {
@@ -4670,55 +4677,20 @@ export async function applyTableStyleToRange(params: {
           horizontalAlignment: "Center",
         }),
       },
-      env
+      env,
+      1
     ).catch(() => {});
 
-    await Promise.all([
-      fetchGraph(
-        `${dataFormatUrl}/fill`,
-        {
-          method: "PATCH",
-          headers: sessionHeaders,
-          body: JSON.stringify({ color: "#FFFFFF" }),
-        },
-        env
-      ).catch(() => {}),
-      fetchGraph(
-        `${dataFormatUrl}/font`,
-        {
-          method: "PATCH",
-          headers: sessionHeaders,
-          body: JSON.stringify({ name: "Arial", size: 10, bold: false, color: "#000000" }),
-        },
-        env
-      ).catch(() => {}),
-    ]);
-
-    const borderSides = [
-      "EdgeTop",
-      "EdgeBottom",
-      "EdgeLeft",
-      "EdgeRight",
-      "InsideHorizontal",
-      "InsideVertical",
-    ];
-    await Promise.all(
-      borderSides.map((side) =>
-        fetchGraph(
-          `${dataFormatUrl}/borders/${side}`,
-          {
-            method: "PATCH",
-            headers: sessionHeaders,
-            body: JSON.stringify({
-              style: "Continuous",
-              color: "#D9D9D9",
-              weight: "Thin",
-            }),
-          },
-          env
-        ).catch(() => {})
-      )
-    );
+    await fetchGraph(
+      `${dataFormatUrl}/font`,
+      {
+        method: "PATCH",
+        headers: sessionHeaders,
+        body: JSON.stringify({ name: "Arial", size: 10, bold: false, color: "#000000" }),
+      },
+      env,
+      1
+    ).catch(() => {});
 
     // Right-align description/notes columns so Hebrew sentences read naturally from right to left
     for (let c = 0; c < headers.length; c++) {
@@ -4737,49 +4709,43 @@ export async function applyTableStyleToRange(params: {
               verticalAlignment: "Center",
             }),
           },
-          env
+          env,
+          1
         ).catch(() => {});
+        break;
       }
     }
   }
 
   // Style the "סה"כ" Totals Row
-  if (totalsRowNum && totalsRowNum > lastDataRowNum) {
+  if (totalsRowNum && totalsRowNum > lastDataRowNum && getWorkerSubrequestCount() < 40) {
     const totalsRangeAddr = `${startColLetter}${totalsRowNum}:${endColLetter}${totalsRowNum}`;
     const totalsFormatUrl = `${baseWorksheetUrl}/range(address='${encodeURIComponent(totalsRangeAddr)}')/format`;
 
-    await Promise.all([
-      fetchGraph(
-        totalsFormatUrl,
-        {
-          method: "PATCH",
-          headers: sessionHeaders,
-          body: JSON.stringify({
-            verticalAlignment: "Center",
-            horizontalAlignment: "Center",
-          }),
-        },
-        env
-      ).catch(() => {}),
-      fetchGraph(
-        `${totalsFormatUrl}/font`,
-        {
-          method: "PATCH",
-          headers: sessionHeaders,
-          body: JSON.stringify({ name: "Arial", size: 10, bold: true, color: "#000000" }),
-        },
-        env
-      ).catch(() => {}),
-      fetchGraph(
-        `${totalsFormatUrl}/fill`,
-        {
-          method: "PATCH",
-          headers: sessionHeaders,
-          body: JSON.stringify({ color: "#F8FAFC" }),
-        },
-        env
-      ).catch(() => {}),
-    ]);
+    await fetchGraph(
+      totalsFormatUrl,
+      {
+        method: "PATCH",
+        headers: sessionHeaders,
+        body: JSON.stringify({
+          verticalAlignment: "Center",
+          horizontalAlignment: "Center",
+        }),
+      },
+      env,
+      1
+    ).catch(() => {});
+
+    await fetchGraph(
+      `${totalsFormatUrl}/font`,
+      {
+        method: "PATCH",
+        headers: sessionHeaders,
+        body: JSON.stringify({ name: "Arial", size: 10, bold: true, color: "#000000" }),
+      },
+      env,
+      1
+    ).catch(() => {});
 
     // Highlight the hours cells in the totals row with the signature #DCE6F1 steel-blue summary fill
     const hoursColIndices: number[] = [];
@@ -4788,7 +4754,7 @@ export async function applyTableStyleToRange(params: {
       if (isHoursHeader(norm)) hoursColIndices.push(idx);
     });
 
-    if (hoursColIndices.length > 0) {
+    if (hoursColIndices.length > 0 && getWorkerSubrequestCount() < 42) {
       const firstH = hoursColIndices[0];
       const lastH = hoursColIndices[hoursColIndices.length - 1];
       const sumStartLet = indexToColumnLetter(startColIdx + firstH);
@@ -4796,35 +4762,16 @@ export async function applyTableStyleToRange(params: {
       const sumHighlightAddr = `${sumStartLet}${totalsRowNum}:${sumEndLet}${totalsRowNum}`;
       const sumHighlightUrl = `${baseWorksheetUrl}/range(address='${encodeURIComponent(sumHighlightAddr)}')/format`;
 
-      await Promise.all([
-        fetchGraph(
-          `${sumHighlightUrl}/fill`,
-          {
-            method: "PATCH",
-            headers: sessionHeaders,
-            body: JSON.stringify({ color: "#DCE6F1" }),
-          },
-          env
-        ).catch(() => {}),
-        fetchGraph(
-          `${sumHighlightUrl}/borders/EdgeTop`,
-          {
-            method: "PATCH",
-            headers: sessionHeaders,
-            body: JSON.stringify({ style: "Continuous", color: "#94A3B8", weight: "Thin" }),
-          },
-          env
-        ).catch(() => {}),
-        fetchGraph(
-          `${sumHighlightUrl}/borders/EdgeBottom`,
-          {
-            method: "PATCH",
-            headers: sessionHeaders,
-            body: JSON.stringify({ style: "Double", color: "#64748B", weight: "Thin" }),
-          },
-          env
-        ).catch(() => {}),
-      ]);
+      await fetchGraph(
+        `${sumHighlightUrl}/fill`,
+        {
+          method: "PATCH",
+          headers: sessionHeaders,
+          body: JSON.stringify({ color: "#DCE6F1" }),
+        },
+        env,
+        1
+      ).catch(() => {});
     }
   }
 }
@@ -4853,6 +4800,7 @@ export async function compactAndStylePlainSheet(params: {
   overrideCompactedRows?: any[][];
   sessionHeaders: Record<string, string>;
   env?: any;
+  deferStyling?: boolean;
 }): Promise<{
   compactedRows: any[][];
   normalizedAppendedRows: any[][];
@@ -4860,6 +4808,7 @@ export async function compactAndStylePlainSheet(params: {
   firstAddedRowNumber: number;
   lastAddedRowNumber: number;
   totalsRowNumber: number;
+  applyPendingStyles?: () => Promise<void>;
 }> {
   const {
     driveId,
@@ -4876,6 +4825,7 @@ export async function compactAndStylePlainSheet(params: {
     overrideCompactedRows,
     sessionHeaders,
     env,
+    deferStyling = false,
   } = params;
 
   const numCols = headers.length;
@@ -5064,6 +5014,8 @@ export async function compactAndStylePlainSheet(params: {
     console.warn("[compactAndStylePlainSheet] clear notice:", err);
   });
 
+  let applyPendingStyles: (() => Promise<void>) | undefined;
+
   if (fullWriteMatrix.length > 0) {
     const writeRangeAddr = `${startColLetter}${firstDataRowNum}:${endColLetter}${lastWriteRowNum}`;
     const numberFormatMatrix = buildRowNumberFormatMatrix(headers, fullWriteMatrix.length);
@@ -5102,19 +5054,27 @@ export async function compactAndStylePlainSheet(params: {
     }
 
     // 4. Apply clean "טיקטים" / "פרויקטים" table borders, fills, font, and alignment
-    await applyTableStyleToRange({
-      driveId,
-      fileId,
-      sheetId,
-      startColLetter,
-      endColLetter,
-      firstDataRowNum,
-      lastDataRowNum,
-      totalsRowNum: hoursColIndices.length > 0 ? totalsRowNum : undefined,
-      headers,
-      sessionHeaders,
-      env,
-    });
+    const styleRunner = async () => {
+      await applyTableStyleToRange({
+        driveId,
+        fileId,
+        sheetId,
+        startColLetter,
+        endColLetter,
+        firstDataRowNum,
+        lastDataRowNum,
+        totalsRowNum: hoursColIndices.length > 0 ? totalsRowNum : undefined,
+        headers,
+        sessionHeaders,
+        env,
+      });
+    };
+
+    if (deferStyling) {
+      applyPendingStyles = styleRunner;
+    } else {
+      await styleRunner();
+    }
   }
 
   return {
@@ -5124,6 +5084,7 @@ export async function compactAndStylePlainSheet(params: {
     firstAddedRowNumber,
     lastAddedRowNumber,
     totalsRowNumber: totalsRowNum,
+    applyPendingStyles,
   };
 }
 
@@ -6314,13 +6275,13 @@ export async function writeRows(
 
   const nowCheck = Date.now();
   for (const [k, v] of recentExcelWritesCache.entries()) {
-    if (nowCheck - v.timestamp > 60_000) {
+    if (nowCheck - v.timestamp > 10_000) {
       recentExcelWritesCache.delete(k);
     }
   }
   const cachedWrite = recentExcelWritesCache.get(writeDeduplicationKey);
-  if (cachedWrite && nowCheck - cachedWrite.timestamp < 60_000) {
-    console.log(`[writeRows] Prevented duplicate Excel + Lists write within 60s for key: ${writeDeduplicationKey}`);
+  if (cachedWrite && nowCheck - cachedWrite.timestamp < 10_000) {
+    console.log(`[writeRows] Prevented duplicate Excel + Lists write within 10s for key: ${writeDeduplicationKey}`);
     return cachedWrite.result;
   }
 
@@ -6559,6 +6520,7 @@ export async function writeRows(
       const sheetId = structure.sheetId!;
       const startColLetter = structure.startColLetter || "A";
 
+      let pendingTableStyleFn: (() => Promise<void>) | undefined;
       let handledByTableCompactor = false;
       if (headers.length > 0) {
         try {
@@ -6602,12 +6564,14 @@ export async function writeRows(
               additionalRowsToAppend: rowValuesMatrix,
               sessionHeaders,
               env,
+              deferStyling: true,
             });
 
             writtenRowAddress = compactedResult.writtenRowAddress;
             if (compactedResult.normalizedAppendedRows.length > 0) {
               effectiveWrittenValues = compactedResult.normalizedAppendedRows;
             }
+            pendingTableStyleFn = compactedResult.applyPendingStyles;
             handledByTableCompactor = true;
           }
         } catch (compactWriteErr) {
@@ -6672,28 +6636,34 @@ export async function writeRows(
 
         writtenRowAddress = targetAddress;
 
-        await applyTableStyleToRange({
-          driveId,
-          fileId,
-          sheetId,
-          startColLetter,
-          endColLetter,
-          firstDataRowNum: safeRowResult.targetRowNumber,
-          lastDataRowNum: safeRowResult.targetRowNumber + numRows - 1,
-          headers,
-          sessionHeaders,
-          env,
-        });
+        pendingTableStyleFn = async () => {
+          await applyTableStyleToRange({
+            driveId,
+            fileId,
+            sheetId,
+            startColLetter,
+            endColLetter,
+            firstDataRowNum: safeRowResult.targetRowNumber,
+            lastDataRowNum: safeRowResult.targetRowNumber + numRows - 1,
+            headers,
+            sessionHeaders,
+            env,
+          });
+        };
       }
+      // Attach pendingTableStyleFn onto structure so we can run it right after Microsoft Lists sync
+      (structure as any)._pendingTableStyleFn = pendingTableStyleFn;
     }
 
-    // Get item webUrl
-    const itemUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}?$select=webUrl`;
-    const itemRes = await fetchGraph(itemUrl, { method: "GET" }, env);
+    // Reuse resolvedWebUrl from initial item verification to avoid an extra Graph GET subrequest
     let webUrl = resolvedWebUrl;
-    if (itemRes.ok) {
-      const itemData: any = await itemRes.json();
-      webUrl = itemData.webUrl || resolvedWebUrl || "";
+    if (!webUrl) {
+      const itemUrl = `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${fileId}?$select=webUrl`;
+      const itemRes = await fetchGraph(itemUrl, { method: "GET" }, env);
+      if (itemRes.ok) {
+        const itemData: any = await itemRes.json();
+        webUrl = itemData.webUrl || "";
+      }
     }
 
     const writeResultObj: WriteRowsResult = {
@@ -6712,7 +6682,7 @@ export async function writeRows(
     };
 
     // Dual-write into Microsoft SharePoint Lists (https://techselectltd.sharepoint.com/sites/Customers/Lists/List)
-    // Synchronize every row individually so that each technician who worked on the task gets a distinct item in Lists!
+    // Run BEFORE optional cosmetic Excel cell borders/fills so Microsoft Lists ALWAYS has full subrequest priority!
     const createdListItemIds: string[] = [];
     const createdListItemWebUrls: string[] = [];
     let lastListsError: string | undefined;
@@ -6843,6 +6813,16 @@ export async function writeRows(
       writeResultObj.listsSyncResult = { success: false, error: lastListsError };
     }
 
+    // Now that both Excel data values AND Microsoft Lists items are safely persisted,
+    // apply any deferred Excel cosmetic styling if subrequest budget remains.
+    if (typeof (structure as any)?._pendingTableStyleFn === "function") {
+      try {
+        await (structure as any)._pendingTableStyleFn();
+      } catch (styleErr) {
+        console.warn("[writeRows] Deferred Excel styling notice:", styleErr);
+      }
+    }
+
     // Record into server-side logged hours audit store for manager / daily reports
     try {
       recordWrittenHoursEntries(rows, {
@@ -6861,10 +6841,13 @@ export async function writeRows(
       console.warn("[writeRows] Failed to record in audit store:", auditErr);
     }
 
-    recentExcelWritesCache.set(writeDeduplicationKey, {
-      timestamp: Date.now(),
-      result: writeResultObj,
-    });
+    // Only cache in recentExcelWritesCache if both Excel AND Microsoft Lists succeeded
+    if (createdListItemIds.length > 0) {
+      recentExcelWritesCache.set(writeDeduplicationKey, {
+        timestamp: Date.now(),
+        result: writeResultObj,
+      });
+    }
 
     return writeResultObj;
   } finally {
@@ -7019,8 +7002,9 @@ export async function undoRow(
     throw new Error("לא סופקו מזהה קובץ או כתובת שורה לביטול");
   }
 
-  // Clear deduplication cache so re-logging an undone entry always writes to Excel
+  // Clear deduplication caches so re-logging an undone entry always writes to Excel and Microsoft Lists
   recentExcelWritesCache.clear();
+  clearRecentListsWritesCache();
 
   const now = Date.now();
   const TEN_MINUTES_MS = 10 * 60 * 1000;

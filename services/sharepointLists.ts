@@ -1380,81 +1380,82 @@ export async function resolveSharePointList(env?: any): Promise<SharePointListIn
       delete columnMap["description"];
     }
 
-    // 3. Dynamic schema discovery: Inspect recent items (e.g. manually created entries)
-    // to dynamically resolve exact internal field names for customer and workType
-    try {
-      const recentUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=5&$orderby=lastModifiedDateTime desc`;
-      const recentRes = await fetchGraph(recentUrl, { method: "GET" }, env);
-      if (recentRes.ok) {
-        const recentData: any = await recentRes.json();
-        for (const item of (recentData.value || [])) {
-          const fieldsObj = item.fields || {};
-          for (const [k, v] of Object.entries(fieldsObj)) {
-            if (
-              k === "Title" ||
-              k === "id" ||
-              k === "ID" ||
-              k.startsWith("@") ||
-              (k.startsWith("_") && !k.startsWith("_x")) ||
-              k.startsWith("LinkTitle") ||
-              k.startsWith("DocIcon")
-            ) {
-              continue;
-            }
-
-            // If workType is still unmapped and value matches one of the 3 work types
-            if (!columnMap["workType"] && typeof v === "string") {
-              const vNorm = normalizeColString(v);
+    // 3. Dynamic schema discovery: Only inspect recent items if any key column is still unmapped
+    if (!columnMap["workType"] || !columnMap["customer"] || !columnMap["handler"]) {
+      try {
+        const recentUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items?$expand=fields&$top=5&$orderby=lastModifiedDateTime desc`;
+        const recentRes = await fetchGraph(recentUrl, { method: "GET" }, env);
+        if (recentRes.ok) {
+          const recentData: any = await recentRes.json();
+          for (const item of (recentData.value || [])) {
+            const fieldsObj = item.fields || {};
+            for (const [k, v] of Object.entries(fieldsObj)) {
               if (
-                vNorm === "טיקטים" ||
-                vNorm === "פרויקטים" ||
-                vNorm === "ביקור" ||
-                vNorm === "טיקט" ||
-                vNorm === "פרויקט" ||
-                vNorm === "ביקורבאתר" ||
-                vNorm === "קריאותשירות" ||
-                vNorm === "תמיכהמרחוק"
+                k === "Title" ||
+                k === "id" ||
+                k === "ID" ||
+                k.startsWith("@") ||
+                (k.startsWith("_") && !k.startsWith("_x")) ||
+                k.startsWith("LinkTitle") ||
+                k.startsWith("DocIcon")
               ) {
-                console.log(`[resolveSharePointList] Discovered workType internal field "${k}" from existing item value "${v}"`);
-                columnMap["workType"] = k;
+                continue;
               }
-            }
 
-            // If customer is still unmapped and column definition indicates customer
-            if (!columnMap["customer"] && k !== columnMap["workType"] && k !== columnMap["date"] && k !== columnMap["duration"] && k !== columnMap["description"]) {
-              const colDef = columns.find((col) => col.name === k);
-              if (colDef) {
-                const dNorm = normalizeColString(colDef.displayName || "");
-                if (dNorm.includes("לקוח") || dNorm.includes("חברה") || dNorm.includes("ארגון") || dNorm.includes("customer") || dNorm.includes("client")) {
-                  console.log(`[resolveSharePointList] Discovered customer internal field "${k}" from column definition (${colDef.displayName})`);
-                  columnMap["customer"] = k;
+              // If workType is still unmapped and value matches one of the 3 work types
+              if (!columnMap["workType"] && typeof v === "string") {
+                const vNorm = normalizeColString(v);
+                if (
+                  vNorm === "טיקטים" ||
+                  vNorm === "פרויקטים" ||
+                  vNorm === "ביקור" ||
+                  vNorm === "טיקט" ||
+                  vNorm === "פרויקט" ||
+                  vNorm === "ביקורבאתר" ||
+                  vNorm === "קריאותשירות" ||
+                  vNorm === "תמיכהמרחוק"
+                ) {
+                  console.log(`[resolveSharePointList] Discovered workType internal field "${k}" from existing item value "${v}"`);
+                  columnMap["workType"] = k;
                 }
               }
-            }
 
-            // If handler is still unmapped and field indicates employee/handler/user
-            if (!columnMap["handler"] && k !== columnMap["workType"] && k !== columnMap["customer"] && k !== columnMap["date"] && k !== columnMap["duration"] && k !== columnMap["description"]) {
-              const baseK = k.replace(/LookupId$/, "");
-              const decBase = decodeSharePointColName(baseK);
-              const decNorm = normalizeColString(decBase);
-              const colDef = columns.find((col) => col.name === baseK || col.name === k);
-              const dNorm = normalizeColString(colDef?.displayName || "");
-              if (
-                decNorm.includes("משתמש") || decNorm.includes("עובד") || decNorm.includes("מטפל") || decNorm.includes("טכנאי") ||
-                dNorm.includes("משתמש") || dNorm.includes("עובד") || dNorm.includes("מטפל") || dNorm.includes("טכנאי") ||
-                dNorm.includes("employee") || dNorm.includes("handler") || dNorm.includes("user") ||
-                /user|employee|handler/i.test(baseK) ||
-                baseK === "_x05de__x05e9__x05ea__x05de__x05e9_"
-              ) {
-                console.log(`[resolveSharePointList] Discovered handler internal field "${baseK}" from item inspection (decoded: ${decBase}, display: ${colDef?.displayName})`);
-                columnMap["handler"] = baseK;
+              // If customer is still unmapped and column definition indicates customer
+              if (!columnMap["customer"] && k !== columnMap["workType"] && k !== columnMap["date"] && k !== columnMap["duration"] && k !== columnMap["description"]) {
+                const colDef = columns.find((col) => col.name === k);
+                if (colDef) {
+                  const dNorm = normalizeColString(colDef.displayName || "");
+                  if (dNorm.includes("לקוח") || dNorm.includes("חברה") || dNorm.includes("ארגון") || dNorm.includes("customer") || dNorm.includes("client")) {
+                    console.log(`[resolveSharePointList] Discovered customer internal field "${k}" from column definition (${colDef.displayName})`);
+                    columnMap["customer"] = k;
+                  }
+                }
+              }
+
+              // If handler is still unmapped and field indicates employee/handler/user
+              if (!columnMap["handler"] && k !== columnMap["workType"] && k !== columnMap["customer"] && k !== columnMap["date"] && k !== columnMap["duration"] && k !== columnMap["description"]) {
+                const baseK = k.replace(/LookupId$/, "");
+                const decBase = decodeSharePointColName(baseK);
+                const decNorm = normalizeColString(decBase);
+                const colDef = columns.find((col) => col.name === baseK || col.name === k);
+                const dNorm = normalizeColString(colDef?.displayName || "");
+                if (
+                  decNorm.includes("משתמש") || decNorm.includes("עובד") || decNorm.includes("מטפל") || decNorm.includes("טכנאי") ||
+                  dNorm.includes("משתמש") || dNorm.includes("עובד") || dNorm.includes("מטפל") || dNorm.includes("טכנאי") ||
+                  dNorm.includes("employee") || dNorm.includes("handler") || dNorm.includes("user") ||
+                  /user|employee|handler/i.test(baseK) ||
+                  baseK === "_x05de__x05e9__x05ea__x05de__x05e9_"
+                ) {
+                  console.log(`[resolveSharePointList] Discovered handler internal field "${baseK}" from item inspection (decoded: ${decBase}, display: ${colDef?.displayName})`);
+                  columnMap["handler"] = baseK;
+                }
               }
             }
           }
         }
+      } catch (recentErr) {
+        console.warn("[resolveSharePointList] Notice: inspection of recent items:", recentErr);
       }
-    } catch (recentErr) {
-      console.warn("[resolveSharePointList] Notice: inspection of recent items:", recentErr);
     }
   }
 
@@ -1481,6 +1482,10 @@ export async function resolveSharePointList(env?: any): Promise<SharePointListIn
  * Format and write an entry into Microsoft Lists according to the exact 9 columns
  */
 const recentListsWritesCache = new Map<string, { timestamp: number; result: ListItemWriteResult }>();
+
+export function clearRecentListsWritesCache(): void {
+  recentListsWritesCache.clear();
+}
 
 function getIsraelNowHoursMinutes(): { hours: number; minutes: number } {
   try {
@@ -1633,7 +1638,6 @@ export async function writeEntryToSharePointList(
     };
 
     // 4. משתמש / מטפל / עובד - According to creator SSO email:
-    // "שאתה מקים ב Lists שורה, תחת עמודת משתמש, תשלח את כתובת המייל של מקים התיעוד. את המייל אתה יכול לדעת לפי ה SSO של המקים"
     const handlerEmail = (
       entryData.employeeEmail ||
       (entryData as any).userEmail ||
@@ -1677,12 +1681,17 @@ export async function writeEntryToSharePointList(
       startTimeStr = subtractHoursFromTime(endTimeStr, durationHours);
     }
 
-    // 7. תאריך (Date)
-    const rawDate = entryData.date || getIsraelDateIso(0);
-    let isoDate = rawDate;
+    // 7. תאריך (Date) - Always normalize both YYYY-MM-DD and DD/MM/YYYY into valid ISO YYYY-MM-DD
+    const rawDate = (entryData.date || getIsraelDateIso(0)).trim();
+    let isoDate = getIsraelDateIso(0);
     const matchIso = rawDate.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
     if (matchIso) {
       isoDate = `${matchIso[1]}-${matchIso[2].padStart(2, "0")}-${matchIso[3].padStart(2, "0")}`;
+    } else {
+      const matchDmy = rawDate.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+      if (matchDmy) {
+        isoDate = `${matchDmy[3]}-${matchDmy[2].padStart(2, "0")}-${matchDmy[1].padStart(2, "0")}`;
+      }
     }
 
     // 8. כמה זמן הושקע (Duration Number: 0.50, 1.00)
@@ -1691,7 +1700,7 @@ export async function writeEntryToSharePointList(
     // 9. מה נעשה (Description)
     const whatWasDone = desc;
 
-    // Idempotency / Anti-Duplicate Guard (60 seconds window)
+    // Idempotency / Anti-Duplicate Guard (10 seconds window to prevent accidental double-clicks)
     const dedupKey = [
       normalizeColString(handlerName || handlerEmail),
       normalizeColString(customerVal),
@@ -1702,13 +1711,13 @@ export async function writeEntryToSharePointList(
 
     const nowTs = Date.now();
     for (const [k, v] of recentListsWritesCache.entries()) {
-      if (nowTs - v.timestamp > 60_000) {
+      if (nowTs - v.timestamp > 10_000) {
         recentListsWritesCache.delete(k);
       }
     }
     const recentCached = recentListsWritesCache.get(dedupKey);
-    if (recentCached && nowTs - recentCached.timestamp < 60_000) {
-      console.log(`[SharePoint Lists] Prevented duplicate write within 60s for key: ${dedupKey}`);
+    if (recentCached && nowTs - recentCached.timestamp < 10_000) {
+      console.log(`[SharePoint Lists] Prevented duplicate write within 10s for key: ${dedupKey}`);
       return recentCached.result;
     }
 
@@ -1824,7 +1833,6 @@ export async function writeEntryToSharePointList(
             formattedValue = matchedChoice;
           } else {
             // CRITICAL: NEVER overwrite user's customer with choices[0]!
-            // Retain user's actual customer name ("קיסר דיגום")
             formattedValue = rawVal;
           }
         }
@@ -1841,7 +1849,7 @@ export async function writeEntryToSharePointList(
         if (/^\d{1,2}:\d{2}$/.test(sVal)) {
           formattedValue = `${isoDate}T${sVal.padStart(5, "0")}:00Z`;
         } else if (/^\d{4}-\d{2}-\d{2}$/.test(sVal)) {
-          formattedValue = `${sVal}T00:00:00Z`;
+          formattedValue = `${sVal}T12:00:00Z`;
         }
       }
 
@@ -1883,16 +1891,6 @@ export async function writeEntryToSharePointList(
       customerVal,
       ["לקוח", "שםלקוח", "שםהלקוח", "חברה", "ארגון", "customer", "client", "account"],
       { isCustomer: true }
-    );
-
-    const siteUserId = await resolveSiteUserLookupId(
-      siteId,
-      handlerEmail,
-      handlerName,
-      env,
-      handlerOid,
-      handlerUpn,
-      listId
     );
 
     // 4. מטפל / עובד / משתמש (SSO user name & email & ID)
@@ -1946,10 +1944,8 @@ export async function writeEntryToSharePointList(
         if (matchedEmpChoice) {
           fields[hCol] = matchedEmpChoice;
         } else if (isWorkerCol) {
-          // Ensure worker column is always populated and add choice to SharePoint column if missing
           fields[hCol] = shortWorkerName;
         } else {
-          // For משתמש column, send SSO email
           fields[hCol] = handlerEmail;
         }
       } else {
@@ -1958,7 +1954,6 @@ export async function writeEntryToSharePointList(
         if (dNorm.includes("עובד") || decNorm.includes("עובד") || hColDef?.name === "_x05e2__x05d5__x05d1__x05d3_") {
           fields[hCol] = shortWorkerName;
         } else {
-          // Send the creator's SSO email address under user / משתמש column!
           fields[hCol] = handlerEmail;
         }
       }
@@ -1983,7 +1978,6 @@ export async function writeEntryToSharePointList(
       if (matched) {
         fields[explicitWorkerCol.name] = matched;
       } else {
-        // If employee is not yet in the SharePoint Choice column's choices array, add it via Graph PATCH
         if (explicitWorkerCol.id && explicitWorkerCol.choice && Array.isArray(explicitWorkerCol.choice.choices) && shortWorkerName) {
           const updatedChoices = [...explicitWorkerCol.choice.choices, shortWorkerName];
           explicitWorkerCol.choice.choices = updatedChoices;
@@ -1998,7 +1992,8 @@ export async function writeEntryToSharePointList(
                   },
                 }),
               },
-              env
+              env,
+              1
             );
           } catch (patchErr) {
             console.warn(`[SharePoint Lists] Could not append "${shortWorkerName}" to Choice column choices:`, patchErr);
@@ -2059,6 +2054,18 @@ export async function writeEntryToSharePointList(
 
       const isPrimitiveError = /primitive|SP\.FieldUser|FieldUser|type.*User/i.test(errTxt);
       const isMissingPropError = /does not exist|Property.*LookupId/i.test(errTxt);
+
+      const siteUserId = isPrimitiveError
+        ? await resolveSiteUserLookupId(
+            siteId,
+            handlerEmail,
+            handlerName,
+            env,
+            handlerOid,
+            handlerUpn,
+            listId
+          )
+        : null;
 
       // Attempt 2: Intelligent adaptation based on error response
       const adaptedFields = { ...fields };
@@ -2277,6 +2284,7 @@ export async function deleteSharePointListItem(
   }
 ): Promise<{ success: boolean; deletedId?: string; error?: string }> {
   try {
+    recentListsWritesCache.clear();
     const listInfo = await resolveSharePointList(env);
     const { siteId, listId } = listInfo;
 
