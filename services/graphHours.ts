@@ -5932,24 +5932,29 @@ export function resolveCellValueForHeader(
 
   // J. PROJECT (פרויקט)
   if (isProjectHeader(normHeader)) {
-    const explicitProj = String(
-      rowObj.projectName ||
-        rowObj["שם פרויקט"] ||
-        rowObj["שם הפרויקט"] ||
-        (rowObj["פרויקט"] && rowObj["פרויקט"] !== "פרויקט שוטף" ? rowObj["פרויקט"] : "") ||
-        rowObj.project ||
-        ""
-    ).trim();
+    const stripAuthor = (val: string) =>
+      String(val || "")
+        .trim()
+        .replace(/^\s*\(?נכתב\s+ע["״']י[^):]*\)?\s*[:\-–]?\s*/i, "")
+        .replace(/^[\u0590-\u05FF\w\s"״׳'()-]{1,30}\s+(?:כתב|כתבה|הזין|דיווח|wrote)\s*:\s*/i, "")
+        .trim();
+
+    const explicitProj = stripAuthor(
+      String(
+        rowObj.projectName ||
+          rowObj["שם פרויקט"] ||
+          rowObj["שם הפרויקט"] ||
+          (rowObj["פרויקט"] && rowObj["פרויקט"] !== "פרויקט שוטף" ? rowObj["פרויקט"] : "") ||
+          rowObj.project ||
+          ""
+      )
+    );
     if (explicitProj) return explicitProj;
 
-    const desc = rowObj["תיאור"] || rowObj["description"] || "";
-    const shortDesc = desc.length > 40 ? desc.substring(0, 40) + "..." : desc;
-    return (
-      rowObj["נושא"] ||
-      shortDesc ||
-      rowObj["לקוח"] ||
-      "פרויקט שוטף"
-    );
+    const cleanSubject = stripAuthor(String(rowObj["נושא"] || ""));
+    if (cleanSubject) return cleanSubject;
+
+    return rowObj["לקוח"] || "פרויקט שוטף";
   }
 
   // K. WORK TYPE (סוג עבודה / סוג תמיכה / סוג פעילות)

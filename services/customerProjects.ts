@@ -102,6 +102,57 @@ function isPlaceholderProjectName(val: string): boolean {
   return false;
 }
 
+/**
+ * Clean a raw cell/title into a pure project name:
+ * - Strips author prefixes like "גיא כתב:", "יוסף כתב:", "(נכתב ע\"י ...):"
+ * - Filters out legacy truncated activity descriptions (ending with "..." or full activity sentences)
+ */
+function sanitizeDiscoveredProjectName(raw: string): string {
+  let s = String(raw || "").replace(/\s+/g, " ").trim();
+  if (!s) return "";
+
+  const hadAuthorPrefix =
+    /^[\u0590-\u05FF\w\s"״׳'()-]{1,30}\s+(?:כתב|כתבה|הזין|דיווח|wrote)\s*:/i.test(s) ||
+    /^\s*\(?נכתב\s+ע["״']י/i.test(s);
+
+  // Strip author prefix if present
+  s = s
+    .replace(/^\s*\(?נכתב\s+ע["״']י[^):]*\)?\s*[:\-–]?\s*/i, "")
+    .replace(/^[\u0590-\u05FF\w\s"״׳'()-]{1,30}\s+(?:כתב|כתבה|הזין|דיווח|wrote)\s*:\s*/i, "")
+    .trim();
+
+  if (!s || isPlaceholderProjectName(s)) return "";
+
+  // Legacy fallback truncated descriptions ("גיא כתב: הגעה לביקור באתר של ניב...")
+  if (s.endsWith("...") || s.endsWith("…")) {
+    // Check if an explicit "פרויקט <name>" exists inside before rejecting
+    const embeddedProj = s.match(/(?:במסגרת\s+)?פרוי?יקט\s+([א-תA-Za-z0-9][א-תA-Za-z0-9\s\-_./]{1,35}?)(?=\s+(?:יחד|עם|עבור|של|באתר|להתקנ|להקמ|בתאריך)|\.\.\.|…|$)/i);
+    if (embeddedProj && embeddedProj[1]) {
+      const candidate = embeddedProj[1].trim();
+      return isPlaceholderProjectName(candidate) ? "" : candidate;
+    }
+    return "";
+  }
+
+  // If the cell originally had "X כתב:", it was an activity description written by older code.
+  // Only salvage an explicit "פרויקט <name>" if mentioned inside, or keep if very short clean title.
+  if (hadAuthorPrefix) {
+    const embeddedProj = s.match(/(?:במסגרת\s+)?פרוי?יקט\s+([א-תA-Za-z0-9][א-תA-Za-z0-9\s\-_./]{1,35}?)(?=\s+(?:יחד|עם|עבור|של|באתר|להתקנ|להקמ|בתאריך)|[,.!]|$)/i);
+    if (embeddedProj && embeddedProj[1]) {
+      const candidate = embeddedProj[1].trim();
+      return isPlaceholderProjectName(candidate) ? "" : candidate;
+    }
+    const looksLikeSentence =
+      s.length > 35 ||
+      s.split(/\s+/).length > 4 ||
+      /^(?:הגעה|ביקור|ביצוע|בדיקת|בדיקה|טיפול|התקנת|התקנה|העתקת|הוצאת|סיוע|תיקון|פעילות|תמיכה|מענה|שיחה|עבודה|הייתי)\b/.test(s);
+    if (looksLikeSentence) return "";
+  }
+
+  if (s.includes('סה"כ') || s.includes("סה״כ") || s.length > 65) return "";
+  return s;
+}
+
 async function resolveToolsDriveId(env?: any): Promise<string> {
   const siteUrl =
     "https://graph.microsoft.com/v1.0/sites/techselectltd.sharepoint.com:/sites/Customers";
@@ -253,9 +304,9 @@ function getRegistryProjectsForCustomer(
     if (!keyMatch) continue;
 
     for (const p of bucket.projects || []) {
-      const pName = String(p.name || "").trim();
+      const pName = sanitizeDiscoveredProjectName(String(p.name || ""));
       const pNorm = normalizeProjectString(pName);
-      if (!pName || isPlaceholderProjectName(pName) || seen.has(pNorm)) continue;
+      if (!pName || seen.has(pNorm)) continue;
       seen.add(pNorm);
       items.push({
         name: pName,
@@ -358,14 +409,12 @@ async function discoverExcelProjectsForCustomer(
       }
 
       for (const row of rowsToRead) {
-        const rawCell = String(row?.[projectColIdx] ?? "").trim();
-        if (!rawCell || isPlaceholderProjectName(rawCell)) continue;
-        // Skip total/summary rows
-        if (rawCell.includes("סה\"כ") || rawCell.includes("סה״כ") || rawCell.length > 80) continue;
-        const pNorm = normalizeProjectString(rawCell);
+        const cleanCell = sanitizeDiscoveredProjectName(String(row?.[projectColIdx] ?? ""));
+        if (!cleanCell) continue;
+        const pNorm = normalizeProjectString(cleanCell);
         if (seen.has(pNorm)) continue;
         seen.add(pNorm);
-        results.push({ name: rawCell, source: "excel" });
+        results.push({ name: cleanCell, source: "excel" });
       }
     }
 
@@ -406,11 +455,12 @@ async function discoverListsProjectsForCustomer(
         }
       }
 
-      if (!candidate || isPlaceholderProjectName(candidate)) continue;
-      const pNorm = normalizeProjectString(candidate);
+      const cleanCandidate = sanitizeDiscoveredProjectName(candidate);
+      if (!cleanCandidate) continue;
+      const pNorm = normalizeProjectString(cleanCandidate);
       if (seen.has(pNorm)) continue;
       seen.add(pNorm);
-      results.push({ name: candidate, source: "lists" });
+      results.push({ name: cleanCandidate, source: "lists" });
     }
 
     return results;

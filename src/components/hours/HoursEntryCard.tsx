@@ -46,6 +46,37 @@ function isProjectCategory(wt?: string, act?: string, tab?: string): boolean {
   );
 }
 
+function sanitizeProjectDisplayName(raw?: string): string {
+  let s = String(raw || "").replace(/\s+/g, " ").trim();
+  if (!s) return "";
+  const hadAuthorPrefix =
+    /^[\u0590-\u05FF\w\s"״׳'()-]{1,30}\s+(?:כתב|כתבה|הזין|דיווח|wrote)\s*:/i.test(s) ||
+    /^\s*\(?נכתב\s+ע["״']י/i.test(s);
+
+  s = s
+    .replace(/^\s*\(?נכתב\s+ע["״']י[^):]*\)?\s*[:\-–]?\s*/i, "")
+    .replace(/^[\u0590-\u05FF\w\s"״׳'()-]{1,30}\s+(?:כתב|כתבה|הזין|דיווח|wrote)\s*:\s*/i, "")
+    .trim();
+
+  if (!s) return "";
+  if (s.endsWith("...") || s.endsWith("…")) {
+    const emb = s.match(/(?:במסגרת\s+)?פרוי?יקט\s+([א-תA-Za-z0-9][א-תA-Za-z0-9\s\-_./]{1,35}?)(?=\s+(?:יחד|עם|עבור|של|באתר|להתקנ|להקמ|בתאריך)|\.\.\.|…|$)/i);
+    return emb?.[1]?.trim() || "";
+  }
+  if (hadAuthorPrefix) {
+    const emb = s.match(/(?:במסגרת\s+)?פרוי?יקט\s+([א-תA-Za-z0-9][א-תA-Za-z0-9\s\-_./]{1,35}?)(?=\s+(?:יחד|עם|עבור|של|באתר|להתקנ|להקמ|בתאריך)|[,.!]|$)/i);
+    if (emb?.[1]) return emb[1].trim();
+    if (
+      s.length > 35 ||
+      s.split(/\s+/).length > 4 ||
+      /^(?:הגעה|ביקור|ביצוע|בדיקת|בדיקה|טיפול|התקנת|התקנה|העתקת|הוצאת|סיוע|תיקון|פעילות|תמיכה|מענה|שיחה|עבודה|הייתי)\b/.test(s)
+    ) {
+      return "";
+    }
+  }
+  return s;
+}
+
 interface HoursEntryCardProps {
   draft?: HoursAssistantEntryDraft;
   written?: WrittenEntryResult;
@@ -328,11 +359,19 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   const [employeeLookupMessage, setEmployeeLookupMessage] = useState<string | null>(null);
 
   // Customer projects selector & new project confirmation state
-  const [customerProjects, setCustomerProjects] = useState<string[]>(
-    Array.isArray(draft?.availableProjects) ? draft.availableProjects : []
+  const [customerProjects, setCustomerProjects] = useState<string[]>(() =>
+    Array.from(
+      new Set(
+        (Array.isArray(draft?.availableProjects) ? draft.availableProjects : [])
+          .map((p) => sanitizeProjectDisplayName(p))
+          .filter(Boolean)
+      )
+    )
   );
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [hasLoadedProjectsKey, setHasLoadedProjectsKey] = useState<string>("");
+  const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
+  const [projectSearchQuery, setProjectSearchQuery] = useState("");
   const [isCreatingNewProjectInputOpen, setIsCreatingNewProjectInputOpen] = useState(false);
   const [newProjectInputName, setNewProjectInputName] = useState("");
   const [pendingNewProjectConfirm, setPendingNewProjectConfirm] = useState<{
@@ -392,8 +431,16 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
     setEditProjectName(draft.projectName || "");
     setEditConfirmNewProject(Boolean(draft.confirmNewProject));
     if (Array.isArray(draft.availableProjects) && draft.availableProjects.length > 0) {
+      const cleanedAvail = draft.availableProjects
+        .map((p) => sanitizeProjectDisplayName(p))
+        .filter(Boolean);
       setCustomerProjects((prev) =>
-        Array.from(new Set([...(draft.availableProjects || []), ...prev]))
+        Array.from(
+          new Set([
+            ...cleanedAvail,
+            ...prev.map((p) => sanitizeProjectDisplayName(p)).filter(Boolean),
+          ])
+        )
       );
     }
     setEditDescription(draft.description || "");
@@ -440,10 +487,13 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
         driveId: activeProjectsDriveId || undefined,
         refresh: forceRefresh,
       });
-      const fetchedNames = (res.projects || []).map((p) => p.projectName).filter(Boolean);
-      const merged = Array.from(
-        new Set([...fetchedNames, ...(Array.isArray(draft?.availableProjects) ? draft.availableProjects : [])])
-      );
+      const fetchedNames = (res.projects || [])
+        .map((p) => sanitizeProjectDisplayName(p.projectName))
+        .filter(Boolean);
+      const availCleaned = (Array.isArray(draft?.availableProjects) ? draft.availableProjects : [])
+        .map((p) => sanitizeProjectDisplayName(p))
+        .filter(Boolean);
+      const merged = Array.from(new Set([...fetchedNames, ...availCleaned]));
       setCustomerProjects(merged);
       setHasLoadedProjectsKey(`${targetCust.toLowerCase()}__${activeProjectsFileId}`);
       if (draft && onUpdateDraft && !written) {
@@ -854,18 +904,21 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
         : draft?.projectName || "";
 
     const targetCustName = activeProjectsCustomer || draft?.customerName || written?.customerName || "הלקוח";
-    const typedClean = newProjectInputName.trim();
-    const filteredProjects = typedClean
-      ? customerProjects.filter((p) => p.toLowerCase().includes(typedClean.toLowerCase()))
+    const searchClean = projectSearchQuery.trim().toLowerCase();
+    const filteredProjects = searchClean
+      ? customerProjects.filter((p) => p.toLowerCase().includes(searchClean))
       : customerProjects;
-    const exactMatchExisting = typedClean
-      ? customerProjects.find((p) => p.trim().toLowerCase() === typedClean.toLowerCase())
+    const typedNewClean = newProjectInputName.trim();
+    const exactMatchExisting = typedNewClean
+      ? customerProjects.find((p) => p.trim().toLowerCase() === typedNewClean.toLowerCase())
       : undefined;
 
     const selectExistingProject = (proj: string) => {
       setProjectValidationError(null);
       setPendingNewProjectConfirm(null);
       setNewProjectInputName("");
+      setProjectSearchQuery("");
+      setIsProjectDropdownOpen(false);
       setIsCreatingNewProjectInputOpen(false);
       if (mode === "written") {
         setWrittenEditProjectName(proj);
@@ -878,7 +931,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
     };
 
     const requestOpenNewProject = (candidateName: string) => {
-      const clean = candidateName.trim();
+      const clean = sanitizeProjectDisplayName(candidateName);
       if (!clean) {
         setIsCreatingNewProjectInputOpen(true);
         setProjectValidationError("נא להזין את שם הפרויקט החדש.");
@@ -896,112 +949,173 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       });
     };
 
-    return (
-      <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#DBEAFE] mb-3 space-y-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5">
-            <FolderKanban className="w-3.5 h-3.5 text-[#2563EB] shrink-0" />
-            <span className="text-xs font-bold text-[#172B4D]">שם הפרויקט</span>
-            {selectedProject ? (
-              <span className="px-2 py-0.5 rounded-full bg-[#EFF6FF] border border-[#DBEAFE] text-[#2563EB] text-[11px] font-semibold">
-                {selectedProject}
-              </span>
-            ) : (
-              <span className="px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-medium">
-                נדרשת בחירת פרויקט
-              </span>
-            )}
-          </div>
+    const isUnregisteredSelected =
+      Boolean(selectedProject) &&
+      !customerProjects.some(
+        (p) => p.trim().toLowerCase() === selectedProject.trim().toLowerCase()
+      ) &&
+      !(
+        (mode === "edit" && editConfirmNewProject) ||
+        (mode === "draft" && draft?.confirmNewProject)
+      );
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => loadCustomerProjectsList(true)}
-              disabled={isLoadingProjects}
-              className="inline-flex items-center gap-1 text-[11px] text-[#2563EB] hover:text-[#1D4ED8] cursor-pointer disabled:opacity-50"
-              title="סרוק פרויקטים מהאקסל והרשימה"
-            >
-              <RefreshCw className={`w-3 h-3 ${isLoadingProjects ? "animate-spin" : ""}`} />
-              <span>רענן</span>
-            </button>
+    return (
+      <div className="p-2.5 rounded-xl bg-[#F8FAFC] border border-[#DBEAFE] mb-3 space-y-2">
+        {/* Compact single-row selector bar */}
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setIsProjectDropdownOpen((prev) => !prev);
+              setProjectValidationError(null);
+            }}
+            className="flex-1 min-w-0 flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-white border border-[#DBEAFE] hover:border-[#2563EB]/60 text-right cursor-pointer transition-colors"
+          >
+            <div className="flex items-center gap-1.5 min-w-0">
+              <FolderKanban className="w-3.5 h-3.5 text-[#2563EB] shrink-0" />
+              <span className="text-[11px] text-slate-500 shrink-0">פרויקט:</span>
+              {selectedProject ? (
+                <span className="text-xs font-bold text-[#172B4D] truncate">
+                  {selectedProject}
+                </span>
+              ) : (
+                <span className="text-xs text-amber-700 font-medium truncate">
+                  בחר פרויקט מהרשימה...
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0 text-[#2563EB]">
+              {isLoadingProjects ? (
+                <RefreshCw className="w-3 h-3 animate-spin text-[#06B6D4]" />
+              ) : (
+                <>
+                  <span className="text-[11px] font-medium">
+                    {isProjectDropdownOpen ? "סגור" : customerProjects.length > 0 ? `(${customerProjects.length})` : "בחר"}
+                  </span>
+                  {isProjectDropdownOpen ? (
+                    <ChevronUp className="w-3.5 h-3.5" />
+                  ) : (
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  )}
+                </>
+              )}
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setProjectValidationError(null);
+              setIsCreatingNewProjectInputOpen((prev) => !prev);
+              setIsProjectDropdownOpen(false);
+            }}
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-[#EFF6FF] hover:bg-[#DBEAFE] border border-[#DBEAFE] text-[#2563EB] text-[11px] font-semibold cursor-pointer transition-colors shrink-0"
+            title="פתיחת פרויקט חדש ללקוח"
+          >
+            <Plus className="w-3 h-3" />
+            <span>חדש</span>
+          </button>
+        </div>
+
+        {/* Collapsible & scrollable dropdown list (מצב גלילה) */}
+        {isProjectDropdownOpen && (
+          <div className="p-2 rounded-xl bg-white border border-[#DBEAFE] shadow-sm space-y-1.5">
+            <div className="flex items-center justify-between gap-2 pb-1 border-b border-[#DBEAFE]/60">
+              <div className="relative flex-1">
+                <Search className="w-3 h-3 text-slate-400 absolute right-2 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={projectSearchQuery}
+                  onChange={(e) => setProjectSearchQuery(e.target.value)}
+                  placeholder="חיפוש פרויקט..."
+                  className="w-full pr-6 pl-2 py-1 rounded-md bg-[#F8FAFC] border border-[#DBEAFE] text-xs text-[#172B4D] focus:outline-none focus:border-[#2563EB]"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => loadCustomerProjectsList(true)}
+                disabled={isLoadingProjects}
+                className="text-[10px] text-[#2563EB] hover:text-[#1D4ED8] inline-flex items-center gap-1 px-1.5 py-1 rounded-md hover:bg-[#EFF6FF] cursor-pointer shrink-0"
+              >
+                <RefreshCw className={`w-3 h-3 ${isLoadingProjects ? "animate-spin" : ""}`} />
+                <span>רענן</span>
+              </button>
+            </div>
+
+            {isLoadingProjects ? (
+              <div className="py-3 text-center text-xs text-slate-500 flex items-center justify-center gap-1.5">
+                <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#06B6D4]" />
+                <span>טוען פרויקטים...</span>
+              </div>
+            ) : filteredProjects.length > 0 ? (
+              <div className="max-h-40 overflow-y-auto space-y-1 pr-0.5">
+                {filteredProjects.map((proj) => {
+                  const isSelected = selectedProject.trim().toLowerCase() === proj.trim().toLowerCase();
+                  return (
+                    <button
+                      key={proj}
+                      type="button"
+                      onClick={() => selectExistingProject(proj)}
+                      className={`w-full text-right px-2.5 py-1.5 rounded-lg text-xs flex items-center justify-between transition-colors cursor-pointer ${
+                        isSelected
+                          ? "bg-[#2563EB] text-white font-semibold"
+                          : "bg-[#F8FAFC] hover:bg-[#EFF6FF] text-[#172B4D]"
+                      }`}
+                    >
+                      <span className="truncate">{proj}</span>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-white shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="py-2 text-center text-[11px] text-slate-500">
+                {projectSearchQuery.trim()
+                  ? `לא נמצא פרויקט תואם עבור "${projectSearchQuery.trim()}"`
+                  : `אין פרויקטים רשומים עדיין עבור ${targetCustName}`}
+              </div>
+            )}
 
             <button
               type="button"
               onClick={() => {
-                setProjectValidationError(null);
-                setIsCreatingNewProjectInputOpen((prev) => !prev);
+                if (projectSearchQuery.trim()) {
+                  setNewProjectInputName(projectSearchQuery.trim());
+                }
+                setIsProjectDropdownOpen(false);
+                setIsCreatingNewProjectInputOpen(true);
               }}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-[#EFF6FF] hover:bg-[#DBEAFE] border border-[#DBEAFE] text-[#2563EB] text-[11px] font-semibold cursor-pointer transition-colors"
+              className="w-full py-1.5 px-2.5 rounded-lg bg-[#EFF6FF] hover:bg-[#DBEAFE] text-[#2563EB] text-[11px] font-semibold flex items-center justify-center gap-1 cursor-pointer transition-colors border border-[#DBEAFE]"
             >
               <Plus className="w-3 h-3" />
-              <span>פתיחת פרויקט חדש</span>
+              <span>
+                {projectSearchQuery.trim()
+                  ? `פתח פרויקט חדש: "${projectSearchQuery.trim()}"`
+                  : "פתיחת פרויקט חדש"}
+              </span>
             </button>
-          </div>
-        </div>
-
-        {/* Existing projects list */}
-        {isLoadingProjects ? (
-          <div className="py-2 text-xs text-slate-500 flex items-center gap-1.5">
-            <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#06B6D4]" />
-            <span>טוען פרויקטים קיימים עבור {targetCustName}...</span>
-          </div>
-        ) : filteredProjects.length > 0 ? (
-          <div className="flex flex-wrap gap-1.5">
-            {filteredProjects.map((proj) => {
-              const isSelected = selectedProject.trim().toLowerCase() === proj.trim().toLowerCase();
-              return (
-                <button
-                  key={proj}
-                  type="button"
-                  onClick={() => selectExistingProject(proj)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium border flex items-center gap-1 cursor-pointer transition-colors ${
-                    isSelected
-                      ? "bg-[#2563EB] text-white border-[#2563EB] font-semibold shadow-2xs"
-                      : "bg-white text-[#172B4D] border-[#DBEAFE] hover:bg-[#EFF6FF]"
-                  }`}
-                >
-                  {isSelected && <Check className="w-3 h-3 text-white shrink-0" />}
-                  <span>{proj}</span>
-                </button>
-              );
-            })}
-          </div>
-        ) : (
-          <div className="text-[11px] text-slate-500 bg-white px-2.5 py-2 rounded-lg border border-[#DBEAFE]/70">
-            לא נמצאו עדיין פרויקטים רשומים עבור {targetCustName}. אפשר לפתוח פרויקט חדש בלחיצה למעלה.
           </div>
         )}
 
-        {/* Selected custom/new project badge when not yet in fetched list */}
-        {selectedProject &&
-          !customerProjects.some(
-            (p) => p.trim().toLowerCase() === selectedProject.trim().toLowerCase()
-          ) && (
-            <div className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-[#EFF6FF] border border-[#DBEAFE] text-xs">
-              <span className="text-[#172B4D]">
-                פרויקט שזוהה: <strong className="text-[#2563EB]">{selectedProject}</strong>
-                {((mode === "edit" && editConfirmNewProject) ||
-                  (mode === "draft" && draft?.confirmNewProject)) ? (
-                  <span className="text-[10px] text-[#06B6D4] font-semibold mr-1.5">(אושר כפרויקט חדש)</span>
-                ) : (
-                  <span className="text-[10px] text-amber-700 mr-1.5">(טרם קיים ברשימת הלקוח)</span>
-                )}
-              </span>
-              {!((mode === "edit" && editConfirmNewProject) ||
-                (mode === "draft" && draft?.confirmNewProject)) && (
-                <button
-                  type="button"
-                  onClick={() => requestOpenNewProject(selectedProject)}
-                  className="px-2 py-0.5 rounded-md bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[11px] font-semibold cursor-pointer"
-                >
-                  פתח פרויקט חדש
-                </button>
-              )}
-            </div>
-          )}
+        {/* Subtle notice if typed/detected project does not exist yet */}
+        {isUnregisteredSelected && !pendingNewProjectConfirm && (
+          <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-[#EFF6FF] border border-[#DBEAFE] text-[11px]">
+            <span className="text-[#172B4D] truncate">
+              פרויקט חדש ממתין לאישור: <strong className="text-[#2563EB]">{selectedProject}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={() => requestOpenNewProject(selectedProject)}
+              className="px-2 py-0.5 rounded-md bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[11px] font-semibold cursor-pointer shrink-0"
+            >
+              אשר פתיחה
+            </button>
+          </div>
+        )}
 
-        {/* Inline new project input / search */}
-        {(isCreatingNewProjectInputOpen || !selectedProject || customerProjects.length === 0) && (
+        {/* Inline new project input (only shown when user clicks "+ חדש") */}
+        {isCreatingNewProjectInputOpen && (
           <div className="flex items-center gap-1.5">
             <input
               type="text"
@@ -1020,12 +1134,9 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                   }
                 }
               }}
-              placeholder={
-                customerProjects.length > 0
-                  ? "סנן פרויקט קיים או הקלד שם לפרויקט חדש..."
-                  : "הקלד שם לפרויקט החדש..."
-              }
+              placeholder="הקלד שם לפרויקט החדש..."
               className="flex-1 bg-white border border-[#DBEAFE] text-[16px] sm:text-xs px-2.5 py-1.5 rounded-lg text-[#172B4D] placeholder-slate-400 focus:outline-none focus:border-[#2563EB]"
+              autoFocus
             />
             {exactMatchExisting ? (
               <button
@@ -1042,7 +1153,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                 className="px-2.5 py-1.5 rounded-lg bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold flex items-center gap-1 cursor-pointer shrink-0"
               >
                 <Plus className="w-3.5 h-3.5" />
-                <span>פתח פרויקט חדש</span>
+                <span>פתח פרויקט</span>
               </button>
             )}
           </div>
@@ -1050,19 +1161,16 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
 
         {/* Explicit confirmation dialog before opening a new project */}
         {pendingNewProjectConfirm && (
-          <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-200 space-y-2 text-xs text-amber-950">
+          <div className="p-2.5 rounded-xl bg-amber-50/90 border border-amber-200 space-y-2 text-xs text-amber-950">
             <div className="flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
               <div className="leading-relaxed">
                 <p className="font-bold">
                   האם אתה בטוח שאתה רוצה לפתוח פרויקט חדש בשם &quot;{pendingNewProjectConfirm.projectName}&quot; עבור {targetCustName}?
                 </p>
-                <p className="text-[11px] text-amber-800 mt-0.5">
-                  הפרויקט יתווסף לרשימת הפרויקטים של {targetCustName} וישויך לתיעוד זה.
-                </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 pt-0.5">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
                 disabled={isCreatingProject}
@@ -1072,7 +1180,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                 {isCreatingProject ? (
                   <>
                     <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>פותח פרויקט...</span>
+                    <span>פותח...</span>
                   </>
                 ) : (
                   <>
