@@ -329,6 +329,8 @@ export interface HoursAssistantEntryDraft {
   id: string;
   customerName: string;
   projectName?: string;
+  availableProjects?: string[];
+  confirmNewProject?: boolean;
   customerFolder?: string;
   fileId?: string;
   driveId?: string;
@@ -396,6 +398,7 @@ export interface WrittenEntryResult {
   description: string;
   workType: string;
   activityType?: string;
+  projectName?: string;
   writtenAt: number;
   expiresAt: number;
   canUndo: boolean;
@@ -449,6 +452,7 @@ export interface AssistantChatRequest {
     durationFormatted?: string;
     description?: string;
     workType?: string;
+    projectName?: string;
     employeeName?: string;
     oldDescription?: string;
   };
@@ -1381,6 +1385,63 @@ export async function apiSaveTeamManager(params: {
   }
   return res;
 }
+
+export interface CustomerProjectItem {
+  id: string;
+  customerName: string;
+  projectName: string;
+  source: "registry" | "excel" | "lists";
+  createdAt?: string;
+  createdBy?: string;
+}
+
+/**
+ * 24. List existing projects for a customer across Registry, Excel ("פרויקטים" tab) & Lists
+ */
+export async function apiListCustomerProjects(
+  customerName: string,
+  options?: { fileId?: string; driveId?: string; refresh?: boolean }
+): Promise<{
+  customerName: string;
+  projects: CustomerProjectItem[];
+}> {
+  const params = new URLSearchParams({
+    customerName: customerName.trim(),
+  });
+  if (options?.fileId) params.set("fileId", options.fileId);
+  if (options?.driveId) params.set("driveId", options.driveId);
+  if (options?.refresh) params.set("refresh", "true");
+
+  return fetchHoursApi<{ customerName: string; projects: CustomerProjectItem[] }>(
+    `/api/hours/projects?${params.toString()}`,
+    { method: "GET" }
+  );
+}
+
+/**
+ * 25. Create/register a new project for a customer (requires explicit confirmNewProject === true)
+ */
+export async function apiCreateCustomerProject(params: {
+  customerName: string;
+  projectName: string;
+  confirmNewProject: boolean;
+}): Promise<{
+  success: boolean;
+  alreadyExists?: boolean;
+  project: CustomerProjectItem;
+  projects: CustomerProjectItem[];
+}> {
+  return fetchHoursApi<{
+    success: boolean;
+    alreadyExists?: boolean;
+    project: CustomerProjectItem;
+    projects: CustomerProjectItem[];
+  }>(`/api/hours/projects`, {
+    method: "POST",
+    body: JSON.stringify(params),
+  });
+}
+
 
 
 

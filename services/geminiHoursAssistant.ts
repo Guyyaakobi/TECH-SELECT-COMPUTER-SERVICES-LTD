@@ -39,11 +39,17 @@ import {
   canUserViewEmployee,
   UserAccessScope,
 } from "./sharepointLists";
+import {
+  listCustomerProjects,
+  createCustomerProject,
+} from "./customerProjects";
 
 export interface HoursAssistantEntryDraft {
   id: string; // card unique ID
   customerName: string;
   projectName?: string;
+  availableProjects?: string[];
+  confirmNewProject?: boolean;
   customerFolder?: string;
   fileId?: string;
   driveId?: string;
@@ -87,6 +93,49 @@ export interface HoursAssistantEntryDraft {
   mappedRow?: Record<string, any>;
   availableFiles?: Array<{ fileId: string; fileName: string; webUrl?: string }>;
   assignedEmployees?: string[];
+}
+
+export function extractProjectNameCandidate(
+  text: string,
+  existingProjects: string[] = []
+): string | undefined {
+  const cleanText = String(text || "").trim();
+  if (!cleanText) return undefined;
+
+  // 1. First check if any known existing project for this customer is explicitly mentioned in the text
+  const lowerText = cleanText.toLowerCase();
+  const sortedExisting = [...existingProjects].sort((a, b) => b.length - a.length);
+  for (const proj of sortedExisting) {
+    const cleanProj = String(proj || "").trim();
+    if (cleanProj.length >= 2 && lowerText.includes(cleanProj.toLowerCase())) {
+      return cleanProj;
+    }
+  }
+
+  // 2. Quoted project name: פרויקט "שם הפרויקט" or פרויקט 'שם הפרויקט'
+  const quotedMatch = cleanText.match(
+    /(?:פרויקט|פרוייקט|project)\s*(?:-|:)?\s*["'״׳]([^"'״׳]{2,60})["'״׳]/i
+  );
+  if (quotedMatch && quotedMatch[1]) {
+    const candidate = quotedMatch[1].trim();
+    if (candidate.length >= 2) return candidate;
+  }
+
+  // 3. Phrase after פרויקט / פרוייקט / project stopping at delimiters or time/action connectors
+  const phraseMatch = cleanText.match(
+    /(?:פרויקט|פרוייקט|project)\s*(?:בשם\s*)?(?:-|:)?\s*([^\n,.;!?]{2,50}?)(?=\s*(?:[,.;!\n]|משעה|מ-|עד שעה|עד|בין|בתאריך|אצל|עבור|ביום|למשך|העתקת|העברת|להלבנה|יחד עם|עם\s+|$))/i
+  );
+  if (phraseMatch && phraseMatch[1]) {
+    const cleaned = phraseMatch[1]
+      .replace(/^["'״׳\s\-:]+|["'״׳\s\-:]+$/g, "")
+      .trim();
+    const stopWords = new Set(["חדש", "קיים", "אצל", "עבור", "היום", "אתמול", "באתר", "שוטף"]);
+    if (cleaned.length >= 2 && !stopWords.has(cleaned)) {
+      return cleaned;
+    }
+  }
+
+  return undefined;
 }
 
 export function extractAssignedEmployees(text: string, currentUserName: string): string[] {
@@ -140,6 +189,7 @@ export function buildEnrichedRowPayload(params: {
   endTime?: string;
   contactPerson?: string;
   ticketNumber?: string;
+  projectName?: string;
   customerName?: string;
   userOverride?: Record<string, any>;
 }): Record<string, any> {
@@ -157,6 +207,7 @@ export function buildEnrichedRowPayload(params: {
     startTime = "",
     contactPerson = "",
     ticketNumber = "",
+    projectName = "",
     customerName = "",
     userOverride = {},
   } = params;
@@ -205,7 +256,9 @@ export function buildEnrichedRowPayload(params: {
 
   const effectiveContact = contactPerson.trim() || (workType.includes("ביקור") ? "נציג הלקוח" : "נציג הלקוח");
   const effectiveTicket = ticketNumber.trim() || (workType.includes("טיקט") ? "-" : "");
+  const cleanExplicitProject = String(projectName || "").trim();
   const effectiveProject =
+    cleanExplicitProject ||
     ticketNumber ||
     (desc.length > 40 ? desc.substring(0, 40) + "..." : desc) ||
     customerName ||
@@ -464,6 +517,14 @@ export function buildEnrichedRowPayload(params: {
   result["description"] = finalDesc;
   result["details"] = finalDesc;
 
+  if (cleanExplicitProject) {
+    result["פרויקט"] = cleanExplicitProject;
+    result["שם פרויקט"] = cleanExplicitProject;
+    result["שם הפרויקט"] = cleanExplicitProject;
+    result["project"] = cleanExplicitProject;
+    result["projectName"] = cleanExplicitProject;
+  }
+
   if (userOverride["הערות"] || userOverride["notes"]) {
     const finalNotes = prefixDescriptionWithAuthor(userOverride["הערות"] || userOverride["notes"], userName);
     result["הערות"] = finalNotes;
@@ -491,6 +552,7 @@ export interface WrittenEntryResult {
   durationFormatted: string;
   description: string;
   workType: string;
+  projectName?: string;
   writtenAt: number;
   expiresAt: number; // 10 minutes
   canUndo: boolean;
@@ -856,6 +918,8 @@ export async function processAssistantChat(
     const effectiveEndTime = rawEdit.endTime !== undefined ? rawEdit.endTime : existing?.endTime;
     const effectiveDescription = rawEdit.description !== undefined ? rawEdit.description : existing?.description || "";
     const effectiveWorkType = rawEdit.workType || existing?.workType || "טיקטים";
+    const effectiveProjectName =
+      rawEdit.projectName !== undefined ? String(rawEdit.projectName || "").trim() : existing?.projectName;
     const effectiveEmployeeName = rawEdit.employeeName || existing?.employeeName || user.name;
     const oldDescription = rawEdit.oldDescription || existing?.description || "";
 
@@ -897,6 +961,7 @@ export async function processAssistantChat(
           endTime: effectiveEndTime,
           description: effectiveDescription,
           workType: effectiveWorkType,
+          projectName: effectiveProjectName,
           employeeName: effectiveEmployeeName,
           employeeEmail: user.email,
           oldDescription,
@@ -918,6 +983,7 @@ export async function processAssistantChat(
             durationFormatted: durationFormatted || w.durationFormatted,
             description: effectiveDescription || w.description,
             workType: effectiveWorkType || w.workType,
+            projectName: effectiveProjectName !== undefined ? effectiveProjectName : w.projectName,
             listItemId: updateRes.listItemId || w.listItemId,
           };
         }
@@ -1134,6 +1200,45 @@ export async function processAssistantChat(
       userOverrideValues["טיקט"] = targetDraft.ticketNumber;
     }
 
+    const explicitDraftProjectName = String(
+      targetDraft.projectName ||
+        targetDraft.mappedRow?.projectName ||
+        targetDraft.mappedRow?.["שם פרויקט"] ||
+        (targetDraft.mappedRow?.["פרויקט"] && targetDraft.mappedRow?.["פרויקט"] !== "פרויקט שוטף"
+          ? targetDraft.mappedRow?.["פרויקט"]
+          : "") ||
+        ""
+    ).trim();
+
+    if (explicitDraftProjectName) {
+      userOverrideValues["פרויקט"] = explicitDraftProjectName;
+      userOverrideValues["שם פרויקט"] = explicitDraftProjectName;
+      userOverrideValues["שם הפרויקט"] = explicitDraftProjectName;
+      userOverrideValues["projectName"] = explicitDraftProjectName;
+      userOverrideValues["project"] = explicitDraftProjectName;
+    }
+
+    // If the user explicitly confirmed opening a new project on this draft, persist it in registry
+    if (
+      semanticActivityType === "פרויקטים" &&
+      explicitDraftProjectName &&
+      targetDraft.confirmNewProject === true &&
+      targetDraft.customerName
+    ) {
+      createCustomerProject(
+        {
+          customerName: targetDraft.customerName,
+          projectName: explicitDraftProjectName,
+          confirmNewProject: true,
+          createdBy: user.name,
+          createdByEmail: user.email,
+        },
+        activeEnv
+      ).catch((err) => {
+        console.warn("[confirm_entry] Customer project registration notice:", err?.message || err);
+      });
+    }
+
     const rawAssigned = (
       Array.isArray(targetDraft.assignedEmployees) && targetDraft.assignedEmployees.length > 0
         ? targetDraft.assignedEmployees
@@ -1182,6 +1287,7 @@ export async function processAssistantChat(
         endTime: targetDraft.endTime,
         contactPerson: targetDraft.contactPerson,
         ticketNumber: targetDraft.ticketNumber,
+        projectName: explicitDraftProjectName || undefined,
         customerName: targetDraft.customerName,
         userOverride,
       });
@@ -1226,6 +1332,7 @@ export async function processAssistantChat(
         durationFormatted: targetDraft.durationFormatted,
         description: targetDraft.description,
         workType: semanticActivityType,
+        projectName: explicitDraftProjectName || undefined,
         employeeName: empName,
         writtenAt: writeRes.writtenAt || Date.now(),
         expiresAt: (writeRes.writtenAt || Date.now()) + 10 * 60 * 1000,
@@ -1386,6 +1493,10 @@ export async function processAssistantChat(
                 isTimeSuggested: { type: Type.BOOLEAN, description: "True if times are suggested, false if explicitly set by employee" },
                 contactPerson: { type: Type.STRING, description: "Optional contact person" },
                 ticketNumber: { type: Type.STRING, description: "Optional ticket number" },
+                projectName: {
+                  type: Type.STRING,
+                  description: "If workType is פרויקטים / project, extract the EXACT full project name (e.g. 'ניב2', 'שדרוג שרתים', 'FAT אסיו'). Extract cleanly without generic words.",
+                },
                 isReady: { type: Type.BOOLEAN, description: "True if customer, date, duration, description are all present" },
                 missingFields: {
                   type: Type.ARRAY,
@@ -1433,6 +1544,7 @@ export async function processAssistantChat(
                 endTime: { type: Type.STRING, description: "End time (e.g. '10:30' or '11:00')" },
                 contactPerson: { type: Type.STRING, description: "Contact person at customer" },
                 ticketNumber: { type: Type.STRING, description: "Ticket or call number" },
+                projectName: { type: Type.STRING, description: "Exact project name when logging project work" },
                 customer: { type: Type.STRING, description: "Customer name" },
                 assignedEmployees: {
                   type: Type.ARRAY,
@@ -1552,7 +1664,7 @@ EXTRACTION RULES FOR propose_entries:
 5. Description (ניסוח מקצועי ברמת Senior IT / System Engineer):
    - Start with "[שם פרטי] כתב: [התיאור המקצועי המלא]".
    - Write a clear, professional Hebrew technical description preserving all technical details, server/user names, and actions performed.
-6. Contact person & Ticket number: extract if mentioned.
+6. Contact person, Ticket number & Project Name: extract if mentioned. Whenever workType is "פרויקטים", ALWAYS extract projectName (e.g., "ניב2", "מיגרציה לענן", "החלפת פיירוול").
 7. Start time / End time: extract if mentioned, otherwise propose_entries calculates them automatically.
 8. Multiple Employees / Team Work (חוק ברזל - רשימת עובדים סגורה בלבד!):
    - Closed list of existing TECH-SELECT employees: [${KNOWN_TEAM_MEMBERS.map((m) => m.name).join(", ")}].
@@ -2415,8 +2527,46 @@ EXTRACTION RULES FOR propose_entries:
               console.warn("[propose_entries] auto-enrich error:", enrichErr);
             }
 
-            const projectMatch = (rawDesc + " " + rawWorkType).match(/(?:פרויקט|פרוייקט|project)\s+(?:-|:)?\s*([^\s,.;]+)/i);
-            const projectName = projectMatch ? projectMatch[1] : undefined;
+            let availableProjects: string[] = Array.isArray(matchingActiveDraft?.availableProjects)
+              ? matchingActiveDraft.availableProjects
+              : [];
+
+            if (customerName && (semanticActivityType === "פרויקטים" || detectedTabType === "project")) {
+              try {
+                const projRes = await withSafeTimeout(
+                  listCustomerProjects({ customerName, fileId, driveId }, activeEnv),
+                  2500,
+                  { customerName, projects: [] }
+                );
+                if (projRes?.projects?.length) {
+                  availableProjects = projRes.projects.map((p) => p.name);
+                }
+              } catch {}
+            }
+
+            const rawProjectCandidate = String(raw.projectName || matchingActiveDraft?.projectName || "").trim();
+            const extractedProjectName =
+              rawProjectCandidate ||
+              extractProjectNameCandidate(
+                `${rawDesc} ${rawWorkType} ${effectiveUserText}`,
+                availableProjects
+              );
+
+            // Snap to canonical casing/name of existing project if it matches fuzzily
+            const projectName = (() => {
+              if (!extractedProjectName) return undefined;
+              const norm = (s: string) => s.trim().toLowerCase().replace(/[\s\-_'"״׳]+/g, "");
+              const matchExisting = availableProjects.find((p) => norm(p) === norm(extractedProjectName));
+              return matchExisting || extractedProjectName;
+            })();
+
+            if (projectName && mappedRow) {
+              mappedRow["פרויקט"] = projectName;
+              mappedRow["שם פרויקט"] = projectName;
+              mappedRow["שם הפרויקט"] = projectName;
+              mappedRow["projectName"] = projectName;
+              mappedRow["project"] = projectName;
+            }
 
             const detectedAssigned =
               Array.isArray(raw.assignedEmployees) && raw.assignedEmployees.length > 0
@@ -2431,6 +2581,7 @@ EXTRACTION RULES FOR propose_entries:
               id: draftId,
               customerName,
               projectName,
+              availableProjects,
               customerFolder: customerName,
               fileId,
               driveId,
@@ -2580,12 +2731,16 @@ EXTRACTION RULES FOR propose_entries:
                   endTime: r.endTime || r["שעת סיום"] || matchingDraft?.endTime,
                   contactPerson: r.contactPerson || r["איש קשר"] || matchingDraft?.contactPerson,
                   ticketNumber: r.ticketNumber || r["מספר טיקט"] || r["מספר קריאה"] || matchingDraft?.ticketNumber,
+                  projectName: r.projectName || r["שם פרויקט"] || matchingDraft?.projectName,
                   customerName: r.customer || r.לקוח || matchingDraft?.customerName,
                   userOverride: {
                     ...r,
                     "סוג פעילות": rawActivity,
                     "סוג הפעילות": rawActivity,
                     activityType: rawActivity,
+                    פרויקט: r.projectName || matchingDraft?.projectName || r["פרויקט"] || "",
+                    "שם פרויקט": r.projectName || matchingDraft?.projectName || r["שם פרויקט"] || "",
+                    projectName: r.projectName || matchingDraft?.projectName || "",
                     משתמש: empName,
                     "שם משתמש": empName,
                     "שם המשתמש": empName,
@@ -2624,6 +2779,9 @@ EXTRACTION RULES FOR propose_entries:
             const rowStart = String(r.startTime || r["שעת התחלה"] || matchingDraft?.startTime || "").trim();
             const rowEnd = String(r.endTime || r["שעת סיום"] || matchingDraft?.endTime || "").trim();
             const fallbackTimes = (!rowStart || !rowEnd) ? suggestStartEndTimes(rowMins) : null;
+            const rowProjectName = String(
+              r.projectName || r["שם פרויקט"] || (r["פרויקט"] !== "פרויקט שוטף" ? r["פרויקט"] : "") || matchingDraft?.projectName || ""
+            ).trim();
             const writtenItem: WrittenEntryResult = {
               id: i === 0 ? (matchingDraft?.id || `written_${Date.now()}_${i}`) : `${matchingDraft?.id || `written_${Date.now()}`}_emp_${i}`,
               fileId,
@@ -2646,6 +2804,7 @@ EXTRACTION RULES FOR propose_entries:
               durationFormatted: matchingDraft?.durationFormatted || `${rowHours} שעות`,
               description: r.description || r.תיאור || "",
               workType: rawActivity,
+              projectName: rowProjectName || undefined,
               employeeName: r.userName || r.employeeName || r.עובד || user.name,
               writtenAt: writeRes.writtenAt || Date.now(),
               expiresAt: (writeRes.writtenAt || Date.now()) + 10 * 60 * 1000,

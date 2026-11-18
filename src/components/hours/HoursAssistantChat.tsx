@@ -1308,6 +1308,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
       startTime?: string;
       endTime?: string;
       workType?: string;
+      projectName?: string;
     },
     entry?: WrittenEntryResult,
     targetSessionOverride?: string
@@ -1362,6 +1363,7 @@ export const HoursAssistantChat: React.FC<HoursAssistantChatProps> = ({
           startTime: updates.startTime ?? targetEntry?.startTime,
           endTime: updates.endTime ?? targetEntry?.endTime,
           workType: updates.workType ?? targetEntry?.workType,
+          projectName: updates.projectName ?? targetEntry?.projectName,
         },
         writtenEntries: mergedWritten,
       });

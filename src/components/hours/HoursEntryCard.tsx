@@ -30,10 +30,21 @@ import {
 import {
   HoursAssistantEntryDraft,
   WrittenEntryResult,
+  apiCreateCustomerProject,
   apiFindMonthTarget,
+  apiListCustomerProjects,
   apiListCustomers,
   getCustomStoredEmployees,
 } from "../../services/hoursApiClient";
+
+function isProjectCategory(wt?: string, act?: string, tab?: string): boolean {
+  const combined = `${wt || ""} ${act || ""} ${tab || ""}`.toLowerCase();
+  return (
+    combined.includes("פרויקט") ||
+    combined.includes("פרוייקט") ||
+    combined.includes("project")
+  );
+}
 
 interface HoursEntryCardProps {
   draft?: HoursAssistantEntryDraft;
@@ -63,6 +74,7 @@ interface HoursEntryCardProps {
       durationFormatted?: string;
       description?: string;
       workType?: string;
+      projectName?: string;
     }
   ) => Promise<void> | void;
   isConfirming?: boolean;
@@ -270,6 +282,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   const [writtenEditDescription, setWrittenEditDescription] = useState(written?.description || "");
   const [writtenEditDate, setWrittenEditDate] = useState(written?.date || "");
   const [writtenEditWorkType, setWrittenEditWorkType] = useState(written?.workType || "טיקטים");
+  const [writtenEditProjectName, setWrittenEditProjectName] = useState(written?.projectName || "");
 
   useEffect(() => {
     if (!written) return;
@@ -280,6 +293,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
     setWrittenEditDescription(written.description || "");
     setWrittenEditDate(written.date || "");
     setWrittenEditWorkType(written.workType || "טיקטים");
+    setWrittenEditProjectName(written.projectName || "");
   }, [
     written?.customerName,
     written?.startTime,
@@ -288,6 +302,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
     written?.description,
     written?.date,
     written?.workType,
+    written?.projectName,
   ]);
   const [editCustomer, setEditCustomer] = useState(draft?.customerName || "");
   const [editDate, setEditDate] = useState(draft?.date || "");
@@ -300,6 +315,10 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   const [editActivityType, setEditActivityType] = useState<string>(
     draft?.activityType || (draft?.workType && !["שעות", "Sheet1"].includes(draft.workType) ? draft.workType : "טיקטים")
   );
+  const [editProjectName, setEditProjectName] = useState<string>(draft?.projectName || "");
+  const [editConfirmNewProject, setEditConfirmNewProject] = useState<boolean>(
+    Boolean(draft?.confirmNewProject)
+  );
   const [editDescription, setEditDescription] = useState(draft?.description || "");
   const defaultEmployee = matchPresetTeamMember(currentUser?.name) || PRESET_TEAM_MEMBERS[0];
   const [editEmployees, setEditEmployees] = useState<string[]>(() =>
@@ -307,6 +326,21 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
   );
   const [customEmployeeInput, setCustomEmployeeInput] = useState("");
   const [employeeLookupMessage, setEmployeeLookupMessage] = useState<string | null>(null);
+
+  // Customer projects selector & new project confirmation state
+  const [customerProjects, setCustomerProjects] = useState<string[]>(
+    Array.isArray(draft?.availableProjects) ? draft.availableProjects : []
+  );
+  const [isLoadingProjects, setIsLoadingProjects] = useState(false);
+  const [hasLoadedProjectsKey, setHasLoadedProjectsKey] = useState<string>("");
+  const [isCreatingNewProjectInputOpen, setIsCreatingNewProjectInputOpen] = useState(false);
+  const [newProjectInputName, setNewProjectInputName] = useState("");
+  const [pendingNewProjectConfirm, setPendingNewProjectConfirm] = useState<{
+    projectName: string;
+    mode: "draft" | "edit" | "written" | "submit";
+  } | null>(null);
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const [projectValidationError, setProjectValidationError] = useState<string | null>(null);
 
   // Customer picker state
   const [customerList, setCustomerList] = useState<Array<{ id: string; name: string; webUrl?: string }>>(
@@ -355,6 +389,13 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       draft.activityType ||
       (draft.workType && !["שעות", "Sheet1"].includes(draft.workType) ? draft.workType : "טיקטים");
     setEditActivityType(initialActivityType);
+    setEditProjectName(draft.projectName || "");
+    setEditConfirmNewProject(Boolean(draft.confirmNewProject));
+    if (Array.isArray(draft.availableProjects) && draft.availableProjects.length > 0) {
+      setCustomerProjects((prev) =>
+        Array.from(new Set([...(draft.availableProjects || []), ...prev]))
+      );
+    }
     setEditDescription(draft.description || "");
     setEditEmployees(sanitizePresetEmployees(draft.assignedEmployees, currentUser?.name));
   }, [
@@ -366,10 +407,65 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
     draft?.workType,
     draft?.activityType,
     draft?.targetTabName,
+    draft?.projectName,
+    draft?.availableProjects,
+    draft?.confirmNewProject,
     draft?.description,
     draft?.assignedEmployees,
     currentUser?.name,
   ]);
+
+  const activeProjectsCustomer = (
+    written
+      ? writtenEditCustomer || written.customerName
+      : isEditing
+      ? editCustomer
+      : draft?.customerName
+  )?.trim() || "";
+  const activeProjectsFileId = (written ? written.fileId : draft?.fileId) || "";
+  const activeProjectsDriveId = (written ? written.driveId : draft?.driveId) || "";
+  const isProjectsModeActive = written
+    ? isEditingWritten && isProjectCategory(writtenEditWorkType || written.workType)
+    : isEditing
+    ? isProjectCategory(editActivityType, editWorkType)
+    : isProjectCategory(draft?.activityType, draft?.workType, draft?.targetTabName);
+
+  const loadCustomerProjectsList = async (forceRefresh = false, overrideCustomer?: string) => {
+    const targetCust = (overrideCustomer || activeProjectsCustomer).trim();
+    if (!targetCust) return;
+    setIsLoadingProjects(true);
+    try {
+      const res = await apiListCustomerProjects(targetCust, {
+        fileId: activeProjectsFileId || undefined,
+        driveId: activeProjectsDriveId || undefined,
+        refresh: forceRefresh,
+      });
+      const fetchedNames = (res.projects || []).map((p) => p.projectName).filter(Boolean);
+      const merged = Array.from(
+        new Set([...fetchedNames, ...(Array.isArray(draft?.availableProjects) ? draft.availableProjects : [])])
+      );
+      setCustomerProjects(merged);
+      setHasLoadedProjectsKey(`${targetCust.toLowerCase()}__${activeProjectsFileId}`);
+      if (draft && onUpdateDraft && !written) {
+        onUpdateDraft({
+          ...draft,
+          availableProjects: merged,
+        });
+      }
+    } catch (err) {
+      console.warn("Failed to load customer projects:", err);
+    } finally {
+      setIsLoadingProjects(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isProjectsModeActive || !activeProjectsCustomer) return;
+    const key = `${activeProjectsCustomer.toLowerCase()}__${activeProjectsFileId}`;
+    if (hasLoadedProjectsKey !== key && !isLoadingProjects) {
+      loadCustomerProjectsList(false);
+    }
+  }, [isProjectsModeActive, activeProjectsCustomer, activeProjectsFileId]);
 
   // Quick helper to calculate end time from start time and minutes
   const calcEndTimeFromDuration = (startTimeStr: string, durationMinutes: number) => {
@@ -558,6 +654,8 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
     }
 
     const finalCustomerName = filePatch.customerName || trimmedCustomer;
+    const isProj = isProjectCategory(editActivityType, editWorkType, filePatch.targetTabName);
+    const trimmedProjectName = isProj ? editProjectName.trim() : "";
 
     const updated: HoursAssistantEntryDraft = {
       ...draft,
@@ -573,6 +671,9 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       workType: editActivityType,
       activityType: editActivityType,
       targetTabName: filePatch.targetTabName || editWorkType,
+      projectName: trimmedProjectName || undefined,
+      confirmNewProject: isProj ? editConfirmNewProject : false,
+      availableProjects: customerProjects,
       description: editDescription.trim(),
       assignedEmployees: finalEmployees,
       mappedRow: {
@@ -595,6 +696,15 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
         עובד: finalEmployees[0],
         "שם עובד": finalEmployees[0],
         employeeName: finalEmployees[0],
+        ...(trimmedProjectName
+          ? {
+              פרויקט: trimmedProjectName,
+              "שם פרויקט": trimmedProjectName,
+              "שם הפרויקט": trimmedProjectName,
+              projectName: trimmedProjectName,
+              project: trimmedProjectName,
+            }
+          : {}),
       },
       isReadyForConfirmation: Boolean(
         finalCustomerName && trimmedDate && editDescription.trim()
@@ -632,7 +742,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
 
   const getListsWorkTypeBadge = (wt?: string) => {
     const norm = String(wt || "").toLowerCase();
-    if (norm.includes("פרויקט") || norm.includes("project")) {
+    if (norm.includes("פרויקט") || norm.includes("פרוייקט") || norm.includes("project")) {
       return { label: "פרויקטים", bg: "bg-[#EFF6FF] text-[#2563EB] border-[#DBEAFE]" };
     }
     if (
@@ -645,6 +755,352 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
       return { label: "ביקור באתר", bg: "bg-[#EFF6FF] text-[#2563EB] border-[#DBEAFE]" };
     }
     return { label: "טיקטים", bg: "bg-[#EFF6FF] text-[#2563EB] border-[#DBEAFE]" };
+  };
+
+  const applyProjectToDraft = (
+    projName: string,
+    confirmedNew: boolean,
+    extraProjectsList?: string[]
+  ): HoursAssistantEntryDraft | null => {
+    if (!draft) return null;
+    const clean = projName.trim();
+    const updatedList = extraProjectsList || customerProjects;
+    const updated: HoursAssistantEntryDraft = {
+      ...draft,
+      projectName: clean || undefined,
+      confirmNewProject: confirmedNew,
+      availableProjects: updatedList,
+      mappedRow: {
+        ...(draft.mappedRow || {}),
+        פרויקט: clean,
+        "שם פרויקט": clean,
+        "שם הפרויקט": clean,
+        projectName: clean,
+        project: clean,
+      },
+    };
+    setEditProjectName(clean);
+    setEditConfirmNewProject(confirmedNew);
+    if (onUpdateDraft) {
+      onUpdateDraft(updated);
+    }
+    return updated;
+  };
+
+  const handleConfirmCreateNewProject = async () => {
+    if (!pendingNewProjectConfirm || isCreatingProject) return;
+    const { projectName: rawName, mode } = pendingNewProjectConfirm;
+    const cleanName = rawName.trim();
+    const targetCust = activeProjectsCustomer || draft?.customerName || written?.customerName || "";
+    if (!cleanName || !targetCust) {
+      setPendingNewProjectConfirm(null);
+      return;
+    }
+
+    setIsCreatingProject(true);
+    setProjectValidationError(null);
+    try {
+      const res = await apiCreateCustomerProject({
+        customerName: targetCust,
+        projectName: cleanName,
+        confirmNewProject: true,
+      });
+
+      const returnedNames = Array.isArray(res?.projects)
+        ? res.projects.map((p) => p.projectName).filter(Boolean)
+        : [];
+      const mergedProjects = Array.from(new Set([cleanName, ...returnedNames, ...customerProjects]));
+      setCustomerProjects(mergedProjects);
+      setIsCreatingNewProjectInputOpen(false);
+      setNewProjectInputName("");
+      setPendingNewProjectConfirm(null);
+
+      if (mode === "written") {
+        setWrittenEditProjectName(cleanName);
+      } else if (mode === "edit") {
+        setEditProjectName(cleanName);
+        setEditConfirmNewProject(true);
+        applyProjectToDraft(cleanName, true, mergedProjects);
+      } else if (mode === "draft") {
+        applyProjectToDraft(cleanName, true, mergedProjects);
+      } else if (mode === "submit") {
+        const updatedDraft = applyProjectToDraft(cleanName, true, mergedProjects);
+        if (updatedDraft) {
+          if (!updatedDraft.fileId && !updatedDraft.fileName) {
+            setIsSelectingFile(true);
+            if (fileList.length === 0) {
+              await loadCustomerFiles();
+            }
+            return;
+          }
+          if (onConfirm) {
+            await onConfirm(updatedDraft.id, updatedDraft);
+          }
+        }
+      }
+    } catch (err: any) {
+      setProjectValidationError(err?.message || "שגיאה בפתיחת הפרויקט החדש. נסה שוב.");
+    } finally {
+      setIsCreatingProject(false);
+    }
+  };
+
+  const renderProjectSelectorPanel = (mode: "draft" | "edit" | "written") => {
+    const selectedProject =
+      mode === "written"
+        ? writtenEditProjectName
+        : mode === "edit"
+        ? editProjectName
+        : draft?.projectName || "";
+
+    const targetCustName = activeProjectsCustomer || draft?.customerName || written?.customerName || "הלקוח";
+    const typedClean = newProjectInputName.trim();
+    const filteredProjects = typedClean
+      ? customerProjects.filter((p) => p.toLowerCase().includes(typedClean.toLowerCase()))
+      : customerProjects;
+    const exactMatchExisting = typedClean
+      ? customerProjects.find((p) => p.trim().toLowerCase() === typedClean.toLowerCase())
+      : undefined;
+
+    const selectExistingProject = (proj: string) => {
+      setProjectValidationError(null);
+      setPendingNewProjectConfirm(null);
+      setNewProjectInputName("");
+      setIsCreatingNewProjectInputOpen(false);
+      if (mode === "written") {
+        setWrittenEditProjectName(proj);
+      } else if (mode === "edit") {
+        setEditProjectName(proj);
+        setEditConfirmNewProject(false);
+      } else {
+        applyProjectToDraft(proj, false);
+      }
+    };
+
+    const requestOpenNewProject = (candidateName: string) => {
+      const clean = candidateName.trim();
+      if (!clean) {
+        setIsCreatingNewProjectInputOpen(true);
+        setProjectValidationError("נא להזין את שם הפרויקט החדש.");
+        return;
+      }
+      const existing = customerProjects.find((p) => p.trim().toLowerCase() === clean.toLowerCase());
+      if (existing) {
+        selectExistingProject(existing);
+        return;
+      }
+      setProjectValidationError(null);
+      setPendingNewProjectConfirm({
+        projectName: clean,
+        mode,
+      });
+    };
+
+    return (
+      <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#DBEAFE] mb-3 space-y-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <FolderKanban className="w-3.5 h-3.5 text-[#2563EB] shrink-0" />
+            <span className="text-xs font-bold text-[#172B4D]">שם הפרויקט</span>
+            {selectedProject ? (
+              <span className="px-2 py-0.5 rounded-full bg-[#EFF6FF] border border-[#DBEAFE] text-[#2563EB] text-[11px] font-semibold">
+                {selectedProject}
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-medium">
+                נדרשת בחירת פרויקט
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => loadCustomerProjectsList(true)}
+              disabled={isLoadingProjects}
+              className="inline-flex items-center gap-1 text-[11px] text-[#2563EB] hover:text-[#1D4ED8] cursor-pointer disabled:opacity-50"
+              title="סרוק פרויקטים מהאקסל והרשימה"
+            >
+              <RefreshCw className={`w-3 h-3 ${isLoadingProjects ? "animate-spin" : ""}`} />
+              <span>רענן</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setProjectValidationError(null);
+                setIsCreatingNewProjectInputOpen((prev) => !prev);
+              }}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-[#EFF6FF] hover:bg-[#DBEAFE] border border-[#DBEAFE] text-[#2563EB] text-[11px] font-semibold cursor-pointer transition-colors"
+            >
+              <Plus className="w-3 h-3" />
+              <span>פתיחת פרויקט חדש</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Existing projects list */}
+        {isLoadingProjects ? (
+          <div className="py-2 text-xs text-slate-500 flex items-center gap-1.5">
+            <RefreshCw className="w-3.5 h-3.5 animate-spin text-[#06B6D4]" />
+            <span>טוען פרויקטים קיימים עבור {targetCustName}...</span>
+          </div>
+        ) : filteredProjects.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {filteredProjects.map((proj) => {
+              const isSelected = selectedProject.trim().toLowerCase() === proj.trim().toLowerCase();
+              return (
+                <button
+                  key={proj}
+                  type="button"
+                  onClick={() => selectExistingProject(proj)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium border flex items-center gap-1 cursor-pointer transition-colors ${
+                    isSelected
+                      ? "bg-[#2563EB] text-white border-[#2563EB] font-semibold shadow-2xs"
+                      : "bg-white text-[#172B4D] border-[#DBEAFE] hover:bg-[#EFF6FF]"
+                  }`}
+                >
+                  {isSelected && <Check className="w-3 h-3 text-white shrink-0" />}
+                  <span>{proj}</span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="text-[11px] text-slate-500 bg-white px-2.5 py-2 rounded-lg border border-[#DBEAFE]/70">
+            לא נמצאו עדיין פרויקטים רשומים עבור {targetCustName}. אפשר לפתוח פרויקט חדש בלחיצה למעלה.
+          </div>
+        )}
+
+        {/* Selected custom/new project badge when not yet in fetched list */}
+        {selectedProject &&
+          !customerProjects.some(
+            (p) => p.trim().toLowerCase() === selectedProject.trim().toLowerCase()
+          ) && (
+            <div className="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-[#EFF6FF] border border-[#DBEAFE] text-xs">
+              <span className="text-[#172B4D]">
+                פרויקט שזוהה: <strong className="text-[#2563EB]">{selectedProject}</strong>
+                {((mode === "edit" && editConfirmNewProject) ||
+                  (mode === "draft" && draft?.confirmNewProject)) ? (
+                  <span className="text-[10px] text-[#06B6D4] font-semibold mr-1.5">(אושר כפרויקט חדש)</span>
+                ) : (
+                  <span className="text-[10px] text-amber-700 mr-1.5">(טרם קיים ברשימת הלקוח)</span>
+                )}
+              </span>
+              {!((mode === "edit" && editConfirmNewProject) ||
+                (mode === "draft" && draft?.confirmNewProject)) && (
+                <button
+                  type="button"
+                  onClick={() => requestOpenNewProject(selectedProject)}
+                  className="px-2 py-0.5 rounded-md bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-[11px] font-semibold cursor-pointer"
+                >
+                  פתח פרויקט חדש
+                </button>
+              )}
+            </div>
+          )}
+
+        {/* Inline new project input / search */}
+        {(isCreatingNewProjectInputOpen || !selectedProject || customerProjects.length === 0) && (
+          <div className="flex items-center gap-1.5">
+            <input
+              type="text"
+              value={newProjectInputName}
+              onChange={(e) => {
+                setNewProjectInputName(e.target.value);
+                setProjectValidationError(null);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && newProjectInputName.trim()) {
+                  e.preventDefault();
+                  if (exactMatchExisting) {
+                    selectExistingProject(exactMatchExisting);
+                  } else {
+                    requestOpenNewProject(newProjectInputName);
+                  }
+                }
+              }}
+              placeholder={
+                customerProjects.length > 0
+                  ? "סנן פרויקט קיים או הקלד שם לפרויקט חדש..."
+                  : "הקלד שם לפרויקט החדש..."
+              }
+              className="flex-1 bg-white border border-[#DBEAFE] text-[16px] sm:text-xs px-2.5 py-1.5 rounded-lg text-[#172B4D] placeholder-slate-400 focus:outline-none focus:border-[#2563EB]"
+            />
+            {exactMatchExisting ? (
+              <button
+                type="button"
+                onClick={() => selectExistingProject(exactMatchExisting)}
+                className="px-2.5 py-1.5 rounded-lg bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold cursor-pointer shrink-0"
+              >
+                בחר קיים
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => requestOpenNewProject(newProjectInputName)}
+                className="px-2.5 py-1.5 rounded-lg bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-semibold flex items-center gap-1 cursor-pointer shrink-0"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>פתח פרויקט חדש</span>
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Explicit confirmation dialog before opening a new project */}
+        {pendingNewProjectConfirm && (
+          <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-200 space-y-2 text-xs text-amber-950">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div className="leading-relaxed">
+                <p className="font-bold">
+                  האם אתה בטוח שאתה רוצה לפתוח פרויקט חדש בשם &quot;{pendingNewProjectConfirm.projectName}&quot; עבור {targetCustName}?
+                </p>
+                <p className="text-[11px] text-amber-800 mt-0.5">
+                  הפרויקט יתווסף לרשימת הפרויקטים של {targetCustName} וישויך לתיעוד זה.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 pt-0.5">
+              <button
+                type="button"
+                disabled={isCreatingProject}
+                onClick={handleConfirmCreateNewProject}
+                className="px-3 py-1.5 rounded-lg bg-[#2563EB] hover:bg-[#1D4ED8] disabled:opacity-50 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                {isCreatingProject ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>פותח פרויקט...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>כן, פתח פרויקט חדש</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                disabled={isCreatingProject}
+                onClick={() => setPendingNewProjectConfirm(null)}
+                className="px-3 py-1.5 rounded-lg bg-white hover:bg-slate-50 border border-[#DBEAFE] text-[#172B4D] text-xs font-medium cursor-pointer transition-colors"
+              >
+                ביטול
+              </button>
+            </div>
+          </div>
+        )}
+
+        {projectValidationError && (
+          <div className="p-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-800 flex items-center gap-1.5">
+            <AlertTriangle className="w-3.5 h-3.5 text-red-600 shrink-0" />
+            <span>{projectValidationError}</span>
+          </div>
+        )}
+      </div>
+    );
   };
 
   // ==========================================
@@ -672,6 +1128,13 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
             <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border ${workTypeBadge.bg}`}>
               {workTypeBadge.label}
             </span>
+
+            {written.projectName && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-[#EFF6FF] text-[#2563EB] border border-[#DBEAFE]">
+                <FolderKanban className="w-3 h-3" />
+                <span>{written.projectName}</span>
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-1.5">
@@ -709,6 +1172,37 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                 עריכת תיעוד פעילות (מתעדכן ב-Lists וב-Excel)
               </span>
             </div>
+
+            {/* Work type toggle in written edit */}
+            <div className="grid grid-cols-3 gap-1.5">
+              {[
+                { id: "טיקטים", label: "טיקטים", icon: <Ticket className="w-3.5 h-3.5" /> },
+                { id: "ביקור באתר", label: "ביקור באתר", icon: <MapPin className="w-3.5 h-3.5" /> },
+                { id: "פרויקטים", label: "פרויקטים", icon: <FolderKanban className="w-3.5 h-3.5" /> },
+              ].map((opt) => {
+                const isSelected = getListsWorkTypeBadge(writtenEditWorkType).label === opt.label;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      setWrittenEditWorkType(opt.id);
+                      setProjectValidationError(null);
+                    }}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-medium border flex items-center justify-center gap-1 cursor-pointer transition-colors ${
+                      isSelected
+                        ? "bg-[#2563EB] text-white border-[#2563EB] font-semibold"
+                        : "bg-white text-[#172B4D] border-[#DBEAFE] hover:bg-[#EFF6FF]"
+                    }`}
+                  >
+                    {opt.icon}
+                    <span className="truncate">{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {isProjectCategory(writtenEditWorkType) && renderProjectSelectorPanel("written")}
 
             {/* Quick Billable Duration Chips */}
             <div>
@@ -841,6 +1335,12 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                 disabled={isSavingWrittenEdit}
                 onClick={async () => {
                   if (!onEditWritten) return;
+                  const isProj = isProjectCategory(writtenEditWorkType || written.workType);
+                  if (isProj && !writtenEditProjectName.trim()) {
+                    setProjectValidationError("נא לבחור פרויקט קיים או לפתוח פרויקט חדש לפני השמירה.");
+                    setIsCreatingNewProjectInputOpen(true);
+                    return;
+                  }
                   const c = computeTimesAndDuration(
                     writtenEditStart || written.startTime || "09:00",
                     writtenEditEnd || written.endTime || "10:00",
@@ -856,6 +1356,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                     durationFormatted: writtenEditDuration.trim() || c.durationFormatted,
                     description: writtenEditDescription.trim() || written.description,
                     workType: writtenEditWorkType || written.workType,
+                    projectName: isProj ? writtenEditProjectName.trim() : undefined,
                   });
                   setIsEditingWritten(false);
                 }}
@@ -1031,6 +1532,12 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
               <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold border shrink-0 ${draftWorkTypeBadge.bg}`}>
                 {draftWorkTypeBadge.label}
               </span>
+              {draftWorkTypeBadge.label === "פרויקטים" && draft.projectName && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold text-[#2563EB] bg-[#EFF6FF] border border-[#DBEAFE] shrink-0">
+                  <FolderKanban className="w-3 h-3" />
+                  <span>{draft.projectName}</span>
+                </span>
+              )}
               {draft.ticketNumber && (
                 <span className="px-2 py-0.5 rounded-full text-[11px] font-mono text-[#2563EB] bg-[#EFF6FF] border border-[#DBEAFE] shrink-0">
                   #{draft.ticketNumber.replace(/^(טיקט|ticket)\s*/i, "")}
@@ -1464,6 +1971,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                     type="button"
                     onClick={() => {
                       setEditActivityType(opt.id);
+                      setProjectValidationError(null);
                       const matchingTab = effectiveAvailableTabs.find((t) => {
                         const tNorm = t.name.toLowerCase();
                         if (opt.id === "ביקור באתר") return tNorm.includes("ביקור") || tNorm.includes("onsite") || t.detectedType === "onsite";
@@ -1496,6 +2004,7 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                     type="button"
                     onClick={() => {
                       setEditWorkType(t.name);
+                      setProjectValidationError(null);
                       const tNorm = t.name.toLowerCase();
                       if (t.detectedType === "project" || tNorm.includes("פרויקט") || tNorm.includes("פרוייקט") || tNorm.includes("project")) {
                         setEditActivityType("פרויקטים");
@@ -1518,6 +2027,8 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
               </div>
             </div>
           )}
+
+          {isProjectCategory(editActivityType, editWorkType) && renderProjectSelectorPanel("edit")}
 
           {/* Field: מי עבד על המשימה (רק מרשימת העובדים הקיימים) */}
           <div className="p-2.5 rounded-xl bg-white border border-[#DBEAFE]">
@@ -1667,6 +2178,8 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                       });
 
                       const nextTabName = matchingTab ? matchingTab.name : opt.id;
+                      setProjectValidationError(null);
+                      setPendingNewProjectConfirm(null);
                       onUpdateDraft({
                         ...draft,
                         workType: opt.id,
@@ -1691,6 +2204,8 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
               );
             })}
           </div>
+
+          {draftWorkTypeBadge.label === "פרויקטים" && renderProjectSelectorPanel("draft")}
 
           {/* Time & Duration Controls: משעה | עד שעה | סה״כ שעות לחיוב */}
           <div className="p-3 rounded-xl bg-[#F8FAFC] border border-[#DBEAFE] mb-3 space-y-2.5">
@@ -2100,6 +2615,32 @@ export const HoursEntryCard: React.FC<HoursEntryCardProps> = ({
                 const saved = await buildAndSaveEditedDraft();
                 if (saved) effectiveDraft = saved;
               }
+
+              // Validate project selection & explicit confirmation before opening any new project
+              const isProjEntry = isProjectCategory(
+                effectiveDraft.activityType,
+                effectiveDraft.workType,
+                effectiveDraft.targetTabName
+              );
+              if (isProjEntry) {
+                const projName = (effectiveDraft.projectName || "").trim();
+                if (!projName) {
+                  setProjectValidationError("נא לבחור פרויקט קיים או לפתוח פרויקט חדש לפני השמירה.");
+                  setIsCreatingNewProjectInputOpen(true);
+                  return;
+                }
+                const matchesExistingProject = customerProjects.some(
+                  (p) => p.trim().toLowerCase() === projName.toLowerCase()
+                );
+                if (!matchesExistingProject && effectiveDraft.confirmNewProject !== true) {
+                  setPendingNewProjectConfirm({
+                    projectName: projName,
+                    mode: "submit",
+                  });
+                  return;
+                }
+              }
+
               if (!effectiveDraft.fileId && !effectiveDraft.fileName) {
                 setIsSelectingFile(true);
                 if (fileList.length === 0) {

@@ -21,6 +21,7 @@ import { fetchGraph, resolveSharePointDrive, BILINGUAL_CUSTOMER_DICTIONARY } fro
 import {
   scoreBilingualCustomerMatch,
   expandBilingualCustomerQueries,
+  normalizeCustomerStringBilingual,
 } from "./bilingualCustomerMatcher";
 import { queryCentralLog } from "./hoursCentralLog";
 
@@ -1373,6 +1374,23 @@ export async function resolveSharePointList(env?: any): Promise<SharePointListIn
       if (isDescCandidate && colName !== columnMap["workType"]) {
         columnMap["description"] = colName;
       }
+
+      // 10. פרויקט / שם פרויקט (Optional Project column)
+      if (
+        !columnMap["project"] &&
+        colName !== columnMap["workType"] &&
+        colName !== columnMap["customer"] &&
+        colName !== "Title" &&
+        (dispNorm === "פרויקט" ||
+          dispNorm === "שםפרויקט" ||
+          dispNorm === "שםהפרויקט" ||
+          dispNorm === "project" ||
+          dispNorm === "projectname" ||
+          nameNorm === "project" ||
+          nameNorm === "projectname")
+      ) {
+        columnMap["project"] = colName;
+      }
     }
 
     // Safeguard: Ensure description and workType never share the same internal column name
@@ -1507,6 +1525,121 @@ function getIsraelNowHoursMinutes(): { hours: number; minutes: number } {
   }
 }
 
+/**
+ * Safely resolves a customer name against a SharePoint Lists Choice column's options.
+ * Prevents partial generic tokens (like "tech" in "ASO TECH" vs "הרטק Hartech") from causing false matches,
+ * and never falls back to choices[0] or an unrelated customer.
+ */
+export function resolveCustomerChoiceValue(rawCustomer: string, choices: string[]): string {
+  const rawVal = String(rawCustomer || "").trim();
+  if (!rawVal || !choices || choices.length === 0) return rawVal;
+
+  const custNorm = normalizeColString(rawVal);
+  const custBilingual = normalizeCustomerStringBilingual(rawVal);
+  const custBilingualNoSpace = custBilingual.replace(/\s+/g, "");
+
+  // 1. Exact case-insensitive match
+  const exactRaw = choices.find((ch) => ch.trim().toLowerCase() === rawVal.toLowerCase());
+  if (exactRaw) return exactRaw;
+
+  // 2. Normalized exact match (ignoring spaces, hyphens, quotes)
+  const exactNorm = choices.find((ch) => {
+    const chNorm = normalizeColString(ch);
+    const chBiNoSpace = normalizeCustomerStringBilingual(ch).replace(/\s+/g, "");
+    return chNorm === custNorm || (custBilingualNoSpace.length >= 3 && chBiNoSpace === custBilingualNoSpace);
+  });
+  if (exactNorm) return exactNorm;
+
+  // 3. Match either side of a bilingual choice label (e.g. "אסוטק ASO TECH", "הרטק Hartech", "אסיו / Asio")
+  const splitChoiceSegments = (choiceStr: string): string[] => {
+    const segments = new Set<string>();
+    segments.add(choiceStr);
+    // Split on delimiters
+    for (const part of choiceStr.split(/[\/|\-–—,()]+/)) {
+      const p = part.trim();
+      if (p) segments.add(p);
+    }
+    // Split contiguous Hebrew and Latin runs (e.g. "הרטק Hartech" -> ["הרטק", "Hartech"])
+    const hebRuns = choiceStr.match(/[\u0590-\u05FF][\u0590-\u05FF\s"'״׳\-]*/g) || [];
+    const latRuns = choiceStr.match(/[A-Za-z0-9][A-Za-z0-9\s\-&.]*/g) || [];
+    for (const r of [...hebRuns, ...latRuns]) {
+      const trimmed = r.trim();
+      if (trimmed.length >= 2) segments.add(trimmed);
+    }
+    return Array.from(segments);
+  };
+
+  for (const ch of choices) {
+    const segs = splitChoiceSegments(ch);
+    if (
+      segs.some((seg) => {
+        const sNorm = normalizeColString(seg);
+        const sBiNoSpace = normalizeCustomerStringBilingual(seg).replace(/\s+/g, "");
+        return (
+          sNorm === custNorm ||
+          (custBilingualNoSpace.length >= 3 && sBiNoSpace === custBilingualNoSpace)
+        );
+      })
+    ) {
+      return ch;
+    }
+  }
+
+  // 4. Bilingual dictionary matching (full-key / whole-alias match first, never cross-customer)
+  const valLower = rawVal.toLowerCase().trim();
+  const matchedAliases = new Set<string>();
+  for (const [dictKey, aliases] of Object.entries(BILINGUAL_CUSTOMER_DICTIONARY)) {
+    const dictKeyNorm = normalizeColString(dictKey);
+    const keyMatches =
+      valLower === dictKey.toLowerCase() ||
+      dictKeyNorm === custNorm ||
+      aliases.some((a) => a.toLowerCase() === valLower || normalizeColString(a) === custNorm);
+    if (keyMatches) {
+      matchedAliases.add(dictKeyNorm);
+      for (const a of aliases) {
+        matchedAliases.add(normalizeColString(a));
+      }
+    }
+  }
+  if (matchedAliases.size > 0) {
+    const dictChoice = choices.find((ch) => {
+      const chNorm = normalizeColString(ch);
+      if (matchedAliases.has(chNorm)) return true;
+      return splitChoiceSegments(ch).some((seg) => matchedAliases.has(normalizeColString(seg)));
+    });
+    if (dictChoice) return dictChoice;
+  }
+
+  // 5. Controlled substring containment (only when both strings are >= 3 chars and cover a substantial part)
+  if (custNorm.length >= 3) {
+    const subChoice = choices.find((ch) => {
+      const chNorm = normalizeColString(ch);
+      if (chNorm.length < 3) return false;
+      const minLen = Math.min(chNorm.length, custNorm.length);
+      const maxLen = Math.max(chNorm.length, custNorm.length);
+      return (chNorm.includes(custNorm) || custNorm.includes(chNorm)) && minLen / maxLen >= 0.45;
+    });
+    if (subChoice) return subChoice;
+  }
+
+  // 6. Advanced bilingual semantic matching (uses tightened scoreBilingualCustomerMatch >= 0.72)
+  let bestScore = 0;
+  let bestChoiceMatch: string | undefined;
+  for (const ch of choices) {
+    const res = scoreBilingualCustomerMatch(ch, rawVal);
+    if (res.score > bestScore && res.score >= 0.72) {
+      bestScore = res.score;
+      bestChoiceMatch = ch;
+    }
+  }
+  if (bestChoiceMatch) {
+    return bestChoiceMatch;
+  }
+
+  // CRITICAL: Never overwrite the customer with an unrelated choice or choices[0]
+  return rawVal;
+}
+
 export async function writeEntryToSharePointList(
   entryData: {
     customerName: string;
@@ -1520,6 +1653,7 @@ export async function writeEntryToSharePointList(
     userName?: string;
     userUpn?: string;
     workType?: string;
+    projectName?: string;
     startTime?: string;
     endTime?: string;
     ticketNumber?: string;
@@ -1538,19 +1672,22 @@ export async function writeEntryToSharePointList(
     const durationHours = Number(entryData.durationHours || 0);
     const durationFormattedNum = Number(durationHours.toFixed(2));
     const desc = (entryData.description || "פעילות שירות שוטפת").trim();
+    const projectNameVal = (entryData.projectName || "").trim();
 
-    // 1. כותרת (Title): Always prominently include customer name and ticket / summary
+    // 2. סוג (סוג: טיקטים, פרויקטים, ביקור)
+    const workTypeVal = normalizeListWorkType(entryData.workType);
+
+    // 1. כותרת (Title): Always prominently include customer name, project/ticket / summary
     let titleVal = "";
     if (entryData.ticketNumber) {
       const cleanTicket = String(entryData.ticketNumber).replace(/^(טיקט|ticket)\s*/i, "").trim();
       titleVal = `טיקט ${cleanTicket} - ${customer}`;
+    } else if (projectNameVal && (workTypeVal === "פרויקטים" || String(entryData.workType || "").includes("פרויקט"))) {
+      titleVal = `פרויקט ${projectNameVal} - ${customer}`;
     } else {
       const cleanDesc = desc.length <= 40 ? desc : desc.substring(0, 35);
       titleVal = `${customer} - ${cleanDesc}`;
     }
-
-    // 2. סוג (סוג: טיקטים, פרויקטים, ביקור)
-    const workTypeVal = normalizeListWorkType(entryData.workType);
 
     // 3. לקוח (Customer: e.g. "אסיו Asio", "הייספ לאב HSL")
     const customerVal = customer;
@@ -1777,64 +1914,18 @@ export async function writeEntryToSharePointList(
 
       let formattedValue = value;
 
-      // Handle Choice column
-      if (targetColDef?.type === "choice" || targetColDef?.choice || options?.isChoice) {
-        formattedValue = resolveChoiceValue(String(value || ""), targetColDef);
+      // Handle Customer choice column cleanly with dedicated resolver (never run workType's resolveChoiceValue on customer!)
+      if (options?.isCustomer && (targetColDef?.type === "choice" || targetColDef?.choice)) {
+        const choices = targetColDef.choice?.choices || [];
+        formattedValue = resolveCustomerChoiceValue(String(value || ""), choices);
         if (targetColDef?.choice?.allowMultipleValues && !Array.isArray(formattedValue)) {
           formattedValue = [formattedValue];
         }
-      }
-
-      // Handle Customer choice column if customer dropdown is used
-      if (options?.isCustomer && (targetColDef?.type === "choice" || targetColDef?.choice)) {
-        const choices = targetColDef.choice?.choices || [];
-        if (choices.length > 0) {
-          const rawVal = String(value || "").trim();
-          const custNorm = normalizeColString(rawVal);
-          let matchedChoice = choices.find((ch) => {
-            const chNorm = normalizeColString(ch);
-            return chNorm === custNorm || chNorm.includes(custNorm) || custNorm.includes(chNorm);
-          });
-
-          // Advanced bilingual semantic matching against each choice
-          if (!matchedChoice) {
-            let bestScore = 0;
-            let bestChoiceMatch: string | undefined;
-            for (const ch of choices) {
-              const res = scoreBilingualCustomerMatch(ch, rawVal);
-              if (res.score > bestScore && res.score >= 0.65) {
-                bestScore = res.score;
-                bestChoiceMatch = ch;
-              }
-            }
-            if (bestChoiceMatch) {
-              matchedChoice = bestChoiceMatch;
-            }
-          }
-
-          // Bilingual dictionary and variant matching for customers
-          if (!matchedChoice) {
-            const valLower = rawVal.toLowerCase().trim();
-            for (const [dictKey, aliases] of Object.entries(BILINGUAL_CUSTOMER_DICTIONARY)) {
-              const keyMatch = valLower === dictKey || valLower.includes(dictKey) || dictKey.includes(valLower);
-              const aliasMatch = aliases.some((a) => valLower === a || valLower.includes(a) || a.includes(valLower));
-              if (keyMatch || aliasMatch) {
-                matchedChoice = choices.find((ch) => {
-                  const chNorm = normalizeColString(ch);
-                  if (chNorm === normalizeColString(dictKey) || chNorm.includes(normalizeColString(dictKey))) return true;
-                  return aliases.some((a) => chNorm === normalizeColString(a) || chNorm.includes(normalizeColString(a)));
-                });
-                if (matchedChoice) break;
-              }
-            }
-          }
-
-          if (matchedChoice) {
-            formattedValue = matchedChoice;
-          } else {
-            // CRITICAL: NEVER overwrite user's customer with choices[0]!
-            formattedValue = rawVal;
-          }
+      } else if (targetColDef?.type === "choice" || targetColDef?.choice || options?.isChoice) {
+        // Handle non-customer Choice column (e.g. Work Type)
+        formattedValue = resolveChoiceValue(String(value || ""), targetColDef);
+        if (targetColDef?.choice?.allowMultipleValues && !Array.isArray(formattedValue)) {
+          formattedValue = [formattedValue];
         }
       }
 
@@ -2034,6 +2125,11 @@ export async function writeEntryToSharePointList(
       "description",
       "details",
     ]);
+
+    // 10. שם פרויקט (רק אם קיימת עמודת פרויקט מפורשת ב-Lists)
+    if (projectNameVal && columnMap["project"]) {
+      fields[columnMap["project"]] = projectNameVal;
+    }
 
     const itemCreateUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items`;
 
@@ -2354,6 +2450,7 @@ export async function updateSharePointListItem(
     durationHours?: number;
     description?: string;
     workType?: string;
+    projectName?: string;
     startTime?: string;
     endTime?: string;
     ticketNumber?: string;
@@ -2425,13 +2522,19 @@ export async function updateSharePointListItem(
 
     const customer = (updates.customerName || criteria?.customerName || "").trim();
     const desc = typeof updates.description === "string" ? updates.description.trim() : undefined;
+    const updProjectName = typeof updates.projectName === "string" ? updates.projectName.trim() : "";
 
-    if (desc !== undefined || customer) {
+    if (desc !== undefined || customer || updProjectName) {
       const effectiveCust = customer || "לקוח";
       const effectiveDesc = desc || criteria?.oldDescription || "פעילות שירות";
       if (updates.ticketNumber) {
         const cleanTicket = String(updates.ticketNumber).replace(/^(טיקט|ticket)\s*/i, "").trim();
         fieldsToPatch["Title"] = `טיקט ${cleanTicket} - ${effectiveCust}`;
+      } else if (
+        updProjectName &&
+        (!updates.workType || normalizeListWorkType(updates.workType) === "פרויקטים")
+      ) {
+        fieldsToPatch["Title"] = `פרויקט ${updProjectName} - ${effectiveCust}`;
       } else {
         const cleanDesc = effectiveDesc.length <= 40 ? effectiveDesc : effectiveDesc.substring(0, 35);
         fieldsToPatch["Title"] = `${effectiveCust} - ${cleanDesc}`;
@@ -2439,6 +2542,10 @@ export async function updateSharePointListItem(
       if (columnMap["title"] && columnMap["title"] !== "Title") {
         fieldsToPatch[columnMap["title"]] = fieldsToPatch["Title"];
       }
+    }
+
+    if (updProjectName && columnMap["project"]) {
+      fieldsToPatch[columnMap["project"]] = updProjectName;
     }
 
     if (typeof updates.durationHours === "number" && !isNaN(updates.durationHours)) {
@@ -2501,6 +2608,15 @@ export async function updateSharePointListItem(
       } else {
         fieldsToPatch[columnMap["workType"]] = normWt;
       }
+    }
+
+    if (updates.customerName && columnMap["customer"]) {
+      const custColDef = columns.find((c) => c.name === columnMap["customer"]);
+      const choices = custColDef?.choice?.choices || [];
+      fieldsToPatch[columnMap["customer"]] =
+        choices.length > 0
+          ? resolveCustomerChoiceValue(updates.customerName, choices)
+          : updates.customerName.trim();
     }
 
     const patchUrl = `https://graph.microsoft.com/v1.0/sites/${siteId}/lists/${listId}/items/${encodeURIComponent(targetId)}/fields`;
@@ -2619,8 +2735,10 @@ export async function inspectSharePointListStatus(env?: any): Promise<{
 export interface SharePointListEntry {
   id: string;
   webUrl?: string;
+  title?: string;
   customerName: string;
   workType: string;
+  projectName?: string;
   employeeName: string;
   employeeEmail: string;
   startTime: string;
@@ -2942,12 +3060,28 @@ export async function fetchSharePointListEntries(
         }
       }
 
+      const itemTitle = String(f["Title"] || "").trim();
+      let itemProjectName = String(
+        (columnMap["project"] ? f[columnMap["project"]] : "") ||
+          f["פרויקט"] ||
+          f["Project"] ||
+          ""
+      ).trim();
+      if (!itemProjectName && itemTitle) {
+        const pTitleMatch = itemTitle.match(/^(?:פרויקט|פרוייקט)\s+(.+?)\s*-\s*.+$/);
+        if (pTitleMatch && pTitleMatch[1]) {
+          itemProjectName = pTitleMatch[1].trim();
+        }
+      }
+
       const listBaseUrl = listInfo.webUrl || "https://techselectltd.sharepoint.com/sites/Customers/Lists/List";
       result.push({
         id: String(item.id),
         webUrl: item.webUrl || `${listBaseUrl}/DispForm.aspx?ID=${item.id}`,
+        title: itemTitle,
         customerName: String(customerName).trim(),
         workType: String(workType).trim(),
+        projectName: itemProjectName || undefined,
         employeeName: String(employeeName).trim(),
         employeeEmail: String(employeeEmail).trim(),
         startTime: String(startTime).trim(),

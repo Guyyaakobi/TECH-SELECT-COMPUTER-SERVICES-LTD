@@ -64,6 +64,7 @@ export type StandardColumnField =
   | "description"
   | "contact_person"
   | "ticket_number"
+  | "project_name"
   | "signature_or_approval"
   | "notes";
 
@@ -1123,6 +1124,12 @@ export const BILINGUAL_CUSTOMER_DICTIONARY: Record<string, string[]> = {
   "hisep": ["הייספ לאב", "הייספ", "hsl", "hisep lab"],
   "קורלייט": ["correlate", "corelate", "קורלייט"],
   "correlate": ["קורלייט", "corelate"],
+  "aso tech": ["asotech", "aso-tech", "asotek", "aso-tek", "אסו טק", "אסוטק", "אסו-טק"],
+  "asotech": ["aso tech", "aso-tech", "asotek", "aso-tek", "אסו טק", "אסוטק", "אסו-טק"],
+  "אסו טק": ["aso tech", "asotech", "aso-tech", "asotek", "aso-tek", "אסוטק", "אסו-טק"],
+  "אסוטק": ["aso tech", "asotech", "aso-tech", "asotek", "aso-tek", "אסו טק", "אסו-טק"],
+  "הרטק": ["hartech", "har-tech", "har tech"],
+  "hartech": ["הרטק", "har-tech", "har tech"],
 };
 
 /**
@@ -1988,11 +1995,11 @@ export async function findCustomer(
           score = 0.90;
           reason = "השאילתה מתחילה בשם הלקוח";
         }
-        // 4. Substring containment
-        else if (cVar.includes(qVar)) {
+        // 4. Substring containment (require meaningful proportion so short generic fragments never hijack unrelated customers)
+        else if (cVar.includes(qVar) && qVar.length >= 3 && qVar.length / Math.max(cVar.length, 1) >= 0.45) {
           score = 0.86;
           reason = "שם הלקוח מכיל את השאילתה (עברית / אנגלית)";
-        } else if (qVar.includes(cVar) && cVar.length >= 3) {
+        } else if (qVar.includes(cVar) && cVar.length >= 3 && cVar.length / Math.max(qVar.length, 1) >= 0.45) {
           score = 0.83;
           reason = "השאילתה מכילה את שם הלקוח";
         }
@@ -3282,6 +3289,20 @@ export function mapHeadersToSemanticFields(headers: string[]): {
     h === "הערות" || h === "הערה" || h === "סטטוס" || h === "notes" || h === "comments" || h === "status"
   );
 
+  // 12. Project Name (פרויקט / שם פרויקט) - optional semantic field for project tabs
+  matchField("project_name", (h) =>
+    !h.includes("תאריך") && !h.includes("שעות") && (
+      h === "פרויקט" ||
+      h === "פרוייקט" ||
+      h === "שם פרויקט" ||
+      h === "שם הפרויקט" ||
+      h === "project" ||
+      h === "project name" ||
+      h.includes("שם פרויקט") ||
+      h.includes("שם הפרויקט")
+    )
+  );
+
   const allStandardFields: StandardColumnField[] = [
     "date",
     "day_of_week",
@@ -3887,6 +3908,16 @@ export function buildRowValuesFromSemanticMapping(
 
   if (fieldToColIndex.notes !== undefined) {
     values[fieldToColIndex.notes] = rowObj.notes || rowObj["הערות"] || "";
+  }
+
+  if (fieldToColIndex.project_name !== undefined) {
+    values[fieldToColIndex.project_name] =
+      rowObj.projectName ||
+      rowObj["שם פרויקט"] ||
+      rowObj["שם הפרויקט"] ||
+      rowObj["פרויקט"] ||
+      rowObj.project ||
+      "";
   }
 
   return values;
@@ -5901,14 +5932,19 @@ export function resolveCellValueForHeader(
 
   // J. PROJECT (פרויקט)
   if (isProjectHeader(normHeader)) {
+    const explicitProj = String(
+      rowObj.projectName ||
+        rowObj["שם פרויקט"] ||
+        rowObj["שם הפרויקט"] ||
+        (rowObj["פרויקט"] && rowObj["פרויקט"] !== "פרויקט שוטף" ? rowObj["פרויקט"] : "") ||
+        rowObj.project ||
+        ""
+    ).trim();
+    if (explicitProj) return explicitProj;
+
     const desc = rowObj["תיאור"] || rowObj["description"] || "";
     const shortDesc = desc.length > 40 ? desc.substring(0, 40) + "..." : desc;
     return (
-      rowObj["פרויקט"] ||
-      rowObj["שם פרויקט"] ||
-      rowObj["שם הפרויקט"] ||
-      rowObj["projectName"] ||
-      rowObj["project"] ||
       rowObj["נושא"] ||
       shortDesc ||
       rowObj["לקוח"] ||
@@ -6717,35 +6753,43 @@ export async function writeRows(
           ""
         ).trim();
 
-        const resolvedWorkType =
-          r.description &&
-          (r.description.includes("פרויקט") ||
-            r.description.includes("פרוייקט") ||
-            r.description.toLowerCase().includes("project") ||
-            r.description.toLowerCase().includes("fat") ||
-            r.description.includes("מיגרציה") ||
-            r.description.includes("הקמה") ||
-            r.description.includes("שדרוג") ||
-            r.description.includes("הטמעה"))
+        const resolvedProjectName = String(
+          (r as any).projectName ||
+            (r as any)["שם פרויקט"] ||
+            (r as any)["שם הפרויקט"] ||
+            ((r as any)["פרויקט"] && (r as any)["פרויקט"] !== "פרויקט שוטף" ? (r as any)["פרויקט"] : "") ||
+            (r as any).project ||
+            ""
+        ).trim();
+
+        const resolvedWorkType = rawCandidateWorkType
+          ? rawCandidateWorkType.includes("פרויקט") ||
+            rawCandidateWorkType.includes("פרוייקט") ||
+            rawCandidateWorkType.toLowerCase().includes("project")
             ? "פרויקטים"
-            : rawCandidateWorkType
-            ? rawCandidateWorkType.includes("פרויקט") ||
-              rawCandidateWorkType.includes("פרוייקט") ||
-              rawCandidateWorkType.toLowerCase().includes("project")
-              ? "פרויקטים"
-              : rawCandidateWorkType.includes("ביקור") ||
-                rawCandidateWorkType.toLowerCase().includes("onsite") ||
-                rawCandidateWorkType.toLowerCase().includes("visit") ||
-                rawCandidateWorkType.includes("הגעה")
-              ? "ביקור באתר"
-              : "טיקטים"
-            : r.description &&
-              (r.description.includes("ביקור") ||
-                r.description.includes("באתר") ||
-                r.description.includes("הגעתי") ||
-                r.description.includes("אצל הלקוח"))
+            : rawCandidateWorkType.includes("ביקור") ||
+              rawCandidateWorkType.toLowerCase().includes("onsite") ||
+              rawCandidateWorkType.toLowerCase().includes("visit") ||
+              rawCandidateWorkType.includes("הגעה")
             ? "ביקור באתר"
-            : "טיקטים";
+            : "טיקטים"
+          : r.description &&
+            (r.description.includes("פרויקט") ||
+              r.description.includes("פרוייקט") ||
+              r.description.toLowerCase().includes("project") ||
+              r.description.toLowerCase().includes("fat") ||
+              r.description.includes("מיגרציה") ||
+              r.description.includes("הקמה") ||
+              r.description.includes("שדרוג") ||
+              r.description.includes("הטמעה"))
+          ? "פרויקטים"
+          : r.description &&
+            (r.description.includes("ביקור") ||
+              r.description.includes("באתר") ||
+              r.description.includes("הגעתי") ||
+              r.description.includes("אצל הלקוח"))
+          ? "ביקור באתר"
+          : "טיקטים";
 
         const empName = String(
           (r as any).employeeName ||
@@ -6781,6 +6825,7 @@ export async function writeRows(
             userName: empName,
             userUpn: (r as any).userUpn || empEmail,
             workType: resolvedWorkType,
+            projectName: resolvedProjectName || undefined,
             startTime: String(r.startTime || r["שעת התחלה"] || "").trim(),
             endTime: String(r.endTime || r["שעת סיום"] || "").trim(),
             ticketNumber: String(r.ticketNumber || r["מספר קריאה"] || r["טיקט"] || "").trim(),
@@ -7436,6 +7481,7 @@ export interface UpdateWrittenEntryParams {
   endTime?: string;
   description?: string;
   workType?: string;
+  projectName?: string;
   employeeName?: string;
   employeeEmail?: string;
   ticketNumber?: string;
@@ -7477,6 +7523,7 @@ export async function updateWrittenExcelRow(
         durationHours: effectiveHours,
         description: params.description,
         workType: params.workType,
+        projectName: params.projectName,
         startTime: params.startTime,
         endTime: params.endTime,
         ticketNumber: params.ticketNumber,
@@ -7593,6 +7640,11 @@ export async function updateWrittenExcelRow(
         description: params.description || "",
         "סוג עבודה": params.workType || "",
         workType: params.workType || "",
+        פרויקט: params.projectName || "",
+        "שם פרויקט": params.projectName || "",
+        "שם הפרויקט": params.projectName || "",
+        projectName: params.projectName || "",
+        project: params.projectName || "",
         טיקט: params.ticketNumber || "",
         ticketNumber: params.ticketNumber || "",
       };

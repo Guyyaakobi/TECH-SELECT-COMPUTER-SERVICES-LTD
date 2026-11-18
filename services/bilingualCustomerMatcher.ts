@@ -119,6 +119,11 @@ export const BILINGUAL_TERM_MAP: Record<string, string[]> = {
   הייספ: ["hisep", "highsep", "hsl"],
   לאב: ["lab", "labs", "laboratory"],
   אסיו: ["asio", "asio software"],
+  "אסו טק": ["aso tech", "asotech", "aso-tech", "asotek", "aso-tek"],
+  "אסו-טק": ["aso tech", "asotech", "aso-tech", "asotek", "aso-tek"],
+  אסוטק: ["aso tech", "asotech", "aso-tech", "asotek", "aso-tek"],
+  אסו: ["aso"],
+  הרטק: ["hartech", "har-tech", "har tech"],
 };
 
 // Reverse dictionary: English -> Hebrew
@@ -195,6 +200,7 @@ export function toConsonantSkeletonBilingual(str: string): string {
     } else {
       // Latin word -> phonetic consonant skeleton
       let lat = w
+        .replace(/tech(?=$|[^a-z])/g, "tk")
         .replace(/ph/g, "f")
         .replace(/tch|ch/g, "h")
         .replace(/sch|sh/g, "s")
@@ -314,6 +320,79 @@ export function phoneticHebrewToLatin(hebStr: string): string[] {
 }
 
 /**
+ * Basic phonetic transliteration of a single Latin token to Hebrew
+ */
+function transliterateLatinTokenToHebrew(latToken: string): string[] {
+  const clean = latToken.toLowerCase().trim();
+  if (!clean) return [];
+  if (REVERSE_BILINGUAL_MAP[clean]) {
+    return REVERSE_BILINGUAL_MAP[clean];
+  }
+
+  let s = clean
+    .replace(/tech/g, "טק")
+    .replace(/tek/g, "טק")
+    .replace(/soft/g, "סופט")
+    .replace(/cloud/g, "קלאוד")
+    .replace(/cyber/g, "סייבר")
+    .replace(/labs?/g, "לאב")
+    .replace(/sys(tems?)?/g, "סיסטמ")
+    .replace(/ch|tch/g, "צ'")
+    .replace(/sh|sch/g, "ש")
+    .replace(/ph/g, "פ")
+    .replace(/th/g, "ת")
+    .replace(/ck/g, "ק")
+    .replace(/qu/g, "קו")
+    .replace(/oo/g, "ו")
+    .replace(/ee/g, "י")
+    .replace(/tz|ts/g, "צ");
+
+  const charMap: Record<string, string> = {
+    b: "ב",
+    c: "ק",
+    d: "ד",
+    f: "פ",
+    g: "ג",
+    h: "ה",
+    i: "י",
+    j: "ג'",
+    k: "ק",
+    l: "ל",
+    m: "מ",
+    n: "נ",
+    o: "ו",
+    p: "פ",
+    q: "ק",
+    r: "ר",
+    s: "ס",
+    t: "ט",
+    u: "ו",
+    v: "ו",
+    w: "ו",
+    x: "קס",
+    y: "י",
+    z: "ז",
+  };
+
+  let out = "";
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (/[\u0590-\u05FF]/.test(ch)) {
+      out += ch;
+    } else if (ch === "a") {
+      out += i === 0 ? "א" : i === s.length - 1 ? "ה" : "";
+    } else if (ch === "e") {
+      out += i === 0 ? "א" : "";
+    } else if (charMap[ch] !== undefined) {
+      out += charMap[ch];
+    }
+  }
+  const results = new Set<string>();
+  if (out) results.add(out);
+  return Array.from(results);
+}
+
+/**
  * Phonetic transliteration from Latin characters to Hebrew
  */
 export function phoneticLatinToHebrew(latStr: string): string[] {
@@ -329,16 +408,18 @@ export function phoneticLatinToHebrew(latStr: string): string[] {
     }
   }
 
-  // Token level lookup
+  // Token level lookup + phonetic fallback
   const tokens = clean.split(/\s+/).filter(Boolean);
   const tokenHebrewOptions: string[][] = tokens.map((token) => {
     const list = REVERSE_BILINGUAL_MAP[token] || [];
-    if (list.length > 0) return list;
-    return [token];
+    const translit = transliterateLatinTokenToHebrew(token);
+    const merged = Array.from(new Set([...list, ...translit]));
+    return merged.length > 0 ? merged : [token];
   });
 
-  // Cross product of token translations
+  // Cross product of token translations (bounded)
   const combineTokens = (idx: number, current: string[]) => {
+    if (variants.size >= 24) return;
     if (idx >= tokenHebrewOptions.length) {
       if (current.length > 0) variants.add(current.join(" "));
       return;
@@ -425,22 +506,35 @@ export function expandBilingualCustomerQueries(query: string): string[] {
     };
     generateCombos(0, []);
 
-    // Also add individual significant tokens (including 2-letter prefixes like "וט")
-    for (const tok of tokens) {
-      if (tok.length >= 2) {
-        variants.add(tok);
-        const dList = BILINGUAL_TERM_MAP[tok] || [];
-        for (const d of dList) variants.add(d);
-        const pList = phoneticHebrewToLatin(tok);
-        for (const p of pList) variants.add(p);
+    // Only add individual token expansions when the query itself is a single token
+    // (Adding isolated generic tokens like "טק" from multi-token queries would cause false matches)
+    if (tokens.length === 1) {
+      for (const tok of tokens) {
+        if (tok.length >= 2) {
+          variants.add(tok);
+          const dList = BILINGUAL_TERM_MAP[tok] || [];
+          for (const d of dList) variants.add(d);
+          const pList = phoneticHebrewToLatin(tok);
+          for (const p of pList) variants.add(p);
+        }
       }
     }
   } else {
     // English query -> Expand to Hebrew
-    const directHeb = REVERSE_BILINGUAL_MAP[raw.toLowerCase()] || REVERSE_BILINGUAL_MAP[stripped.toLowerCase()] || [];
+    const directHeb =
+      REVERSE_BILINGUAL_MAP[raw.toLowerCase()] ||
+      REVERSE_BILINGUAL_MAP[stripped.toLowerCase()] ||
+      REVERSE_BILINGUAL_MAP[noSpaceRaw] ||
+      [];
     for (const heb of directHeb) {
       variants.add(heb);
       variants.add(heb.replace(/\s+/g, ""));
+    }
+
+    const latToHeb = phoneticLatinToHebrew(stripped || raw);
+    for (const h of latToHeb) {
+      variants.add(h);
+      variants.add(h.replace(/\s+/g, ""));
     }
 
     const tokens = (stripped || raw).toLowerCase().split(/\s+/).filter(Boolean);
@@ -449,6 +543,8 @@ export function expandBilingualCustomerQueries(query: string): string[] {
       candidates.add(tok);
       const hList = REVERSE_BILINGUAL_MAP[tok] || [];
       for (const h of hList) candidates.add(h);
+      const tList = transliterateLatinTokenToHebrew(tok);
+      for (const t of tList) candidates.add(t);
       return Array.from(candidates);
     });
 
@@ -470,11 +566,15 @@ export function expandBilingualCustomerQueries(query: string): string[] {
     };
     generateCombos(0, []);
 
-    for (const tok of tokens) {
-      if (tok.length >= 2) {
-        variants.add(tok);
-        const hList = REVERSE_BILINGUAL_MAP[tok] || [];
-        for (const h of hList) variants.add(h);
+    // Only add individual token expansions when the query itself is a single token
+    // (Prevents "ASO TECH" -> "tech" from matching unrelated "הרטק Hartech")
+    if (tokens.length === 1) {
+      for (const tok of tokens) {
+        if (tok.length >= 2) {
+          variants.add(tok);
+          const hList = REVERSE_BILINGUAL_MAP[tok] || [];
+          for (const h of hList) variants.add(h);
+        }
       }
     }
   }
@@ -540,6 +640,22 @@ function levenshteinDistance(a: string, b: string): number {
   return matrix[b.length][a.length];
 }
 
+// Generic industry suffixes/words that must NEVER carry a customer match on their own
+const GENERIC_CUSTOMER_TOKENS = new Set([
+  "tech", "tek", "technology", "technologies", "טק", "טכנולוגיות", "טכנולוגיה",
+  "soft", "software", "סופט", "תוכנה",
+  "sys", "system", "systems", "סיסטם", "סיסטמס", "מערכות", "מערכת",
+  "sol", "solution", "solutions", "סולושנס", "פתרונות",
+  "serv", "service", "services", "סרוויסס", "שירות", "שירותי", "שירותים",
+  "lab", "labs", "laboratory", "laboratories", "לאב", "מעבדה", "מעבדות",
+  "group", "קבוצת", "קבוצה", "holdings", "החזקות",
+  "cyber", "סייבר", "cloud", "ענן", "קלאוד",
+  "net", "network", "networks", "תקשורת",
+  "med", "medical", "מדיקל", "רפואי",
+  "digital", "דיגיטל", "global", "גלובל", "israel", "ישראל",
+  "com", "it", "pro",
+]);
+
 /**
  * Scores the match between a candidate customer name and the user's query
  * across all generated bilingual variants and phonetic consonant skeletons.
@@ -551,6 +667,10 @@ export function scoreBilingualCustomerMatch(
 ): { score: number; matchReason: string; matchedVariant: string } {
   const normCustomer = normalizeCustomerStringBilingual(customerName);
   const normCustomerNoSpace = normCustomer.replace(/\s+/g, "");
+  const normQueryOrig = normalizeCustomerStringBilingual(query);
+  const queryOrigTokens = normQueryOrig.split(" ").filter(Boolean);
+  const nonGenericQueryTokens = queryOrigTokens.filter((t) => !GENERIC_CUSTOMER_TOKENS.has(t));
+
   const skelCustomer = toConsonantSkeletonBilingual(customerName);
   const skelCustomerNoSpace = skelCustomer.replace(/\s+/g, "");
   const skelQuery = toConsonantSkeletonBilingual(query);
@@ -576,15 +696,22 @@ export function scoreBilingualCustomerMatch(
   let bestVariant = query;
 
   // Check if consonant skeleton of customer contains or starts with query skeleton
+  // Require query skeleton to cover a meaningful proportion of the customer skeleton
   if (skelCustomerNoSpace.length >= 4 && skelQueryNoSpace.length >= 4) {
+    const shorterSkel = Math.min(skelCustomerNoSpace.length, skelQueryNoSpace.length);
+    const longerSkel = Math.max(skelCustomerNoSpace.length, skelQueryNoSpace.length);
     if (skelCustomerNoSpace.startsWith(skelQueryNoSpace) || skelQueryNoSpace.startsWith(skelCustomerNoSpace)) {
-      bestScore = 0.91;
-      bestReason = `התאמה פונטית של תחילית שם הלקוח (${skelQuery})`;
-      bestVariant = skelQuery;
+      if (shorterSkel / longerSkel >= 0.5) {
+        bestScore = 0.91;
+        bestReason = `התאמה פונטית של תחילית שם הלקוח (${skelQuery})`;
+        bestVariant = skelQuery;
+      }
     } else if (skelCustomerNoSpace.includes(skelQueryNoSpace) || skelQueryNoSpace.includes(skelCustomerNoSpace)) {
-      bestScore = 0.88;
-      bestReason = `התאמה פונטית של רכיבי שם הלקוח (${skelQuery})`;
-      bestVariant = skelQuery;
+      if (shorterSkel / longerSkel >= 0.65) {
+        bestScore = 0.88;
+        bestReason = `התאמה פונטית של רכיבי שם הלקוח (${skelQuery})`;
+        bestVariant = skelQuery;
+      }
     }
   }
 
@@ -592,6 +719,8 @@ export function scoreBilingualCustomerMatch(
     const normVar = normalizeCustomerStringBilingual(variant);
     if (!normVar) continue;
     const normVarNoSpace = normVar.replace(/\s+/g, "");
+    const varTokens = normVar.split(" ").filter(Boolean);
+    const custTokens = normCustomer.split(" ").filter(Boolean);
 
     // 1. Exact raw match
     if (customerName.toLowerCase() === variant.toLowerCase()) {
@@ -603,65 +732,119 @@ export function scoreBilingualCustomerMatch(
       return { score: 0.98, matchReason: "התאמה מלאה לאחר נירמול ותרגום", matchedVariant: variant };
     }
 
-    // 3. Name starts with variant
-    if (normCustomer.startsWith(normVar) || (normVarNoSpace.length >= 3 && normCustomerNoSpace.startsWith(normVarNoSpace))) {
-      if (0.94 > bestScore) {
-        bestScore = 0.94;
-        bestReason = `שם הלקוח ב-SharePoint מתחיל ב-'${variant}'`;
+    // Also match when any whitespace/slash-separated token/side of a bilingual customer name matches the full variant
+    // (e.g. choice "אסו טק ASO TECH" contains whole phrase "aso tech" or "אסו טק")
+    const isWholeTokenOrPhraseMatch = (haystackTokens: string[], needleTokens: string[]): boolean => {
+      if (needleTokens.length === 0 || haystackTokens.length < needleTokens.length) return false;
+      for (let i = 0; i <= haystackTokens.length - needleTokens.length; i++) {
+        let allEq = true;
+        for (let j = 0; j < needleTokens.length; j++) {
+          if (haystackTokens[i + j] !== needleTokens[j]) {
+            allEq = false;
+            break;
+          }
+        }
+        if (allEq) return true;
+      }
+      return false;
+    };
+
+    if (
+      isWholeTokenOrPhraseMatch(custTokens, varTokens) ||
+      (custTokens.some((ct) => ct === normVarNoSpace) && normVarNoSpace.length >= 3)
+    ) {
+      if (0.95 > bestScore) {
+        bestScore = 0.95;
+        bestReason = `התאמה מלאה לרכיב בשם הלקוח ('${variant}')`;
         bestVariant = variant;
       }
     }
 
-    // 4. Variant starts with name
-    if (normVar.startsWith(normCustomer) || (normCustomerNoSpace.length >= 3 && normVarNoSpace.startsWith(normCustomerNoSpace))) {
-      if (0.92 > bestScore) {
-        bestScore = 0.92;
-        bestReason = `השאילתה מתחילה בשם הלקוח '${customerName}'`;
-        bestVariant = variant;
+    // Skip single-token prefix/substring boosts if the original query had multiple distinct words
+    // and this variant collapsed to only a single generic token
+    const isSingleGenericVariant =
+      varTokens.length === 1 && GENERIC_CUSTOMER_TOKENS.has(varTokens[0]);
+
+    if (!isSingleGenericVariant) {
+      // 3. Name starts with variant
+      if (normCustomer.startsWith(normVar) || (normVarNoSpace.length >= 3 && normCustomerNoSpace.startsWith(normVarNoSpace))) {
+        if (0.94 > bestScore) {
+          bestScore = 0.94;
+          bestReason = `שם הלקוח ב-SharePoint מתחיל ב-'${variant}'`;
+          bestVariant = variant;
+        }
+      }
+
+      // 4. Variant starts with name
+      if (normVar.startsWith(normCustomer) || (normCustomerNoSpace.length >= 3 && normVarNoSpace.startsWith(normCustomerNoSpace))) {
+        if (0.92 > bestScore) {
+          bestScore = 0.92;
+          bestReason = `השאילתה מתחילה בשם הלקוח '${customerName}'`;
+          bestVariant = variant;
+        }
+      }
+
+      // 5. Substring containment (only when the variant covers a substantial share of the customer name,
+      // OR shares a token boundary so "tech" inside "hartech" cannot match)
+      if (
+        (normCustomer.includes(normVar) || normCustomerNoSpace.includes(normVarNoSpace)) &&
+        normVarNoSpace.length >= 4 &&
+        normVarNoSpace.length / Math.max(normCustomerNoSpace.length, 1) >= 0.45
+      ) {
+        if (0.90 > bestScore) {
+          bestScore = 0.90;
+          bestReason = `שם הלקוח ב-SharePoint מכיל '${variant}'`;
+          bestVariant = variant;
+        }
+      } else if (
+        (normVar.includes(normCustomer) || normVarNoSpace.includes(normCustomerNoSpace)) &&
+        normCustomerNoSpace.length >= 4 &&
+        normCustomerNoSpace.length / Math.max(normVarNoSpace.length, 1) >= 0.45
+      ) {
+        if (0.88 > bestScore) {
+          bestScore = 0.88;
+          bestReason = `השאילתה מכילה את שם הלקוח '${customerName}'`;
+          bestVariant = variant;
+        }
       }
     }
 
-    // 5. Substring containment
-    if ((normCustomer.includes(normVar) || normCustomerNoSpace.includes(normVarNoSpace)) && normVarNoSpace.length >= 3) {
-      if (0.90 > bestScore) {
-        bestScore = 0.90;
-        bestReason = `שם הלקוח ב-SharePoint מכיל '${variant}'`;
-        bestVariant = variant;
-      }
-    } else if ((normVar.includes(normCustomer) || normVarNoSpace.includes(normCustomerNoSpace)) && normCustomerNoSpace.length >= 3) {
-      if (0.88 > bestScore) {
-        bestScore = 0.88;
-        bestReason = `השאילתה מכילה את שם הלקוח '${customerName}'`;
-        bestVariant = variant;
-      }
-    }
-
-    // 6. Token matching
-    const custTokens = normCustomer.split(" ").filter(Boolean);
-    const varTokens = normVar.split(" ").filter(Boolean);
-
+    // 6. Token matching (ensure generic tokens alone cannot score high if primary brand token didn't match)
     let matchedTokens = 0;
+    let matchedNonGenericTokens = 0;
     for (const vTok of varTokens) {
+      const isGeneric = GENERIC_CUSTOMER_TOKENS.has(vTok);
+      let tokScore = 0;
       for (const cTok of custTokens) {
         if (vTok === cTok) {
-          matchedTokens++;
+          tokScore = 1;
           break;
         }
-        if (cTok.startsWith(vTok) || vTok.startsWith(cTok)) {
-          matchedTokens += 0.85;
-          break;
+        if ((cTok.startsWith(vTok) || vTok.startsWith(cTok)) && Math.min(vTok.length, cTok.length) >= 3) {
+          tokScore = Math.max(tokScore, 0.85);
+        } else {
+          const dist = levenshteinDistance(vTok, cTok);
+          const maxL = Math.max(vTok.length, cTok.length);
+          if ((maxL >= 3 && dist <= 1) || (maxL >= 6 && dist <= 2)) {
+            tokScore = Math.max(tokScore, 0.8);
+          }
         }
-        const dist = levenshteinDistance(vTok, cTok);
-        const maxL = Math.max(vTok.length, cTok.length);
-        if ((maxL >= 3 && dist <= 1) || (maxL >= 5 && dist <= 2)) {
-          matchedTokens += 0.8;
-          break;
+      }
+      if (tokScore > 0) {
+        matchedTokens += tokScore;
+        if (!isGeneric) {
+          matchedNonGenericTokens++;
         }
       }
     }
 
     if (varTokens.length > 0) {
-      const tokenScore = Math.min(1.0, (matchedTokens / varTokens.length) * 0.9);
+      let tokenScore = Math.min(1.0, (matchedTokens / varTokens.length) * 0.9);
+      // If query has distinctive non-generic tokens (e.g. "aso" in "aso tech") and NONE matched, cap score strictly!
+      const varNonGeneric = varTokens.filter((t) => !GENERIC_CUSTOMER_TOKENS.has(t));
+      if ((varNonGeneric.length > 0 || nonGenericQueryTokens.length > 0) && matchedNonGenericTokens === 0) {
+        tokenScore = Math.min(tokenScore, 0.25);
+      }
       if (tokenScore > bestScore) {
         bestScore = tokenScore;
         bestReason = `התאמת מילות מפתח בילינגוואלית (${variant})`;
@@ -675,9 +858,9 @@ export function scoreBilingualCustomerMatch(
       levenshteinDistance(normVarNoSpace, normCustomerNoSpace)
     );
     const maxLen = Math.max(normVarNoSpace.length, normCustomerNoSpace.length);
-    if (maxLen >= 3) {
+    if (maxLen >= 4) {
       const sim = 1 - dist / maxLen;
-      if (sim > 0.62 && sim * 0.90 > bestScore) {
+      if (sim > 0.68 && sim * 0.90 > bestScore) {
         bestScore = sim * 0.90;
         bestReason = `התאמה פונטית / איות קרוב (${variant})`;
         bestVariant = variant;

@@ -55,6 +55,10 @@ import {
   resetWorkerSubrequestCount,
 } from "./services/hoursJobQueue";
 import { processAssistantChat } from "./services/geminiHoursAssistant";
+import {
+  listCustomerProjects,
+  createCustomerProject,
+} from "./services/customerProjects";
 
 // Lazy Gemini client helper with required headers
 function getGeminiClient(): GoogleGenAI {
@@ -5221,6 +5225,67 @@ ${!isAteraCustomer ? `
       } catch (err: any) {
         console.error("[POST /api/hours/manage] Error:", err);
         return res.status(500).json({ error: err?.message || "שגיאה בהוספת לקוח / עובד / מנהל צוות" });
+      }
+    });
+
+    // 10.95 Customer Projects Discovery & Confirmed Creation (/api/hours/projects)
+    hoursRouter.get("/projects", async (req, res) => {
+      try {
+        const customerName = String(req.query.customerName || req.query.customer || "").trim();
+        const fileId = String(req.query.fileId || "").trim() || undefined;
+        const driveId = String(req.query.driveId || "").trim() || undefined;
+        const forceRefresh = req.query.refresh === "true";
+
+        if (!customerName) {
+          return res.json({ customerName: "", projects: [] });
+        }
+
+        const graphUserToken = String(req.headers["x-graph-token"] || "").trim();
+        const requestEnv = { ...process.env, userToken: (req as any).rawToken, graphUserToken };
+
+        const result = await listCustomerProjects(
+          { customerName, fileId, driveId, forceRefresh },
+          requestEnv
+        );
+        return res.json(result);
+      } catch (err: any) {
+        console.error("[GET /api/hours/projects] Error:", err);
+        return res.status(500).json({ error: err?.message || "שגיאה בטעינת רשימת פרויקטים" });
+      }
+    });
+
+    hoursRouter.post("/projects", async (req, res) => {
+      try {
+        const reqUser = (req as any).user || {};
+        const body = req.body || {};
+        const customerName = String(body.customerName || body.customer || "").trim();
+        const projectName = String(body.projectName || body.name || "").trim();
+        const confirmNewProject = body.confirmNewProject === true;
+
+        if (!confirmNewProject) {
+          return res.status(400).json({
+            requiresConfirmation: true,
+            error: `האם אתה בטוח שאתה רוצה לפתוח פרויקט חדש בשם "${projectName}" עבור ${customerName}?`,
+          });
+        }
+
+        const graphUserToken = String(req.headers["x-graph-token"] || "").trim();
+        const requestEnv = { ...process.env, userToken: (req as any).rawToken, graphUserToken };
+
+        const result = await createCustomerProject(
+          {
+            customerName,
+            projectName,
+            confirmNewProject,
+            createdBy: reqUser.name,
+            createdByEmail: reqUser.email,
+          },
+          requestEnv
+        );
+        return res.json(result);
+      } catch (err: any) {
+        console.error("[POST /api/hours/projects] Error:", err);
+        return res.status(400).json({ error: err?.message || "שגיאה בפתיחת פרויקט חדש" });
       }
     });
 
